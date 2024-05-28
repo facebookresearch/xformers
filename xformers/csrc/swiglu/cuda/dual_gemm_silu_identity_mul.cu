@@ -17,34 +17,13 @@
 
 namespace {
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_META(
-    const at::Tensor& x,
-    const at::Tensor& w0,
-    const c10::optional<at::Tensor>& b0,
-    const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1) {
-  TORCH_CHECK(x.sym_stride(-1) == 1);
-  TORCH_CHECK(w0.sym_stride(-1) == 1);
-  TORCH_CHECK(w1.sym_stride(-1) == 1);
-
-  at::SymInt B = x.sym_size(0);
-  at::SymInt I = x.sym_size(1);
-  at::SymInt H = w0.sym_size(0);
-
-  at::Tensor d0 = at::empty_symint({B, H}, x.options());
-  at::Tensor d1 = at::empty_symint({B, H}, x.options());
-  at::Tensor d2 = at::empty_symint({B, H}, x.options());
-
-  return std::make_tuple(d0, d1, d2);
-}
-
 template <typename scalar_t>
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const c10::optional<at::Tensor>& b0,
+    const std::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1) {
+    const std::optional<at::Tensor>& b1) {
   TORCH_CHECK(x.dim() == 2);
   TORCH_CHECK(w0.dim() == 2);
   TORCH_CHECK(w1.dim() == 2);
@@ -198,9 +177,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const c10::optional<at::Tensor>& b0,
+    const std::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1) {
+    const std::optional<at::Tensor>& b1) {
   // TODO: Check all params. This would take a lot of lines of code...
   TORCH_CHECK(x.dim() == 2);
   TORCH_CHECK(w0.dim() == 2);
@@ -220,9 +199,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor>
 dual_gemm_silu_identity_mul_autocast(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const c10::optional<at::Tensor>& b0,
+    const std::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1) {
+    const std::optional<at::Tensor>& b1) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return dual_gemm_silu_identity_mul(
@@ -239,12 +218,6 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
       TORCH_FN(dual_gemm_silu_identity_mul));
-}
-
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
-      TORCH_FN(dual_gemm_silu_identity_mul_META));
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {

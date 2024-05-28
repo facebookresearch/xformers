@@ -382,6 +382,7 @@ class AttentionFwOpBase(AttentionOpBase):
         torch.half: 4e-4,
         torch.bfloat16: 5e-3,
     }
+    UNPADDED_LSE: bool = False
 
     @classmethod
     def apply(
@@ -450,6 +451,7 @@ class AttentionBwOpBase(AttentionOpBase):
         torch.bfloat16: 0.1,
     }
     SUPPORTS_ATTN_BIAS_GRAD = False
+    SUPPORTS_UNPADDED_LSE = False
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

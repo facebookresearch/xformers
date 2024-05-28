@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.27] - TBD
 ### Added
+- fMHA: PagedBlockDiagonalGappyKeysMask
+- fMHA: heterogeneous queries in triton_splitk
+- fMHA: support for paged attention in flash
+- backwards pass for merge_attentions
 ### Improved
 - fMHA: Fixed out-of-bounds reading for Split-K triton implementation
 - Profiler: fix bug with modules that take a single tuple as argument

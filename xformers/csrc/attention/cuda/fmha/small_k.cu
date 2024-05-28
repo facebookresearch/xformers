@@ -730,7 +730,7 @@ std::tuple<at::Tensor, at::Tensor, int64_t, int64_t> attention(
     const at::Tensor& key,
     const at::Tensor& value,
     bool compute_logsumexp,
-    const c10::optional<at::Tensor>& attn_bias_,
+    const std::optional<at::Tensor>& attn_bias_,
     double p) {
   TORCH_CHECK(query.dim() == key.dim());
   TORCH_CHECK(query.dim() == value.dim());
@@ -1163,7 +1163,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> attention_backward(
     const at::Tensor& value,
     const at::Tensor& logsumexp,
     const at::Tensor& output,
-    const c10::optional<at::Tensor>& attn_bias_,
+    const std::optional<at::Tensor>& attn_bias_,
     double p,
     int64_t rng_seed,
     int64_t rng_offset) {

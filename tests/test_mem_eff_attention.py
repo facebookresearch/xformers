@@ -45,6 +45,9 @@ sm75_or_better_only = pytest.mark.skipif(
 sm80_or_better_only = pytest.mark.skipif(
     compute_capability < (8, 0), reason="requires sm80+"
 )
+skip_if_rocm = pytest.mark.skipif(
+    torch.version.hip is not None, reason="not supported on ROCm"
+)
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 T = TypeVar(
@@ -54,7 +57,7 @@ T = TypeVar(
 logger = logging.getLogger("xformers")
 
 
-def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
+def _filter_unsupported_ops(ops: Sequence[T]) -> List[T]:
     return [
         op
         for op in ops
@@ -66,7 +69,15 @@ def _filter_unsupported_ops(ops: Sequence[T]) -> Sequence[T]:
     ]
 
 
-ALL_FW_OPS = _filter_unsupported_ops(ALL_FW_OPS)
+ALL_FW_OPS_NO_UNPADDED_LSE = _filter_unsupported_ops(ALL_FW_OPS)
+ALL_FW_OPS = _filter_unsupported_ops(
+    ALL_FW_OPS
+    + (
+        [fmha.flash.FlashFwUnpaddedLSE]
+        if fmha.flash.FLASH_SUPPORTS_UNPADDED_LSE
+        else []
+    )
+)
 ALL_BW_OPS = _filter_unsupported_ops(ALL_BW_OPS)
 
 
@@ -128,6 +139,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         fmha.cutlass.FwOp,
         fmha.cutlass.BwOp,
         fmha.flash.BwOp,
+        fmha.ck.FwOp,
     ]:
         K_CHOICES = [8 * i for i in range(1, 256 // 8)]
         r = random.Random(0)
@@ -232,6 +244,12 @@ parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = pytest.mark.parametrize(
     "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS),
 )
+parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_NO_UNPADDED_LSE = (
+    pytest.mark.parametrize(
+        "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
+        **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS_NO_UNPADDED_LSE),
+    )
+)
 parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametrize(
     "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS, max_shapes_per_op=1),
@@ -304,7 +322,10 @@ def create_tensors(
 
     if attn_bias_type is not None and issubclass(
         attn_bias_type,
-        fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+        (
+            fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+            fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+        ),
     ):
         page_size_choices = [256, 512]
         if issubclass(op, fmha.triton_splitk.FwOp):
@@ -363,6 +384,7 @@ def create_tensors(
                 fmha.attn_bias.BlockDiagonalMask,
                 fmha.attn_bias.BlockDiagonalGappyKeysMask,
                 fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+                fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
                 fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
             ),
         ):
@@ -406,7 +428,7 @@ def nanify_oob_seqlen(x: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
-@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_NO_UNPADDED_LSE
 def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs):
     (
         op,
@@ -421,7 +443,11 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
     if packed and issubclass(
-        bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask
+        bias_type,
+        (
+            fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+            fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+        ),
     ):
         pytest.skip(
             "packed doesn't make sense with paged attention, since q has different shape than k/v"
@@ -501,9 +527,11 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
 def test_key_query_all_ones(q_len, kv_len, batch_size, k_len):
     device = "cuda"
     scale = 3
-    query = torch.ones((batch_size, q_len, k_len), device=device)
-    key = torch.ones((batch_size, kv_len, k_len), device=device)
-    value = torch.randn((batch_size, kv_len, k_len), device=device) * scale
+    # composable kernel doesn't support fp32
+    dtype = torch.float16 if torch.version.hip else torch.float32
+    query = torch.ones((batch_size, q_len, k_len), device=device, dtype=dtype)
+    key = torch.ones((batch_size, kv_len, k_len), device=device, dtype=dtype)
+    value = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
 
     out = xformers.ops.memory_efficient_attention(query, key, value)
     # this should be equivalent to the average over value
@@ -519,7 +547,7 @@ def _block_diag_reshape_lse(
     parts = []
     for slice, (start, end) in zip(lse.unbind(0), q_seqinfo.intervals()):
         parts.append(slice[:, : end - start])
-    return torch.cat(parts, dim=1).unsqueeze(1)
+    return torch.cat(parts, dim=1).unsqueeze(0)
 
 
 @disable_tf32
@@ -540,9 +568,9 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
 
     if op is fmha.ck.FwOp:
         pytest.skip("logsumexp is not yet supported by ck-tiled fmha!")
-
     query, key, value, attn_bias = create_tensors(
-        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt="BMK"
+        *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
+        fmt="BMHK",
     )
 
     _out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
@@ -552,24 +580,42 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         op=op,
         attn_bias=attn_bias,
     )
+    query = query.transpose(1, 2)
+    key = key.transpose(1, 2)
     attn = (query.float() / k**0.5) @ key.float().transpose(-2, -1)
     if attn_bias is not None:
         if isinstance(attn_bias, xformers.ops.AttentionBias):
+            bias_shape = (1, 1, query.shape[2], key.shape[2])
             tensor_bias = attn_bias.materialize(
-                (query.shape[0], 1, query.shape[1], key.shape[1]),
+                bias_shape,
                 device=query.device,
                 dtype=torch.float32,
             )
         else:
             assert isinstance(attn_bias, torch.Tensor)
             tensor_bias = attn_bias
-        if tensor_bias.ndim == 4:
-            tensor_bias = tensor_bias.reshape([-1, *tensor_bias.shape[2:]])
         attn = attn + tensor_bias.float()
     ref_lse = attn.logsumexp(-1)
-    if isinstance(attn_bias, fmha.attn_bias.BlockDiagonalMask):
-        lse = _block_diag_reshape_lse(lse, attn_bias.q_seqinfo)
-    assert_allclose(lse[:, 0, : ref_lse.shape[1]], ref_lse, atol=2e-4)
+    if isinstance(
+        attn_bias,
+        (
+            fmha.attn_bias.BlockDiagonalMask,
+            fmha.attn_bias.BlockDiagonalGappyKeysMask,
+            fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+            fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+        ),
+    ) and issubclass(op, (fmha.flash.FwOp, fmha.cutlass.FwOp)):
+        # Sometimes LSE is returned in padded format, i.e. (B, H, MAX_LEN) instead of (H, TOTAL_LEN).
+        # Unpad to compare with the reference.
+        # This is the case for Flash Attention when UNPADDED_LSE=False and for CUTLASS.
+        if op.UNPADDED_LSE:
+            lse = lse.unsqueeze(0)
+        else:
+            lse = _block_diag_reshape_lse(lse, attn_bias.q_seqinfo)
+    if op is fmha.cutlass.FwOp:
+        # CUTLASS kernel pads the last dimention of LSE to 32
+        lse = lse[:, :, : ref_lse.shape[2]]
+    assert_allclose(lse, ref_lse, atol=2e-4)
 
 
 @cuda_only
@@ -796,7 +842,11 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 65])
 @pytest.mark.parametrize("q_len", [2, 33])
-@pytest.mark.parametrize("op", ALL_FW_OPS, ids=list(map(lambda t: t.NAME, ALL_FW_OPS)))
+@pytest.mark.parametrize(
+    "op",
+    ALL_FW_OPS_NO_UNPADDED_LSE,
+    ids=list(map(lambda t: t.NAME, ALL_FW_OPS_NO_UNPADDED_LSE)),
+)
 def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     device = "cuda"
     scale = 3
@@ -1943,7 +1993,7 @@ def test_window_size_materialize() -> None:
     "opFW_biasT",
     [
         (op, biasT)
-        for op in ALL_FW_OPS
+        for op in ALL_FW_OPS_NO_UNPADDED_LSE
         for biasT in op.SUPPORTED_ATTN_BIAS_TYPES
         if op.SUPPORTS_BMGHK
     ],
@@ -2013,7 +2063,9 @@ def test_backward_gqa(opBW):
 
 
 @cuda_only
-@pytest.mark.parametrize("opFW", [op for op in ALL_FW_OPS if op.SUPPORTS_BMGHK])
+@pytest.mark.parametrize(
+    "opFW", [op for op in ALL_FW_OPS_NO_UNPADDED_LSE if op.SUPPORTS_BMGHK]
+)
 def test_forward_gqa_one_group(opFW):
     dtype = torch.float16
     B, Mq, Mkv, H, K = 3, 13, 16, 5, 128
@@ -2430,17 +2482,28 @@ def test_cutlassB_iter_order(
 )
 @pytest.mark.parametrize("num_quant_groups", [0, 1, 8])
 @pytest.mark.parametrize("page_size", [64, 128, 256])
+@pytest.mark.parametrize("gappy", [False, True], ids=lambda x: "gappy" if x else "")
 def test_paged_attention(
-    B, MAX_T: int, num_quant_groups: int, page_size: int, op: Type[AttentionFwOpBase]
+    B,
+    MAX_T: int,
+    num_quant_groups: int,
+    page_size: int,
+    op: Type[AttentionFwOpBase],
+    gappy: bool,
 ):
-    if op == fmha.flash.FwOp and page_size % 256 != 0:
-        # TODO: add smaller page sizes when https://github.com/Dao-AILab/flash-attention/pull/824 is merged
-        pytest.skip(
-            "Flash Attention with page size not divisible by 256 is not supported yet"
-        )
-    if op == fmha.flash.FwOp and num_quant_groups > 0:
-        pytest.skip("FA doesn't support quantization")
+    paged_attention_run_inner(
+        B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
+    )
 
+
+@sm80_or_better_only
+@pytest.mark.parametrize("B", [1, 5, 128])
+@pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
+@pytest.mark.parametrize("page_size", [256])
+def test_paged_attenion_flash(B, MAX_T: int, page_size: int):
+    # TODO: add smaller page sizes when https://github.com/Dao-AILab/flash-attention/pull/824 is merged
+    op = fmha.flash.FwOp
+    num_quant_groups = 0
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
 
@@ -2451,6 +2514,7 @@ def paged_attention_run_inner(
     page_size: int,
     op: Type[AttentionFwOpBase],
     bench: bool,
+    gappy: bool = False,
 ) -> None:
     import triton
 
@@ -2463,15 +2527,30 @@ def paged_attention_run_inner(
     D_H = 128
     D_H_KV = D_H // 8 + num_quant_groups if num_quant_groups else D_H
     kv_seqlens = torch.randint(low=1, high=MAX_T + 1, size=(B,)).tolist()
+    # Paged attention requires k.shape[1] and v.shape[1] to be divisible by page_size, so pad
+    padded_per_row_len = ((MAX_T + page_size - 1) // page_size) * page_size
 
-    paged_type = fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask
-    block_type = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask
+    if gappy:
+        make_paged_kwargs = {
+            "paged_type": fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+            "notional_padding": MAX_T,
+        }
+        attn_bias = fmha.attn_bias.BlockDiagonalGappyKeysMask.from_seqlens(
+            q_seqlen=[1] * B,
+            kv_seqstarts=list(range(0, MAX_T * (B + 1), MAX_T)),
+            kv_seqlen=kv_seqlens,
+        )
+    else:
+        make_paged_kwargs = {
+            "paged_type": fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        }
 
-    attn_bias = block_type.from_seqlens(
-        q_seqlen=[1] * B,
-        kv_padding=MAX_T,
-        kv_seqlen=kv_seqlens,
-    )
+        block_type = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask
+        attn_bias = block_type.from_seqlens(  # type: ignore
+            q_seqlen=[1] * B,
+            kv_padding=MAX_T,
+            kv_seqlen=kv_seqlens,
+        )
 
     q = torch.randn((B, 1, N_H_L, D_H), dtype=torch.bfloat16, device="cuda")
     if num_quant_groups:
@@ -2511,11 +2590,9 @@ def paged_attention_run_inner(
 
     k_cache_size_usual = axk.numel()
 
-    # First, create "wasteful" K/V cache, where every block in logical cache has a physical representation,
-    # even if there's nothing stored there
+    # First, create "wasteful" K/V cache, where every block in logical cache
+    # has a physical representation, even if there's nothing stored there
 
-    # Paged attention requires k.shape[1] and v.shape[1] to be divisible by page_size, so pad
-    padded_per_row_len = ((MAX_T + page_size - 1) // page_size) * page_size
     block_tables = torch.arange(
         B * padded_per_row_len // page_size, device="cuda", dtype=torch.int32
     ).reshape(B, -1)
@@ -2533,9 +2610,8 @@ def paged_attention_run_inner(
     axv_padded = axv_padded.expand(-1, -1, N_H_L, -1)
 
     attn_bias_paged = attn_bias.make_paged(
-        block_tables=block_tables, page_size=page_size, paged_type=paged_type
+        block_tables=block_tables, page_size=page_size, **make_paged_kwargs  # type: ignore
     )
-
     y_usual = fmha.memory_efficient_attention_forward(
         axq,
         axk,
@@ -2599,7 +2675,7 @@ def paged_attention_run_inner(
         page_size,
     )
     attn_bias_paged = attn_bias.make_paged(
-        block_tables=block_tables, page_size=page_size, paged_type=paged_type
+        block_tables=block_tables, page_size=page_size, **make_paged_kwargs  # type: ignore
     )
     axk = packed_cache_k.view(1, -1, N_KVH_L, D_H_KV).expand(1, -1, N_H_L, D_H_KV)
     axv = packed_cache_v.view(1, -1, N_KVH_L, D_H_KV).expand(1, -1, N_H_L, D_H_KV)
@@ -2798,10 +2874,19 @@ def test_partial_paged(
     )
     if bmghk:
         assert attn_chunk.shape == (1, B_T, G, N_H_L, D_H)
-        assert lse_chunk.shape == (1, G, N_H_L, B_T)
+        assert lse_chunk.shape == (
+            1,
+            G,
+            N_H_L,
+            B_T,
+        ), f"{lse_chunk.shape=}, {(1, G, N_H_L, B_T)=}"
     else:
         assert attn_chunk.shape == (1, B_T, N_H_L, D_H)
-        assert lse_chunk.shape == (1, N_H_L, B_T)
+        assert lse_chunk.shape == (
+            1,
+            N_H_L,
+            B_T,
+        ), f"{lse_chunk.shape=}, {(1, N_H_L, B_T)=}"
 
 
 @disable_on_rocm
@@ -2925,7 +3010,7 @@ def test_merge_attentions_decoding(
     if not bmghk:
         axk = axk[:, :, 0]
         axv = axv[:, :, 0]
-    attn_full, lse_full = fmha.memory_efficient_attention_forward_requires_grad(
+    attn_full, lse_full = fmha.memory_efficient_attention_partial(
         q,
         axk,
         axv,
@@ -2950,6 +3035,126 @@ def test_merge_attentions_decoding(
         output_dtype=output_dtype,
     )
     assert_allclose(attn_full2, attn_full, rtol=1e-3, atol=1e-3, msg="out2")
+
+
+@disable_on_rocm
+@sm80_or_better_only
+@pytest.mark.parametrize(
+    "dtype,op",
+    [
+        (torch.bfloat16, fmha.triton_splitk.FwOp_S1),
+        (torch.bfloat16, fmha.triton_splitk.FwOp_S32),
+    ],
+    ids=lambda o: f"{o.NAME}" if hasattr(o, "NAME") else str(o),
+)
+@pytest.mark.parametrize("gqa", [False, True], ids=lambda x: "gqa" if x else "")
+def test_merge_attentions_sharedinput(
+    dtype: torch.dtype,
+    op: Type[AttentionFwOpBase],
+    gqa: bool,
+):
+    """
+    Compute decoding attention on chunks of K/V and merge them together.
+    Compare with computing attention on the whole K/V.
+    """
+    MAX_T = 8192
+    N_H_L = 16
+    D_H = 128
+    G = 2
+    torch.manual_seed(1)
+    output_dtype = torch.float32 if op.SUPPORTS_OUTPUT_DTYPE else None
+
+    shared_length = 20
+    full_lengths = [30, 35, 40]
+
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1, 1, 1],
+        kv_padding=MAX_T,
+        kv_seqlen=full_lengths,
+    )
+    attn_bias1 = fmha.attn_bias.BlockDiagonalPaddedKeysMask.from_seqlens(
+        q_seqlen=[2, 1],
+        kv_padding=MAX_T,
+        kv_seqlen=[shared_length, 0],
+    )
+    attn_bias2 = fmha.attn_bias.BlockDiagonalGappyKeysMask.from_seqlens(
+        q_seqlen=[1, 1, 1],
+        kv_seqstarts=[shared_length, MAX_T + shared_length, 2 * MAX_T, 3 * MAX_T],
+        kv_seqlen=[
+            full_lengths[0] - shared_length,
+            full_lengths[1] - shared_length,
+            full_lengths[2],
+        ],
+    )
+
+    q = torch.randn((1, 3, G, N_H_L, D_H), dtype=dtype, device="cuda")
+    k = torch.randn((3, MAX_T, G, 1 if gqa else N_H_L, D_H), dtype=dtype, device="cuda")
+    v = torch.randn_like(k)
+    k[1, :shared_length] = k[0, :shared_length]
+    v[1, :shared_length] = v[0, :shared_length]
+    k = k.flatten(end_dim=1)[None]
+    v = v.flatten(end_dim=1)[None]
+    k = k.expand((1, 3 * MAX_T, G, N_H_L, D_H))
+    v = v.expand((1, 3 * MAX_T, G, N_H_L, D_H))
+
+    attn_chunk1, lse_chunk1 = fmha.memory_efficient_attention_partial(
+        q,
+        k,
+        v,
+        attn_bias1,
+        op=op,
+        output_dtype=output_dtype,
+    )
+    assert attn_chunk1.shape == (1, 3, G, N_H_L, D_H)
+    assert lse_chunk1.shape == (1, G, N_H_L, 3)
+    if gqa:
+        attn_chunk1a, lse_chunk1a = fmha.memory_efficient_attention_partial(
+            q,
+            k.contiguous(),
+            v,
+            attn_bias1,
+            op=op,
+            output_dtype=output_dtype,
+        )
+        assert attn_chunk1a.shape == (1, 3, G, N_H_L, D_H)
+        assert lse_chunk1a.shape == (1, G, N_H_L, 3)
+        assert_allclose(
+            attn_chunk1a.nan_to_num(0, 0, 0), attn_chunk1.nan_to_num(0, 0, 0)
+        )
+        assert_allclose(lse_chunk1a.nan_to_num(0, 0, 0), lse_chunk1.nan_to_num(0, 0, 0))
+
+    attn_chunk2, lse_chunk2 = fmha.memory_efficient_attention_partial(
+        q,
+        k,
+        v,
+        attn_bias2,
+        op=op,
+        output_dtype=output_dtype,
+    )
+    assert attn_chunk2.shape == (1, 3, G, N_H_L, D_H)
+    assert lse_chunk2.shape == (1, G, N_H_L, 3)
+    # Merge attention from all chunks
+
+    attn_out, lse_out = fmha.merge_attentions(
+        [attn_chunk1, attn_chunk2], [lse_chunk1, lse_chunk2], output_dtype=dtype  # type: ignore
+    )
+    assert lse_out is not None
+
+    # Compute attention on the full K/V
+    attn_full, lse_full = fmha.memory_efficient_attention_partial(
+        q,
+        k,
+        v,
+        attn_bias,
+        op=op,
+        output_dtype=output_dtype,
+    )
+    assert_allclose(
+        attn_out.to(attn_full.dtype), attn_full, rtol=1e-2, atol=2e-3, msg="out"
+    )
+    assert_allclose(
+        lse_out.to(lse_full.dtype), lse_full, rtol=1e-3, atol=1e-3, msg="lse"
+    )
 
 
 @sm80_or_better_only
@@ -3057,6 +3262,7 @@ def _merge_attentions_ref(attn_split, lse_split):
 
 
 @sm80_or_better_only
+@skip_if_rocm  # rocm doesn't support backward yet
 def test_memeff_compile() -> None:
     torch.manual_seed(0)
     dtype = torch.float16

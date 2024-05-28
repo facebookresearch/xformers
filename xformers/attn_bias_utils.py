@@ -183,8 +183,10 @@ def create_attn_bias(
         if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask):
             assert page_size is not None
             pages_per_row = (kv_len + page_size - 1) // page_size
-            block_tables = torch.randperm(
-                batch_size * pages_per_row, device=device, dtype=torch.int32
+            block_tables = torch.tensor(
+                r.sample(range(batch_size * pages_per_row), batch_size * pages_per_row),
+                device=device,
+                dtype=torch.int32,
             ).reshape(batch_size, pages_per_row)
             return g_block_diag.make_paged(
                 block_tables=block_tables, page_size=page_size, paged_type=bias_type
@@ -205,6 +207,35 @@ def create_attn_bias(
             q_seqlen=q,
             kv_seqstarts=starts,
             kv_seqlen=k,
+        )
+    if bias_type in [
+        fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+    ]:
+        assert fmt in ["BMHK", "BMGHK"]
+        assert page_size is not None
+        pages_per_row = (kv_len + page_size - 1) // page_size
+        total_queries = q_len * batch_size
+        q = _rand_maxed_partition(r, total_queries, batch_size, total_queries, False)
+        k = [r.randint(1, kv_len) for _ in range(batch_size)]
+        row_size = pages_per_row * page_size
+        starts = [row_size * i + r.randint(0, row_size - ki) for i, ki in enumerate(k)]
+        starts.append(pages_per_row * batch_size * page_size)
+        block_diag_type = bias_type._UNPAGED_TYPE  # type: ignore
+        g_block_diag = block_diag_type.from_seqlens(
+            q_seqlen=q,
+            kv_seqstarts=starts,
+            kv_seqlen=k,
+        )
+        block_tables = torch.tensor(
+            r.sample(range(batch_size * pages_per_row), batch_size * pages_per_row),
+            device=device,
+            dtype=torch.int32,
+        ).reshape(batch_size, pages_per_row)
+        return g_block_diag.make_paged(
+            block_tables=block_tables,
+            page_size=page_size,
+            paged_type=bias_type,
+            notional_padding=page_size * pages_per_row,
         )
     if bias_type == fmha.attn_bias.LocalAttentionFromBottomRightMask:
         return bias_type(

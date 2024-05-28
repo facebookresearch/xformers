@@ -32,14 +32,14 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
-    const c10::optional<at::Tensor>& kernel_bias, // additive attention bias
+    const std::optional<at::Tensor>& kernel_bias, // additive attention bias
     const at::Tensor& out,
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_q_dummy,
+    const std::optional<at::Tensor>& cu_seqlens_q_dummy,
     // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
     // position of the first key token for batch $b
-    const c10::optional<at::Tensor>& cu_seqlens_k_dummy,
+    const std::optional<at::Tensor>& cu_seqlens_k_dummy,
     // (Mode 1MHK only) Maximum sequence length across batches
     int64_t max_seqlen_q,
     // (Mode 1MHK only) Maximum sequence length across batches
@@ -51,9 +51,9 @@ mem_efficient_attention_backward_cutlass(
     const at::Tensor& philox_offset, // offset into random number sequence
     int64_t custom_mask_type,
     const bool bias_requires_grad,
-    const c10::optional<double> scale,
-    c10::optional<int64_t> num_splits_key,
-    const c10::optional<int64_t> window_size) {
+    const std::optional<double> scale,
+    std::optional<int64_t> num_splits_key,
+    const std::optional<int64_t> window_size) {
 #if defined(USE_MEM_EFF_ATTENTION)
   if (!grad_out_.defined()) {
     return std::make_tuple(Tensor{}, Tensor{}, Tensor{}, Tensor{});
@@ -61,8 +61,8 @@ mem_efficient_attention_backward_cutlass(
   // This path is used when we directly call _efficient_attention_forward
   // from python.
   // This is needed because SaveVariable automatically converts
-  // c10::optional to undefined tensor
-  c10::optional<Tensor> bias, cu_seqlens_q, cu_seqlens_k;
+  // std::optional to undefined tensor
+  std::optional<Tensor> bias, cu_seqlens_q, cu_seqlens_k;
   bias = kernel_bias.has_value() && !kernel_bias->defined() ? c10::nullopt
                                                             : kernel_bias;
   cu_seqlens_q =

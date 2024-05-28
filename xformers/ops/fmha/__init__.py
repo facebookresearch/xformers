@@ -3,30 +3,14 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
+from typing import Any, List, Optional, Tuple, Type, Union, cast
 
 import torch
 
-from . import (
-    attn_bias,
-    ck,
-    ck_decoder,
-    ck_splitk,
-    cutlass,
-    decoder,
-    flash,
-    small_k,
-    triton_splitk,
-)
-from .attn_bias import (
-    AttentionBias,
-    BlockDiagonalGappyKeysMask,
-    BlockDiagonalMask,
-    BlockDiagonalPaddedKeysMask,
-    LowerTriangularFromBottomRightMask,
-    LowerTriangularMask,
-    PagedBlockDiagonalPaddedKeysMask,
-)
+from . import attn_bias
+from . import attn_bias as _attn_bias
+from . import ck, ck_decoder, ck_splitk, cutlass, decoder, flash, small_k, triton_splitk
+from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -96,10 +80,11 @@ class _fMHA(torch.autograd.Function):
         if op_bw is None and (
             inp.query.requires_grad or inp.key.requires_grad or inp.value.requires_grad
         ):
+            is_valid_unpadded_lse = _valid_unpadded_lse_shape(op_ctx.lse, inp)
             # NOTE: We need to check tensor strides to decide which operator we run in the BW pass.
             # Unfortunately, PyTorch only allows to call this function during the FW pass, so
             # we decide the operator to use now.
-            op_bw = _dispatch_bw(inp)
+            op_bw = _dispatch_bw(inp, is_valid_unpadded_lse)
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
@@ -422,6 +407,49 @@ def _memory_efficient_attention_forward_requires_grad(
     return (out[0].reshape(output_shape), out[1])
 
 
+def _valid_padded_lse_shape(lse, inp):
+    invalid_shape = (
+        lse.ndim != 3
+        # Dim 0
+        or (
+            not isinstance(inp.attn_bias, BlockDiagonalMask)
+            and lse.shape[0] != inp.query.shape[0]
+        )
+        or (
+            isinstance(inp.attn_bias, BlockDiagonalMask)
+            and lse.shape[0] != inp.attn_bias.q_seqinfo.seqstart.shape[0] - 1
+        )
+        # Dim 1
+        or lse.shape[1] != inp.query.shape[2]
+        # Dim 2
+        or (
+            not isinstance(inp.attn_bias, BlockDiagonalMask)
+            and lse.shape[2] < inp.query.shape[1]
+        )
+    )
+    return not invalid_shape
+
+
+def _valid_unpadded_lse_shape(lse, inp):
+    return (
+        inp.query.ndim == 4
+        and lse.ndim == 2
+        # Dim 0
+        and lse.shape[0] == inp.query.shape[2]
+        # Dim 1
+        and lse.shape[1] == inp.attn_bias.q_seqinfo.seqstart_py[-1]
+        and isinstance(
+            inp.attn_bias,
+            (
+                _attn_bias.BlockDiagonalMask,
+                _attn_bias.BlockDiagonalGappyKeysMask,
+                _attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                _attn_bias.BlockDiagonalPaddedKeysMask,
+            ),
+        )
+    )
+
+
 def _memory_efficient_attention_backward(
     ctx: Context,
     inp: Inputs,
@@ -443,26 +471,13 @@ def _memory_efficient_attention_backward(
         x.shape for x in (inp.query, inp.key, inp.value)
     )
     inp.normalize_bmhk()
-    # LSE has shape [B, H, M] while query has shape [B, M, H, K]
-    if (
-        ctx.lse.ndim != 3
-        # Dim 0
-        or (
-            not isinstance(inp.attn_bias, BlockDiagonalMask)
-            and ctx.lse.shape[0] != inp.query.shape[0]
-        )
-        or (
-            isinstance(inp.attn_bias, BlockDiagonalMask)
-            and ctx.lse.shape[0] != inp.attn_bias.q_seqinfo.seqstart.shape[0] - 1
-        )
-        # Dim 1
-        or ctx.lse.shape[1] != inp.query.shape[2]
-        # Dim 2
-        or (
-            not isinstance(inp.attn_bias, BlockDiagonalMask)
-            and ctx.lse.shape[2] < inp.query.shape[1]
-        )
-    ):
+    # LSE has shape [B, H, M] or [H, total_q_len], while query has shape [B, M, H, K] or [1, total_q_len, H, K]
+    support_unpadded_lse = op is None or op.SUPPORTS_UNPADDED_LSE
+    is_valid_unpadded_lse = support_unpadded_lse and _valid_unpadded_lse_shape(
+        ctx.lse, inp
+    )
+    is_valid_padded_lse = _valid_padded_lse_shape(ctx.lse, inp)
+    if not (is_valid_padded_lse or is_valid_unpadded_lse):
         raise ValueError(
             "Input tensors have incompatible shapes."
             f"lse.shape    : {ctx.lse.shape} \n"
@@ -472,7 +487,7 @@ def _memory_efficient_attention_backward(
     ctx.out = bmk2bmhk(ctx.out, 1)
 
     if op is None:
-        op = _dispatch_bw(inp)
+        op = _dispatch_bw(inp, is_valid_unpadded_lse)
     elif not _skip_op_checks:
         _ensure_op_supports_or_raise(
             ValueError, "memory_efficient_attention_backward", op, inp
@@ -504,16 +519,21 @@ def memory_efficient_attention_partial(
     """
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
-    if not isinstance(
-        attn_bias,
-        (
-            type(None),
-            BlockDiagonalGappyKeysMask,
-            BlockDiagonalPaddedKeysMask,
-            PagedBlockDiagonalPaddedKeysMask,
-            LowerTriangularFromBottomRightMask,
-            LowerTriangularMask,
-        ),
+    if not (
+        isinstance(
+            attn_bias,
+            (
+                type(None),
+                _attn_bias.BlockDiagonalGappyKeysMask,
+                _attn_bias.BlockDiagonalPaddedKeysMask,
+                _attn_bias.PagedBlockDiagonalGappyKeysMask,
+                _attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                _attn_bias.LowerTriangularFromBottomRightMask,
+                _attn_bias.LowerTriangularMask,
+            ),
+        )
+        or op is None
+        or op.UNPADDED_LSE
     ):
         raise ValueError(
             f"{type(attn_bias)} is not supported in memory_efficient_attention_partial."
@@ -734,14 +754,14 @@ class _MergeAttentions(torch.autograd.Function):
         return tuple(ret)
 
 
-ALL_FW_OPS: Sequence[Type[AttentionFwOpBase]] = [
+ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
     small_k.FwOp,
     triton_splitk.FwOp,
 ]
 
-ALL_BW_OPS: Sequence[Type[AttentionBwOpBase]] = [
+ALL_BW_OPS: List[Type[AttentionBwOpBase]] = [
     cutlass.BwOp if torch.version.cuda else ck.BwOp,
     flash.BwOp,
     small_k.BwOp,

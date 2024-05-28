@@ -37,22 +37,22 @@ efficient_attention_forward_cutlass(
     const at::Tensor& query, // [b, seqlen, num_heads, K]
     const at::Tensor& key, // [b, seqlen, num_heads, K]
     const at::Tensor& value, // [b, seqlen, num_heads, Kv]
-    const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
+    const std::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
-    const c10::optional<at::Tensor>& seqstart_q,
+    const std::optional<at::Tensor>& seqstart_q,
     // (Mode 1MHK only) [b+1]: cu_seqlen_k[b] contains the
     // position of the first key token for batch $b
-    const c10::optional<at::Tensor>& seqstart_k,
+    const std::optional<at::Tensor>& seqstart_k,
     // (Mode 1MHK only) Maximum sequence length across batches
-    const c10::optional<int64_t> max_seqlen_q_,
-    const c10::optional<int64_t> max_seqlen_k_,
+    const std::optional<int64_t> max_seqlen_q_,
+    const std::optional<int64_t> max_seqlen_k_,
     double dropout_p, // attention matrix dropout probability
     int64_t custom_mask_type,
     bool compute_logsumexp,
-    c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k,
-    const c10::optional<int64_t> window_size) {
+    std::optional<double> scale,
+    const std::optional<at::Tensor>& seqlen_k,
+    const std::optional<int64_t> window_size) {
 #if defined(USE_MEM_EFF_ATTENTION)
   // TODO In theory it is possible to compile with _CUDA_ARCH < 5.0 and run on a
   // machine that is >= 5.0. In practice, this is not a problem but since

@@ -28,6 +28,7 @@ from .attn_bias import (
     BlockDiagonalGappyKeysMask,
     BlockDiagonalPaddedKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
@@ -38,6 +39,37 @@ def _strides(x: Optional[torch.Tensor], *stride_names: str):
         return {f"stride_{name}": None for name in stride_names}
     assert x.ndim == len(stride_names)
     return {f"stride_{name}": s for name, s in zip(stride_names, x.stride())}
+
+
+def _is_supported_causal_bias(attn_bias: Any) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ),
+    )
+
+
+def _is_supported_gappy_bias(attn_bias: Any) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            BlockDiagonalGappyKeysMask,
+            PagedBlockDiagonalGappyKeysMask,
+        ),
+    )
+
+
+def _is_supported_paged_bias(attn_bias: Any) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            PagedBlockDiagonalGappyKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
+        ),
+    )
 
 
 AUTOTUNER_KEY = [
@@ -68,7 +100,9 @@ if TYPE_CHECKING or _has_triton21():
         LSE_splitk,  # [B, H, split_k, Mq]
         block_tables,
         Seq_len,
-        Seq_starts,
+        Seq_starts_k,
+        Seq_starts_q,
+        Seq_starts_q_multiplier,
         additive_bias,
         stride_qz,
         stride_qm,
@@ -179,12 +213,27 @@ if TYPE_CHECKING or _has_triton21():
         else:
             kv_len = N_CTX_K
 
+        if Seq_starts_k is None:
+            start_kv_idx = 0
+        else:
+            start_kv_idx = tl.load(Seq_starts_k + off_z)
+
+        if Seq_starts_q is None:
+            q_len = N_CTX_Q
+            queries_use_batch_dim = 1
+            off_m = 0
+        else:
+            queries_use_batch_dim = 0
+            off_m = tl.load(Seq_starts_q + off_z) * Seq_starts_q_multiplier
+            q_len = tl.load(Seq_starts_q + off_z + 1) * Seq_starts_q_multiplier - off_m
+
         k_base = K + off_h * stride_kh + off_g * stride_kg
         v_base = V + off_h * stride_vh + off_g * stride_vg
 
         # Boundaries of split-k chunk
         chunk_hi = (splitk_idx + 1) * BLOCK_N_PER_SPLIT
         chunk_lo = splitk_idx * BLOCK_N_PER_SPLIT
+        ignore_in_first_block = 0
         # For paged attention case K/V_block_ptr are defined inside the loop
         # whereas for non-paged case they are defined before the loop.
         if PAGE_SIZE > 0:
@@ -194,17 +243,17 @@ if TYPE_CHECKING or _has_triton21():
             # In the last chunk, shift hi to the right, in the other chunks, shift it to the left
             is_last_chunk = splitk_idx == tl.num_programs(2) - 1
             shift = BLOCK_N - 1 if is_last_chunk else 0
-            lo = (chunk_lo // BLOCK_N) * BLOCK_N
+            lo = (tl.maximum(chunk_lo, start_kv_idx) // BLOCK_N) * BLOCK_N
+            ignore_in_first_block = tl.maximum(0, (start_kv_idx - lo))
             hi = ((chunk_hi + shift) // BLOCK_N) * BLOCK_N
-            hi = tl.minimum(hi, kv_len)
+            hi = tl.minimum(hi, kv_len + start_kv_idx)
             block_table = block_tables + stride_blocktablesz * off_z
             # Offset in integer blocks
             logical_block_idx = lo // BLOCK_N
         else:
             lo = chunk_lo
             hi = tl.minimum(chunk_hi, kv_len)
-            if Seq_starts is not None:
-                start_kv_idx = tl.load(Seq_starts + off_z)
+            if Seq_starts_k is not None:
                 k_base += start_kv_idx * stride_kn
                 v_base += start_kv_idx * stride_vn
             else:
@@ -267,8 +316,12 @@ if TYPE_CHECKING or _has_triton21():
                 )
 
         Q_block_ptr = tl.make_block_ptr(
-            base=Q + off_h * stride_qh + off_z * stride_qz + off_g * stride_qg,
-            shape=(N_CTX_Q, D_PER_GROUP),
+            base=Q
+            + off_m * stride_qm
+            + off_h * stride_qh
+            + off_z * stride_qz * queries_use_batch_dim
+            + off_g * stride_qg,
+            shape=(q_len, BLOCK_DMODEL),
             strides=(stride_qm, stride_qk),
             offsets=(start_m * BLOCK_M, 0),
             block_shape=(BLOCK_M, D_PER_GROUP),
@@ -390,6 +443,11 @@ if TYPE_CHECKING or _has_triton21():
                 qk += tl.dot(q[i], k[i])  # noqa: F821
             qk *= qk_scale
 
+            if start_n == lo and ignore_in_first_block > 0:
+                qk = tl.where(
+                    tl.arange(0, BLOCK_N) < ignore_in_first_block, float("-inf"), qk
+                )
+
             if HAS_ADDITIVE_BIAS:
                 loaded_bias = tl.load(
                     additive_bias_block_ptr,
@@ -437,11 +495,12 @@ if TYPE_CHECKING or _has_triton21():
         # write back O
         O_block_ptr = tl.make_block_ptr(
             base=Out_splitK
-            + off_z.to(tl.int64) * stride_osk_z
+            + off_z.to(tl.int64) * stride_osk_z * queries_use_batch_dim
+            + off_m * stride_osk_m
             + off_g * stride_osk_g
             + off_h * stride_osk_h
             + splitk_idx * stride_osk_s,
-            shape=(N_CTX_Q, D_PER_GROUP),
+            shape=(q_len, D_PER_GROUP),
             strides=(stride_osk_m, 1),
             offsets=(start_m * BLOCK_M, 0),
             block_shape=(BLOCK_M, D_PER_GROUP),
@@ -461,13 +520,14 @@ if TYPE_CHECKING or _has_triton21():
         if WRITE_LSE:
             LSE_splitk_ptr = (
                 LSE_splitk
-                + off_z * stride_lsek_z
+                + off_z * stride_lsek_z * queries_use_batch_dim
+                + off_m * stride_lsek_m
                 + off_g * stride_lsek_g
                 + off_h * stride_lsek_h
                 + splitk_idx * stride_lsek_s
                 + (start_m * BLOCK_M + tl.arange(0, BLOCK_M)) * stride_lsek_m
             )
-            mask = start_m * BLOCK_M + tl.arange(0, BLOCK_M) < N_CTX_Q
+            mask = start_m * BLOCK_M + tl.arange(0, BLOCK_M) < q_len
             # Can be float64 to improve numerics
             lse_dtype = LSE_splitk.dtype.element_ty
             tl.store(
@@ -734,6 +794,7 @@ if TYPE_CHECKING or _has_triton21():
             out_splitk * sumexp_normalized_splitk[:, None], axis=0
         )
         acc = numerator_normalized / sumexp_normalized
+        acc = tl.where(lse_max == float("-inf"), 0.0, acc)
 
         Out_ptr = (
             Out
@@ -756,7 +817,9 @@ if TYPE_CHECKING or _has_triton21():
                 + off_h * stride_lse_h
                 + off_m * stride_lse_m
             )
-            tl.store(l_ptrs, (lse_max + tl.math.log2(sumexp_normalized) / 1.44269504))
+            to_store = lse_max + tl.math.log2(sumexp_normalized) / 1.44269504
+            to_store = tl.where(lse_max == float("-inf"), lse_max, to_store)
+            tl.store(l_ptrs, to_store)
 
     @triton.jit
     def _splitK_reduce_varargs(
@@ -837,6 +900,7 @@ if TYPE_CHECKING or _has_triton21():
             numerator_normalized += out_splitk * sumexp_normalized_splitk
 
         acc = numerator_normalized / sumexp_normalized
+        acc = tl.where(lse_max == float("-inf"), 0.0, acc)
 
         Out_ptr = (
             Out
@@ -860,6 +924,7 @@ if TYPE_CHECKING or _has_triton21():
                 + off_m * stride_lse_m
             )
             to_store = lse_max + tl.math.log2(sumexp_normalized) / 1.44269504
+            to_store = tl.where(lse_max == float("-inf"), lse_max, to_store)
             tl.store(l_ptrs, to_store)
 
     @triton.jit
@@ -1038,12 +1103,35 @@ class FwOp(AttentionFwOpBase):
         group_dequant = group_quant[..., 1:] * scale + shift
     ...
 
-    This op uses Paged Attention when bias is PagedBlockDiagonalPaddedKeysMask
-    or PagedBlockDiagonalCausalWithOffsetPaddedKeysMask.
+    This op uses Paged Attention when bias is one of the Paged* classes.
     In this case bias has additional fields:
     - block_tables of shape [batch_size, max_num_pages]
     - K/V of shape [1, max_num_pages * page_size, num_heads, head_dim]
       or [1, max_num_pages * page_size, num_groups, num_heads, head_dim]
+
+    The shape which the kernel takes the queries and the output
+    is quite different from the user interface. There are three
+    types of input (a) no bias / tensor bias, (b) variable q_len
+    (which is only for non causal) and (c) other bias objects.
+    From the interface to the kernel the following changes happen.
+
+    (0) In all cases, a group dimension may need to be added.
+
+    (1) For (c), a batch dimension is created, reshaping from (1, B*Mq, G, Hq, K)
+        to (B, Mq, G, Hq, K)
+
+    (2) For (a) and (c), in the case of multiquery (i.e. the head dimension
+        of keys and values is expanded), the head-swapping trick
+        reshaping from (B, Mq, G, Hq, K) to (B, M=Hq*Mq, G, H=1, K)
+
+    (3) For (b), in the case of multiquery, the head-swapping trick
+        trick, reshaping from (1, Mq, G, Hq, K) to (1, Mq*Hq, G, H=1, K)
+        Note here that Mq is a single long dimension which spans all the queries
+        in the batch, unlike in case (C). Also that Hq has to run faster than
+        Mq in order that the queries in a batch element remain evenly spaced.
+
+    In all cases, the shape as seen by the kernel is called (Bqq, Mqq, G, H, K).
+    The kernel operates on B batch elements and M queries per batch element.
     """
 
     OPERATOR = _fwd_kernel_splitK
@@ -1062,6 +1150,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        PagedBlockDiagonalGappyKeysMask,
         PagedBlockDiagonalPaddedKeysMask,
     )
     SUPPORTS_DROPOUT = False
@@ -1124,20 +1213,23 @@ class FwOp(AttentionFwOpBase):
         is_block_diagonal = isinstance(
             d.attn_bias, (BlockDiagonalPaddedKeysMask, BlockDiagonalGappyKeysMask)
         )
-        is_paged = isinstance(d.attn_bias, PagedBlockDiagonalPaddedKeysMask)
+        is_paged = _is_supported_paged_bias(d.attn_bias)
+        is_causal = _is_supported_causal_bias(d.attn_bias)
         if is_block_diagonal or is_paged:
             seqinfo = d.attn_bias.q_seqinfo  # type: ignore
             if q_len != seqinfo.seqstart_py[-1]:
                 reasons.append(
                     f"Expected total {seqinfo.seqstart_py[-1]} queries not {q_len}"
                 )
-            q_len = seqinfo.min_seqlen
-            if q_len != seqinfo.max_seqlen:
-                reasons.append("Variable query len is not supported.")
-        if q_len > 16 and isinstance(d.attn_bias, AttentionBias):
+            q_len = seqinfo.max_seqlen
+            if is_causal and q_len != seqinfo.min_seqlen:
+                reasons.append("Variable query len is not supported for causal masks.")
+        if q_len > 16 and is_causal:
             # 16 is the minimum BLOCK_M which gets used
             # XXX I don't really understand why this is needed.
-            reasons.append("Query length should not be larger than 16")
+            reasons.append(
+                "Query length should not be larger than 16 for causal attention biases"
+            )
 
         if is_paged:
             page_size = d.attn_bias.page_size  # type: ignore
@@ -1207,52 +1299,54 @@ class FwOp(AttentionFwOpBase):
         output_dtype = inp.get_output_dtype()
         if isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = inp.attn_bias
-            attn_bias = None
+            attn_bias: Optional[AttentionBias] = None
         else:
             attn_bias_tensor = None
             attn_bias = inp.attn_bias
         seq_len = None
-        seq_starts = None
+        seq_starts_k = None
+        seq_starts_q = None
+        seq_starts_q_multiplier = None
         q, k, v = inp.get_qkv_in_bmghk()
         IS_CAUSAL = False
         NUM_QUERIES_CAUSAL = 1
+        variable_q = False
 
         is_block_diagonal = isinstance(attn_bias, BlockDiagonalPaddedKeysMask)
-        is_block_diagonal_gappy = isinstance(attn_bias, BlockDiagonalGappyKeysMask)
-        is_paged = isinstance(attn_bias, PagedBlockDiagonalPaddedKeysMask)
+        is_gappy = _is_supported_gappy_bias(attn_bias)
+        is_paged = _is_supported_paged_bias(attn_bias)
         if attn_bias is not None:
-            assert is_paged or is_block_diagonal or is_block_diagonal_gappy
+            assert is_paged or is_block_diagonal or is_gappy
             # TODO: do we really need to do this cast? seems fishy but
             # I just copied it from the decoder.py
             attn_bias.k_seqinfo.to(inp.query.device)  # type: ignore
             attn_bias.q_seqinfo.to(inp.query.device)  # type: ignore
             seq_len = attn_bias.k_seqinfo.seqlen  # type: ignore
             assert seq_len.stride(0) == 1
-            if is_block_diagonal_gappy:
-                seq_starts = attn_bias.k_seqinfo.seqstart  # type: ignore
-                assert seq_starts.stride(0) == 1
+            if is_gappy:
+                seq_starts_k = attn_bias.k_seqinfo.seqstart  # type: ignore
+                assert seq_starts_k.stride(0) == 1
             assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
+            multiple_q = attn_bias.q_seqinfo.max_seqlen > 1  # type: ignore
+            IS_CAUSAL = multiple_q and _is_supported_causal_bias(attn_bias)
+            variable_q = multiple_q and not IS_CAUSAL
             Kkv = v.shape[-1]
 
-            # assume kv has been padded
-            q = q.view(B, -1, G, Hq, Kq)
-            if is_paged or is_block_diagonal_gappy:
+            if variable_q:
+                seq_starts_q = attn_bias.q_seqinfo.seqstart  # type: ignore
+                seq_starts_q_multiplier = 1
+                assert seq_starts_q.stride(0) == 1
+            else:
+                q = q.view(B, -1, G, Hq, Kq)
+            if is_paged or is_gappy:
                 k = k.view(1, -1, G, Hq, Kkv)
                 v = v.view(1, -1, G, Hq, Kkv)
             else:
                 k = k.view(B, -1, G, Hq, Kkv)
                 v = v.view(B, -1, G, Hq, Kkv)
             Mq = q.shape[1]
-            IS_CAUSAL = Mq > 1 and isinstance(
-                attn_bias,
-                (
-                    BlockDiagonalCausalWithOffsetPaddedKeysMask,
-                    BlockDiagonalCausalWithOffsetGappyKeysMask,
-                    PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
-                ),
-            )
             NUM_QUERIES_CAUSAL = Mq
         else:
             B, Mq, G, Hq, Kq = q.shape
@@ -1270,9 +1364,15 @@ class FwOp(AttentionFwOpBase):
             and attn_bias_tensor is None
         ):
             mqa_swap_seqlen_head = True
-            # This is a copy iff Mq, G and H are all > 1.
-            # The idea is Hq,Mq are reshaped to (M=Hq*Mq, H=1)
-            q = q.permute(0, 3, 1, 2, 4).reshape(B, -1, G, 1, Kq)
+            if variable_q:
+                seq_starts_q_multiplier = Hq
+                assert q.shape[0] == 1
+                # The idea is Hq,Mq are reshaped to (M=Mq*Hq, H=1)
+                q = q.permute(0, 1, 3, 2, 4).reshape(1, -1, G, 1, Kq)
+            else:
+                # This is a copy iff Mq, G and H are all > 1.
+                # The idea is Hq,Mq are reshaped to (M=Hq*Mq, H=1)
+                q = q.permute(0, 3, 1, 2, 4).reshape(q.shape[0], -1, G, 1, Kq)
             k = k[:, :, :, :1]
             v = v[:, :, :, :1]
 
@@ -1284,10 +1384,13 @@ class FwOp(AttentionFwOpBase):
             Lk = k.shape[-1]
             PACKED_PER_VAL = 1
 
-        B, Mk, G, H, Kkv = k.shape
-        B, M, G, H, Kq = q.shape
+        _, Mk, G, H, Kkv = k.shape
+        Bqq, Mqq, G, H, Kq = q.shape
         assert Lk == Kq, f"Keys have head dim {Lk} but queries have head dim {Kq}"
-
+        if variable_q:
+            M = attn_bias.q_seqinfo.max_seqlen * seq_starts_q_multiplier  # type: ignore
+        else:
+            M = Mqq
         page_size = inp.attn_bias.page_size if is_paged else 0  # type: ignore
         block_tables = None
         kv_cache_blocks_per_row = 0
@@ -1304,22 +1407,22 @@ class FwOp(AttentionFwOpBase):
             # Use heuristics
             split_k = cls.get_split_k(B, G, H, Mk)
 
-        # M_ceil = M rounded up to a multiple of MAX_BLOCK_M
-        M_ceil = (M + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
+        # M_ceil = Mqq rounded up to a multiple of MAX_BLOCK_M
+        M_ceil = (Mqq + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
         IS_SPLITK = split_k > 1  # or cls.autotune?
-        output_shape = (B, Mq, G, Hq, Kq)
+        output_shape = (Bqq, Mq, G, Hq, Kq)
         if IS_SPLITK:
             o_splitk_dtype = (
                 torch.float64 if output_dtype == torch.float64 else torch.float32
             )
             o_splitk = torch.empty(
-                [B, G, H, split_k, M_ceil, Kq],
+                [Bqq, G, H, split_k, M_ceil, Kq],
                 dtype=o_splitk_dtype,
                 device=q.device,
             )
         else:
             o_splitk = torch.empty(
-                [B, split_k, M, G, H, Kq],
+                [Bqq, split_k, Mqq, G, H, Kq],
                 dtype=output_dtype,
                 device=q.device,
             ).permute(0, 3, 4, 1, 2, 5)
@@ -1328,7 +1431,7 @@ class FwOp(AttentionFwOpBase):
         output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK or needs_gradient:
             lse_splitk = torch.empty(
-                [B, G, H, split_k, M],
+                [Bqq, G, H, split_k, Mqq],
                 dtype=torch.float64 if IS_SPLITK or output_f64_lse else torch.float32,
                 device=q.device,
             )
@@ -1374,7 +1477,9 @@ class FwOp(AttentionFwOpBase):
             LSE_splitk=lse_splitk,
             block_tables=block_tables,
             Seq_len=seq_len,
-            Seq_starts=seq_starts,
+            Seq_starts_k=seq_starts_k,
+            Seq_starts_q=seq_starts_q,
+            Seq_starts_q_multiplier=seq_starts_q_multiplier,
             additive_bias=attn_bias_tensor,
             **_strides(q, "qz", "qm", "qg", "qh", "qk"),
             **_strides(k, "kz", "kn", "kg", "kh", "kk"),
@@ -1406,16 +1511,22 @@ class FwOp(AttentionFwOpBase):
             **extra_args,
         )
         if not IS_SPLITK:
-            out = o_splitk[:, :, :, 0]  # B, G, H, M, Kq
-            out = out.view(B, G, Hq, Mq, Kq)
-            # This is a copy iff mqa_swap_seqlen_head and Mq, G and Hq are all > 1.
-            out = out.permute(0, 3, 1, 2, 4).contiguous()
+            out = o_splitk[:, :, :, 0]  # Bqq, G, H, Mqq, Kq
+            if variable_q and mqa_swap_seqlen_head:
+                out = out.view(1, G, Mq, Hq, Kq).permute(0, 2, 1, 3, 4).contiguous()
+            else:
+                out = out.view(Bqq, G, Hq, Mq, Kq)
+                # This is a copy iff mqa_swap_seqlen_head and Mq, G and Hq are all > 1.
+                out = out.permute(0, 3, 1, 2, 4).contiguous()
             if needs_gradient:
                 assert lse_splitk is not None
-                lse = lse_splitk[:, :, :, 0]  # B, G, H, M
-                lse = lse.view(B, G, Hq, Mq)
-                if attn_bias is not None:
-                    lse = lse.permute(1, 2, 0, 3).reshape(1, G, Hq, B * Mq)
+                lse = lse_splitk[:, :, :, 0]  # Bqq, G, H, Mqq
+                if variable_q and mqa_swap_seqlen_head:
+                    lse = lse.view(1, G, Mq, Hq).permute(0, 1, 3, 2)
+                else:
+                    lse = lse.view(Bqq, G, Hq, Mq)
+                    if attn_bias is not None and not variable_q:
+                        lse = lse.permute(1, 2, 0, 3).reshape(1, G, Hq, B * Mq)
             else:
                 lse = None
 
@@ -1437,9 +1548,9 @@ class FwOp(AttentionFwOpBase):
         output_lse = None
         if needs_gradient:
             lse_dtype = torch.float64 if output_f64_lse else torch.float32
-            if attn_bias is None:
+            if attn_bias is None or variable_q:
                 output_lse = torch.empty(
-                    (B, G, Hq, Mq), device=q.device, dtype=lse_dtype
+                    (Bqq, G, Hq, Mq), device=q.device, dtype=lse_dtype
                 )
                 lse = output_lse
             else:
@@ -1448,13 +1559,23 @@ class FwOp(AttentionFwOpBase):
                 )
                 lse = output_lse.view(G, Hq, B, Mq).permute(2, 0, 1, 3)
 
-        o_splitk = o_splitk[:, :, :, :, :M]
+        o_splitk = o_splitk[:, :, :, :, :Mqq]
 
         if mqa_swap_seqlen_head:
-            o_splitk = o_splitk.view(B, G, split_k, Hq, Mq, Kq).permute(
-                0, 1, 3, 2, 4, 5
-            )
-            lse_splitk = lse_splitk.view(B, G, split_k, Hq, Mq).permute(0, 1, 3, 2, 4)
+            if variable_q:
+                o_splitk = o_splitk.view(Bqq, G, split_k, Mq, Hq, Kq).permute(
+                    0, 1, 4, 2, 3, 5
+                )
+                lse_splitk = lse_splitk.view(Bqq, G, split_k, Mq, Hq).permute(
+                    0, 1, 4, 2, 3
+                )
+            else:
+                o_splitk = o_splitk.view(Bqq, G, split_k, Hq, Mq, Kq).permute(
+                    0, 1, 3, 2, 4, 5
+                )
+                lse_splitk = lse_splitk.view(Bqq, G, split_k, Hq, Mq).permute(
+                    0, 1, 3, 2, 4
+                )
 
         merge_attentions(out, lse, o_splitk, lse_splitk)
 
@@ -1467,7 +1588,7 @@ class FwOp(AttentionFwOpBase):
         if Mk == 0:
             out.zero_()
 
-        if attn_bias is not None:
+        if attn_bias is not None and not variable_q:
             out = out.view(1, B * Mq, G, Hq, Kq)
 
         if output_lse is None:
@@ -1512,8 +1633,6 @@ def merge_attentions(
     lse_split: torch.Tensor,
 ):
     B, M, G, H, Kq = attn_out.shape
-    if lse_out is not None:
-        B3, G3, H3, M3 = lse_out.shape
     B1, G1, H1, split_k, M1, Kq1 = attn_split.shape
     B2, G2, H2, split_k1, M2 = lse_split.shape
 
@@ -1528,6 +1647,7 @@ def merge_attentions(
         split_k == split_k1
     ), f"Incompatible shapes: {attn_split.shape=}, {lse_split.shape=}"
     if lse_out is not None:
+        B3, G3, H3, M3 = lse_out.shape
         assert (
             B == B3 and G == G3 and H == H3 and M == M3
         ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
@@ -1620,8 +1740,6 @@ def _prepare_reduce_kernel_params(
 ) -> Tuple[Dict[str, int], Tuple[int, int, int]]:
 
     B, M, G, H, Kq = attn_out.shape
-    if lse_out is not None:
-        B3, G3, H3, M3 = lse_out.shape
     B1, G1, H1, M1, Kq1 = attn_split[0].shape
     B2, G2, H2, M2 = lse_split[0].shape
 
@@ -1633,6 +1751,7 @@ def _prepare_reduce_kernel_params(
         and Kq == Kq1
     ), f"Incompatible shapes: {attn_out.shape=}, {attn_split[0].shape=}, {lse_split[0].shape=}"
     if lse_out is not None:
+        B3, G3, H3, M3 = lse_out.shape
         assert (
             B == B3 and G == G3 and H == H3 and M == M3
         ), f"Incompatible shapes: {attn_out.shape=}, {lse_out.shape=}"
