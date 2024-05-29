@@ -59,21 +59,27 @@ struct FmhaBwdBlockTile;
 template <>
 struct FmhaBwdBlockTile<32> {
   using type = ck::Sequence<128, 128, 32, 32, 32, 32, 32, 32, 32>;
+  using gemm02_warps = ck::Sequence<1, 4, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck::Sequence<4, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck::Sequence<4, 1, 1>; // default for gemm4
 };
 
 template <>
 struct FmhaBwdBlockTile<64> {
   using type = ck::Sequence<64, 128, 32, 32, 32, 32, 32, 64, 64>;
+  using gemm02_warps = ck::Sequence<1, 4, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck::Sequence<4, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck::Sequence<2, 2, 1>; // default for gemm4
 };
 
 template <>
 struct FmhaBwdBlockTile<128> {
   using type = ck::Sequence<64, 128, 32, 32, 32, 32, 32, 128, 128>;
+  using gemm02_warps = ck::Sequence<1, 4, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck::Sequence<4, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck::Sequence<2, 2, 1>; // default for gemm4
 };
 
-using FmhaBwdBlockWarps0 = ck::Sequence<1, 4, 1>; // default for gemm0/gemm2
-using FmhaBwdBlockWarps1 = ck::Sequence<4, 1, 1>; // default for gemm1/gemm3
-using FmhaBwdBlockWarps2 = ck::Sequence<2, 2, 1>; // default for gemm4
 using FmhaBwdWarpTile = ck::Sequence<32, 32, 16>;
 
 template <ck::index_t MaxK>
@@ -82,43 +88,43 @@ struct FmhaBwdShape;
 template <>
 struct FmhaBwdShape<32> : ck::tile_program::TileFmhaBwdShape<
                               typename FmhaBwdBlockTile<32>::type,
-                              FmhaBwdBlockWarps0,
+                              typename FmhaBwdBlockTile<32>::gemm02_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps1,
+                              typename FmhaBwdBlockTile<32>::gemm13_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps0,
+                              typename FmhaBwdBlockTile<32>::gemm02_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps1,
+                              typename FmhaBwdBlockTile<32>::gemm13_warps,
                               FmhaBwdWarpTile,
-                              ck::Sequence<4, 1, 1>,
+                              typename FmhaBwdBlockTile<32>::gemm4_warps,
                               FmhaBwdWarpTile> {};
 
 template <>
 struct FmhaBwdShape<64> : ck::tile_program::TileFmhaBwdShape<
                               typename FmhaBwdBlockTile<64>::type,
-                              FmhaBwdBlockWarps0,
+                              typename FmhaBwdBlockTile<64>::gemm02_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps1,
+                              typename FmhaBwdBlockTile<64>::gemm13_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps0,
+                              typename FmhaBwdBlockTile<64>::gemm02_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps1,
+                              typename FmhaBwdBlockTile<64>::gemm13_warps,
                               FmhaBwdWarpTile,
-                              FmhaBwdBlockWarps2,
+                              typename FmhaBwdBlockTile<64>::gemm4_warps,
                               FmhaBwdWarpTile> {};
 
 template <>
 struct FmhaBwdShape<128> : ck::tile_program::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<128>::type,
-                               FmhaBwdBlockWarps0,
+                               typename FmhaBwdBlockTile<128>::gemm02_warps,
                                FmhaBwdWarpTile,
-                               FmhaBwdBlockWarps1,
+                               typename FmhaBwdBlockTile<128>::gemm13_warps,
                                FmhaBwdWarpTile,
-                               FmhaBwdBlockWarps0,
+                               typename FmhaBwdBlockTile<128>::gemm02_warps,
                                FmhaBwdWarpTile,
-                               FmhaBwdBlockWarps1,
+                               typename FmhaBwdBlockTile<128>::gemm13_warps,
                                FmhaBwdWarpTile,
-                               FmhaBwdBlockWarps2,
+                               typename FmhaBwdBlockTile<128>::gemm4_warps,
                                FmhaBwdWarpTile> {};
 
 template <ck::index_t MaxK>

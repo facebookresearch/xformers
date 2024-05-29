@@ -49,24 +49,31 @@ struct FmhaFwdBlockTile;
 template <>
 struct FmhaFwdBlockTile<32> {
   using type = ck::Sequence<128, 64, 16, 32, 32, 32>;
+  using gemm0_warps = ck::Sequence<2, 1, 1>;
+  using gemm1_warps = ck::Sequence<2, 1, 1>;
 };
 
 template <>
 struct FmhaFwdBlockTile<64> {
   using type = ck::Sequence<128, 64, 32, 64, 32, 64>;
+  using gemm0_warps = ck::Sequence<4, 1, 1>;
+  using gemm1_warps = ck::Sequence<4, 1, 1>;
 };
 
 template <>
 struct FmhaFwdBlockTile<128> {
   using type = ck::Sequence<128, 128, 32, 128, 32, 128>;
+  using gemm0_warps = ck::Sequence<4, 1, 1>;
+  using gemm1_warps = ck::Sequence<4, 1, 1>;
 };
 
 template <>
 struct FmhaFwdBlockTile<256> {
   using type = ck::Sequence<128, 128, 32, 256, 32, 256>;
+  using gemm0_warps = ck::Sequence<4, 1, 1>;
+  using gemm1_warps = ck::Sequence<4, 1, 1>;
 };
 
-using FmhaFwdBlockWarps = ck::Sequence<4, 1, 1>;
 using FmhaFwdWarpTile = ck::Sequence<32, 32, 16>;
 
 static constexpr bool IsVLayoutRowMajor = true;
@@ -77,35 +84,35 @@ struct FmhaFwdShape;
 template <>
 struct FmhaFwdShape<32> : ck::tile_program::TileFmhaShape<
                               typename FmhaFwdBlockTile<32>::type,
-                              ck::Sequence<2, 1, 1>,
+                              typename FmhaFwdBlockTile<32>::gemm0_warps,
                               FmhaFwdWarpTile,
-                              ck::Sequence<2, 1, 1>,
+                              typename FmhaFwdBlockTile<32>::gemm1_warps,
                               FmhaFwdWarpTile,
                               IsVLayoutRowMajor> {};
 
 template <>
 struct FmhaFwdShape<64> : ck::tile_program::TileFmhaShape<
                               typename FmhaFwdBlockTile<64>::type,
-                              FmhaFwdBlockWarps,
+                              typename FmhaFwdBlockTile<64>::gemm0_warps,
                               FmhaFwdWarpTile,
-                              FmhaFwdBlockWarps,
+                              typename FmhaFwdBlockTile<64>::gemm1_warps,
                               FmhaFwdWarpTile,
                               IsVLayoutRowMajor> {};
 
 template <>
 struct FmhaFwdShape<128> : ck::tile_program::TileFmhaShape<
                                typename FmhaFwdBlockTile<128>::type,
-                               FmhaFwdBlockWarps,
+                               typename FmhaFwdBlockTile<128>::gemm0_warps,
                                FmhaFwdWarpTile,
-                               FmhaFwdBlockWarps,
+                               typename FmhaFwdBlockTile<128>::gemm1_warps,
                                FmhaFwdWarpTile,
                                IsVLayoutRowMajor> {};
 
 template <>
 struct FmhaFwdShape<256> : ck::tile_program::TileFmhaShape<
                                typename FmhaFwdBlockTile<256>::type,
-                               FmhaFwdBlockWarps,
+                               typename FmhaFwdBlockTile<256>::gemm0_warps,
                                FmhaFwdWarpTile,
-                               FmhaFwdBlockWarps,
+                               typename FmhaFwdBlockTile<256>::gemm1_warps,
                                FmhaFwdWarpTile,
                                IsVLayoutRowMajor> {};
