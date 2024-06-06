@@ -261,13 +261,36 @@
     <span class="k">return</span> <span class="n">attn_bias_tensor</span>
 
 
+<span class="c1"># Note: `torch.compile` only allows custom autograd functions</span>
+<span class="c1"># to accept a subset of types. Therefore we serialize `op` objects</span>
+<span class="c1"># to `str` before entering the function, and unserialize them inside.</span>
+<span class="c1"># See also: https://github.com/pytorch/pytorch/issues/118395</span>
+<span class="n">_OPS_LOOKUP</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="o">.</span><span class="n">NAME</span><span class="p">:</span> <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="o">.</span><span class="n">NAME</span><span class="p">:</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+<span class="p">}</span>
+
+
+<span class="k">def</span> <span class="nf">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">op</span><span class="o">.</span><span class="n">NAME</span> <span class="ow">in</span> <span class="n">_OPS_LOOKUP</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">op</span><span class="o">.</span><span class="n">NAME</span>
+    <span class="k">return</span> <span class="n">op</span>
+
+
+<span class="k">def</span> <span class="nf">_unserialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">_OPS_LOOKUP</span><span class="p">[</span><span class="n">op</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">op</span>
+
+
 <span class="k">class</span> <span class="nc">_fMHA</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
     <span class="nd">@staticmethod</span>
     <span class="c1"># type: ignore</span>
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">op</span><span class="p">:</span> <span class="n">AttentionOp</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">op_fw</span><span class="p">,</span> <span class="n">op_bw</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
         <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">)</span>
-        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
-        <span class="n">op_bw</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+
+        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">_unserialize_op</span><span class="p">(</span><span class="n">op_fw</span><span class="p">)</span>
+        <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_unserialize_op</span><span class="p">(</span><span class="n">op_bw</span><span class="p">)</span>
 
         <span class="n">out</span><span class="p">,</span> <span class="n">op_ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
             <span class="n">inp</span><span class="o">=</span><span class="n">inp</span><span class="p">,</span> <span class="n">op</span><span class="o">=</span><span class="n">op_fw</span>
@@ -354,7 +377,7 @@
             <span class="n">op</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="p">,</span>
             <span class="n">_skip_op_checks</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">db</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span>
+        <span class="k">return</span> <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dk</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">dv</span><span class="p">,</span> <span class="n">grads</span><span class="o">.</span><span class="n">db</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="kc">None</span><span class="p">,)</span> <span class="o">*</span> <span class="p">(</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">n_args</span> <span class="o">-</span> <span class="mi">2</span>
         <span class="p">)</span>
 
@@ -595,8 +618,11 @@
         <span class="p">)</span>
 
     <span class="n">output_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
+
+    <span class="n">op_fw</span> <span class="o">=</span> <span class="n">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
+    <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">_fMHA</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
-        <span class="n">op</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
+        <span class="n">op_fw</span><span class="p">,</span> <span class="n">op_bw</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">scale</span>
     <span class="p">)</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span>
 
 

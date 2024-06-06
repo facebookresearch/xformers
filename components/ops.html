@@ -479,6 +479,15 @@ Tested to work on MI250x.</p>
 <span class="target" id="module-xformers.ops.fmha.ck_splitk"></span></section>
 <section id="module-xformers.ops.fmha.attn_bias">
 <span id="attention-biases"></span><h3>Attention biases<a class="headerlink" href="#module-xformers.ops.fmha.attn_bias" title="Permalink to this heading">¶</a></h3>
+<p>This file contains biases that can be used as the <cite>attn_bias</cite> argument in
+<a class="reference internal" href="#xformers.ops.memory_efficient_attention" title="xformers.ops.memory_efficient_attention"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.memory_efficient_attention</span></code></a>.
+Essentially, a bias is a Tensor which will be added to the <code class="docutils literal notranslate"><span class="pre">Q</span> <span class="pre">&#64;</span> <span class="pre">K.t</span></code> before
+computing the <code class="docutils literal notranslate"><span class="pre">softmax</span></code>.</p>
+<p>The goal of having custom made classes (instead of dense tensors) is that
+we want to avoid having to load the biases from memory in the kernel, for
+performance reasons. We also want to be able to know before-hand which
+parts of the attention matrix we will need to compute (eg causal masks).</p>
+<p>Some very common biases are LowerTriangularMask and BlockDiagonalMask.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.AttentionBias">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">AttentionBias</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#AttentionBias"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.AttentionBias" title="Permalink to this definition">¶</a></dt>
@@ -567,23 +576,6 @@ tensor([[1., 1., 1., 1., 0.],
 </dd></dl>
 
 <dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMask">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">tensor_args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">tensor_kwargs</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.AttentionBias" title="xformers.ops.fmha.attn_bias.AttentionBias"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionBias</span></code></a></p>
-<p>A lower-triangular (aka causal) mask</p>
-<p>A query Q cannot attend to a key which is farther from the
-initial key than Q is from the initial query.</p>
-<p>See also <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a> if the number
-of queries is not equal to the number of keys/values.</p>
-<dl class="py method">
-<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">
-<span class="sig-name descname"><span class="pre">add_bias</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias" title="xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias"><span class="pre">LowerTriangularMaskWithTensorBias</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMask.add_bias"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias" title="Permalink to this definition">¶</a></dt>
-<dd><p>Creates a new causal mask with an arbitrary <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> bias</p>
-</dd></dl>
-
-</dd></dl>
-
-<dl class="py class">
 <dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularFromBottomRightMask</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularFromBottomRightMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="Permalink to this definition">¶</a></dt>
 <dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.AttentionBias" title="xformers.ops.fmha.attn_bias.AttentionBias"><code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionBias</span></code></a></p>
@@ -631,13 +623,6 @@ whose distance to the final key is either of:</p>
 The green area is calculated, and the grey area is masked out.</span><a class="headerlink" href="#id4" title="Permalink to this image">¶</a></p>
 </figcaption>
 </figure>
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMaskWithTensorBias</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMaskWithTensorBias"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias" title="Permalink to this definition">¶</a></dt>
-<dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="xformers.ops.fmha.attn_bias.LowerTriangularMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">LowerTriangularMask</span></code></a></p>
-<p>A lower-triangular (aka causal) mask with an additive bias</p>
 </dd></dl>
 
 <dl class="py class">
@@ -1019,6 +1004,30 @@ Same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDi
 This makes the mask “local” and the attention pattern banded.</p>
 <p>Query i only attends to keys in its block and cannot attend keys further than “window_size”
 from it.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMask">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMask</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_subtensor</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMask"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <code class="xref py py-class docutils literal notranslate"><span class="pre">AttentionBiasSubTensor</span></code></p>
+<p>A lower-triangular (aka causal) mask</p>
+<p>A query Q cannot attend to a key which is farther from the
+initial key than Q is from the initial query.</p>
+<p>See also <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a> if the number
+of queries is not equal to the number of keys/values.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">
+<span class="sig-name descname"><span class="pre">add_bias</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference external" href="https://pytorch.org/docs/master/tensors.html#torch.Tensor" title="(in PyTorch vmaster (2.1.0a0+gitbe0b12e ))"><span class="pre">Tensor</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias" title="xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias"><span class="pre">LowerTriangularMaskWithTensorBias</span></a></span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMask.add_bias"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias" title="Permalink to this definition">¶</a></dt>
+<dd><p>Creates a new causal mask with an arbitrary <code class="docutils literal notranslate"><span class="pre">torch.Tensor</span></code> bias</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.attn_bias.</span></span><span class="sig-name descname"><span class="pre">LowerTriangularMaskWithTensorBias</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">bias</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/xformers/ops/fmha/attn_bias.html#LowerTriangularMaskWithTensorBias"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias" title="Permalink to this definition">¶</a></dt>
+<dd><p>Bases: <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularMask" title="xformers.ops.fmha.attn_bias.LowerTriangularMask"><code class="xref py py-class docutils literal notranslate"><span class="pre">LowerTriangularMask</span></code></a></p>
+<p>A lower-triangular (aka causal) mask with an additive bias</p>
 </dd></dl>
 
 </section>

@@ -293,7 +293,7 @@
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">attn_bias</span>
     <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_bias</span>
+        <span class="k">return</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_subtensor</span>
     <span class="k">return</span> <span class="kc">None</span>
 
 
