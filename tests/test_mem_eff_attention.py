@@ -3266,7 +3266,8 @@ def _merge_attentions_ref(attn_split, lse_split):
 @skip_if_rocm  # rocm doesn't support backward yet
 @pytest.mark.parametrize("bias_t", [None, fmha.attn_bias.LowerTriangularMask])
 @pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
-def test_memeff_compile(bias_t, create_bias_inside_compiled: bool) -> None:
+@pytest.mark.parametrize("op", [None, (fmha.flash.FwOp, fmha.flash.BwOp)])
+def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     torch.manual_seed(0)
     dtype = torch.float16
     B, M, H, K = 1, 256, 2, 64
@@ -3284,7 +3285,7 @@ def test_memeff_compile(bias_t, create_bias_inside_compiled: bool) -> None:
     def fmha_fn(q, k, v, bias):
         if bias is None and bias_t is not None:
             bias = bias_t()
-        return fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+        return fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=op)
 
     # Eager reference
     out_ref = fmha_fn(q, k, v, bias)

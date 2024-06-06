@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fMHA: support for paged attention in flash
 - backwards pass for merge_attentions
 - fMHA: Added `torch.compile` support for 2 biases (`LowerTriangularMask` and `LowerTriangularMaskWithTensorBias`)
+- fMHA: Added `torch.compile` support in `memory_efficient_attention` when passing the flash operator explicitely (eg `memory_efficient_attention(..., op=(flash.FwOp, flash.BwOp))`)
 ### Improved
 - fMHA: Fixed out-of-bounds reading for Split-K triton implementation
 - Profiler: fix bug with modules that take a single tuple as argument

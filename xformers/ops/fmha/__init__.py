@@ -40,13 +40,36 @@ def _deserialize_bias(attn_bias_ctx, attn_bias_tensor: Optional[torch.Tensor]) -
     return attn_bias_tensor
 
 
+# Note: `torch.compile` only allows custom autograd functions
+# to accept a subset of types. Therefore we serialize `op` objects
+# to `str` before entering the function, and unserialize them inside.
+# See also: https://github.com/pytorch/pytorch/issues/118395
+_OPS_LOOKUP = {
+    flash.FwOp.NAME: flash.FwOp,
+    flash.BwOp.NAME: flash.BwOp,
+}
+
+
+def _serialize_op(op):
+    if op is not None and op.NAME in _OPS_LOOKUP:
+        return op.NAME
+    return op
+
+
+def _unserialize_op(op):
+    if isinstance(op, str):
+        return _OPS_LOOKUP[op]
+    return op
+
+
 class _fMHA(torch.autograd.Function):
     @staticmethod
     # type: ignore
-    def forward(ctx, op: AttentionOp, *args: Any) -> Any:
+    def forward(ctx, op_fw, op_bw, *args: Any) -> Any:
         inp = Inputs(*args)
-        op_fw = op[0] if op is not None else None
-        op_bw = op[1] if op is not None else None
+
+        op_fw = _unserialize_op(op_fw)
+        op_bw = _unserialize_op(op_bw)
 
         out, op_ctx = _memory_efficient_attention_forward_requires_grad(
             inp=inp, op=op_fw
@@ -133,7 +156,7 @@ class _fMHA(torch.autograd.Function):
             op=ctx.op_bw,
             _skip_op_checks=True,
         )
-        return (None, grads.dq, grads.dk, grads.dv, grads.db) + (None,) * (
+        return (None, None, grads.dq, grads.dk, grads.dv, grads.db) + (None,) * (
             ctx.n_args - 2
         )
 
@@ -374,8 +397,11 @@ def _memory_efficient_attention(
         )
 
     output_shape = inp.normalize_bmhk()
+
+    op_fw = _serialize_op(op[0] if op is not None else None)
+    op_bw = _serialize_op(op[1] if op is not None else None)
     return _fMHA.apply(
-        op, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
+        op_fw, op_bw, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
     ).reshape(output_shape)
 
 
