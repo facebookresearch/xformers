@@ -70,7 +70,7 @@ def _get_tensor_bias(
     if isinstance(attn_bias, torch.Tensor):
         return attn_bias
     elif isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-        return attn_bias._bias
+        return attn_bias._subtensor
     return None
 
 

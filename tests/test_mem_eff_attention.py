@@ -277,8 +277,6 @@ def get_bias_grad(attn_bias, clear: bool = False) -> Optional[torch.Tensor]:
     tensor_with_grad: Optional[torch.Tensor] = None
     if isinstance(attn_bias, torch.Tensor):
         tensor_with_grad = attn_bias
-    if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-        tensor_with_grad = attn_bias._bias
     if tensor_with_grad is not None:
         grad = tensor_with_grad.grad
         if clear:
@@ -584,7 +582,10 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     key = key.transpose(1, 2)
     attn = (query.float() / k**0.5) @ key.float().transpose(-2, -1)
     if attn_bias is not None:
-        if isinstance(attn_bias, xformers.ops.AttentionBias):
+        if isinstance(
+            attn_bias,
+            (fmha.attn_bias.AttentionBias, fmha.attn_bias.AttentionBiasSubTensor),
+        ):
             bias_shape = (1, 1, query.shape[2], key.shape[2])
             tensor_bias = attn_bias.materialize(
                 bias_shape,
@@ -592,7 +593,7 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
                 dtype=torch.float32,
             )
         else:
-            assert isinstance(attn_bias, torch.Tensor)
+            assert type(attn_bias) is torch.Tensor
             tensor_bias = attn_bias
         attn = attn + tensor_bias.float()
     ref_lse = attn.logsumexp(-1)
@@ -3263,7 +3264,9 @@ def _merge_attentions_ref(attn_split, lse_split):
 
 @sm80_or_better_only
 @skip_if_rocm  # rocm doesn't support backward yet
-def test_memeff_compile() -> None:
+@pytest.mark.parametrize("bias_t", [None, fmha.attn_bias.LowerTriangularMask])
+@pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
+def test_memeff_compile(bias_t, create_bias_inside_compiled: bool) -> None:
     torch.manual_seed(0)
     dtype = torch.float16
     B, M, H, K = 1, 256, 2, 64
@@ -3271,21 +3274,27 @@ def test_memeff_compile() -> None:
         3 * torch.randn([B, M, H, K], device="cuda", dtype=dtype) for _ in range(3)
     ]
     grad = torch.randn_like(q)
+    bias = None
+    if not create_bias_inside_compiled and bias_t is not None:
+        bias = bias_t()
     q.requires_grad_(True)
     k.requires_grad_(True)
     v.requires_grad_(True)
 
+    def fmha_fn(q, k, v, bias):
+        if bias is None and bias_t is not None:
+            bias = bias_t()
+        return fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
+
     # Eager reference
-    out_ref = fmha.memory_efficient_attention(q, k, v)
+    out_ref = fmha_fn(q, k, v, bias)
     out_ref.backward(grad)
     dq_ref, dk_ref, dv_ref = q.grad, k.grad, v.grad
     q.grad, k.grad, v.grad = None, None, None
 
     # Compiled version
-    fmha_c = torch.compile(
-        fmha.memory_efficient_attention, fullgraph=True, dynamic=False
-    )
-    out = fmha_c(q, k, v)
+    fmha_c = torch.compile(fmha_fn, fullgraph=True, dynamic=False)
+    out = fmha_c(q, k, v, bias)
     out.backward(grad)
 
     assert_allclose(
@@ -3299,6 +3308,23 @@ def test_memeff_compile() -> None:
     assert_allclose(q.grad, dq_ref, "dq", atol=atol, rtol=rtol)
     assert_allclose(k.grad, dk_ref, "dk", atol=atol, rtol=rtol)
     assert_allclose(v.grad, dv_ref, "dv", atol=atol, rtol=rtol)
+
+
+def test_bias_lower_triangular() -> None:
+    mask = fmha.attn_bias.LowerTriangularMask()
+    mask.detach()
+
+
+def test_bias_lower_triangular_with_bias() -> None:
+    dense_bias = torch.randn([128, 128], dtype=torch.float16, requires_grad=True)
+    grad = torch.randn_like(dense_bias)
+    mask = fmha.attn_bias.LowerTriangularMask()
+    mask_biased = mask.add_bias(dense_bias)
+    mask_biased2 = mask_biased.detach()
+    mask_biased.backward(grad)
+    assert dense_bias.grad is not None
+    assert mask_biased2.grad is None
+    assert_allclose(dense_bias.grad, grad, "dense.grad")
 
 
 # end of file
