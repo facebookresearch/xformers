@@ -628,6 +628,13 @@ def test_logsumexp_mqa(op):
     if not op.is_available():
         pytest.skip("not available")
 
+    if op.CUDA_MINIMUM_COMPUTE_CAPABILITY > compute_capability:
+        skip_reason = (
+            f"requires device with capability >= {op.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+            f"but your GPU has capability {compute_capability} (too old)"
+        )
+        pytest.skip(skip_reason)
+
     dtype = torch.float16
     s = 3
     query = torch.randn([1, 1, 32, 128], dtype=dtype, device="cuda") * s
@@ -2507,9 +2514,14 @@ def test_paged_attention(
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
 @pytest.mark.parametrize("page_size", [256])
-def test_paged_attenion_flash(B, MAX_T: int, page_size: int):
+def test_paged_attention_flash(B, MAX_T: int, page_size: int):
     # TODO: add smaller page sizes when https://github.com/Dao-AILab/flash-attention/pull/824 is merged
     op = fmha.flash.FwOp
+    if (
+        fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask
+        not in op.SUPPORTED_ATTN_BIAS_TYPES
+    ):
+        pytest.skip("Not supported bias")
     num_quant_groups = 0
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
@@ -2870,6 +2882,9 @@ def test_partial_paged(
             block_tables=block_tables,
         )
     )
+
+    if attn_bias not in op.SUPPORTED_ATTN_BIAS_TYPES:
+        pytest.skip("Not supported bias")
 
     attn_chunk, lse_chunk = fmha.memory_efficient_attention_partial(
         q,
