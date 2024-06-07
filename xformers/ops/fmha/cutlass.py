@@ -11,7 +11,7 @@ from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 
-from ..common import get_xformers_operator, register_operator
+from ..common import get_operator, get_xformers_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
@@ -157,6 +157,11 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     return int(_CustomMaskType.NoCustomMask)
 
 
+USE_TORCH_CUTLASS = not torch._C._dispatch_has_kernel_for_dispatch_key(
+    "xformers::efficient_attention_forward_cutlass", "CUDA"
+)
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
@@ -164,7 +169,11 @@ class FwOp(AttentionFwOpBase):
     and GPUs as old as P100 (Sm60)
     """
 
-    OPERATOR = get_xformers_operator("efficient_attention_forward_cutlass")
+    OPERATOR = (
+        get_operator("aten", "_efficient_attention_forward")
+        if USE_TORCH_CUTLASS
+        else get_xformers_operator("efficient_attention_forward_cutlass")
+    )
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 65536
@@ -186,7 +195,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
-    NAME = "cutlassF"
+    NAME = "cutlassF-pt" if USE_TORCH_CUTLASS else "cutlassF"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
@@ -341,7 +350,12 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     __doc__ = FwOp.__doc__
 
-    OPERATOR = get_xformers_operator("efficient_attention_backward_cutlass")
+    OPERATOR = (
+        get_operator("aten", "_efficient_attention_backward")
+        if USE_TORCH_CUTLASS
+        else get_xformers_operator("efficient_attention_backward_cutlass")
+    )
+
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
@@ -364,7 +378,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
-    NAME = "cutlassB"
+    NAME = "cutlassB-pt" if USE_TORCH_CUTLASS else "cutlassB"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel

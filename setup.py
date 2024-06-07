@@ -21,6 +21,7 @@ from typing import List
 
 import setuptools
 import torch
+from torch._C import parse_schema
 from torch.utils.cpp_extension import (
     CUDA_HOME,
     BuildExtension,
@@ -142,6 +143,54 @@ def get_hip_version(rocm_dir) -> str:
     return None
 
 
+def is_pt_cutlass_compatible(force: bool) -> bool:
+    compatible = True
+
+    fwd_schema_str = (
+        "aten::_efficient_attention_forward(Tensor query, Tensor key, Tensor value, "
+        "Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, SymInt? max_seqlen_q, "
+        "SymInt? max_seqlen_k, float dropout_p, int custom_mask_type, bool compute_log_sumexp=False, *, "
+        "float? scale=None, Tensor? seqlen_k=None, int? window_size=None) -> "
+        "(Tensor output, Tensor logsumexp, Tensor philox_seed, Tensor philox_offset, "
+        "SymInt max_seqlen_batch_q, SymInt max_seqlen_batch_k)"
+    )
+    expected_fwd_schema = parse_schema(fwd_schema_str)
+
+    current_schema = torch.ops.aten._efficient_attention_forward.default._schema
+    if not current_schema.is_backward_compatible_with(expected_fwd_schema):
+        compatible = False
+
+        if force:
+            raise ImportError(
+                f"Current Torch CUTLASS doesnt have a compatible aten::_efficient_attention_forward schema\n"
+                f"EXPECTED:\n{expected_fwd_schema}\n"
+                f"but GOT:\n{current_schema}"
+            )
+
+    bwd_schema_str = (
+        "aten::_efficient_attention_backward(Tensor grad_out_, Tensor query, Tensor key, Tensor value, "
+        "Tensor? bias, Tensor out, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, SymInt max_seqlen_q, "
+        "SymInt max_seqlen_k, Tensor logsumexp, float dropout_p, Tensor philox_seed, Tensor philox_offset, "
+        "int custom_mask_type, bool bias_requires_grad, *, float? scale=None, int? num_splits_key=None, "
+        "int? window_size=None, bool shared_storage_dqdkdv=False) -> (Tensor, Tensor, Tensor, Tensor)"
+    )
+
+    expected_bwd_schema = parse_schema(bwd_schema_str)
+
+    current_schema = torch.ops.aten._efficient_attention_backward.default._schema
+    if not current_schema.is_backward_compatible_with(expected_bwd_schema):
+        compatible = False
+
+        if force:
+            raise ImportError(
+                f"Current Torch CUTLASS doesnt have a compatible aten::_efficient_attention_backward schema\n"
+                f"EXPECTED:\n{expected_bwd_schema}\n"
+                f"but GOT:\n{current_schema}"
+            )
+
+    return compatible
+
+
 def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
@@ -245,6 +294,16 @@ def get_extensions():
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
     source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
+    fmha_source_cuda = glob.glob(
+        os.path.join(extensions_dir, "**", "fmha", "**", "*.cu"), recursive=True
+    )
+    exclude_files = ["small_k.cu", "decoder.cu", "attention_cutlass_rand_uniform.cu"]
+    fmha_source_cuda = [
+        c
+        for c in fmha_source_cuda
+        if not any(exclude_file in c for exclude_file in exclude_files)
+    ]
+
     source_hip = glob.glob(
         os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
         recursive=True,
@@ -258,6 +317,16 @@ def get_extensions():
     sources = list(set(sources) - set(source_hip))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
+
+    xformers_pt_cutlass_attn = os.getenv("XFORMERS_PT_CUTLASS_ATTN")
+    # By default, we try to link to torch internal CUTLASS attention implementation
+    # and silently switch to local CUTLASS attention build if no compatibility
+    # If we force 'torch FA switch' then setup will fail when no compatibility
+    if (
+        xformers_pt_cutlass_attn is None or xformers_pt_cutlass_attn == "1"
+    ) and is_pt_cutlass_compatible(force=xformers_pt_cutlass_attn == "1"):
+        source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
+
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):

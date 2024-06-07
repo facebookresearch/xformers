@@ -1945,6 +1945,16 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
     if sm < 80 and dtype_str == "bf16":
         return
 
+    if hasattr(torch.ops.xformers, "_has_cutlassF_kernel_for"):
+        pytest.skip(
+            "xformers doesnt have any _has_cutlassF_kernel_for implementation since it uses torch CUTLASS"
+        )
+
+    if hasattr(torch.ops.xformers, "_has_cutlassB_kernel_for"):
+        pytest.skip(
+            "xformers doesnt have any _has_cutlassB_kernel_for implementation since it uses torch CUTLASS"
+        )
+
     for k in [16, 32, 64, 128, 256]:
         assert torch.ops.xformers._has_cutlassF_kernel_for(
             dtype, sm, shmem_kbytes * 1024, k
@@ -2394,6 +2404,12 @@ def test_cutlassB_iter_order(
         the same block of dQ
     .. and we test this across variable causal masks+local attention combinations
     """
+
+    if hasattr(torch.ops.xformers, "_cutlassB_iteration_data"):
+        pytest.skip(
+            "xformers doesnt have any _cutlassB_iteration_data implementation since it uses torch CUTLASS"
+        )
+
     if (
         window_size > 0
         and custom_mask_type == fmha.cutlass._CustomMaskType.NoCustomMask
