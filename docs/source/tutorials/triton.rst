@@ -50,9 +50,9 @@ This is a drop-in replacement to two PyTorch operands: a `torch.nn.Linear`, and 
 
 .. code-block:: python
 
-    from xformers.triton import FusedLinearLayer
+    from xformers.triton import FusedLinear
 
-    my_linear_layer = FusedLinearLayer(in_features, out_features, bias=True/False, activation="squared_relu")
+    my_linear_layer = FusedLinear(in_features, out_features, bias=True/False, activation="squared_relu")
 
     ...
 
