@@ -64,10 +64,12 @@ def _replace_if_needed(
             (torch.ops.aten, "scaled_dot_product_attention", False),
             (torch.ops.xformers_flash, "flash_fwd", False),
             (torch.ops.xformers, "efficient_attention_forward_cutlass", False),
+            (torch.ops.aten, "_efficient_attention_forward", False),
             (torch.ops.aten, "_scaled_dot_product_flash_attention_backward", True),
             (torch.ops.aten, "_scaled_dot_product_efficient_attention_backward", True),
             (torch.ops.xformers_flash, "flash_bwd", True),
             (torch.ops.xformers, "efficient_attention_backward_cutlass", True),
+            (torch.ops.aten, "_efficient_attention_backward", True),
         ]
         if hasattr(lib, op)
     }
