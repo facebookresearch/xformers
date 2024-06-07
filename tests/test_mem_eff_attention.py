@@ -48,6 +48,9 @@ sm80_or_better_only = pytest.mark.skipif(
 skip_if_rocm = pytest.mark.skipif(
     torch.version.hip is not None, reason="not supported on ROCm"
 )
+skip_if_pt_cutlass = pytest.mark.skipif(
+    fmha.cutlass.USE_TORCH_CUTLASS, reason="using PT cutlass"
+)
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
 T = TypeVar(
@@ -1933,6 +1936,7 @@ SM_AND_SHMEM_KBYTES = [
 
 @cuda_only
 @disable_on_rocm
+@skip_if_pt_cutlass
 @pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
 @pytest.mark.parametrize(
     "sm_shmem",
@@ -1944,16 +1948,6 @@ def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
     sm, shmem_kbytes = sm_shmem
     if sm < 80 and dtype_str == "bf16":
         return
-
-    if hasattr(torch.ops.xformers, "_has_cutlassF_kernel_for"):
-        pytest.skip(
-            "xformers doesnt have any _has_cutlassF_kernel_for implementation since it uses torch CUTLASS"
-        )
-
-    if hasattr(torch.ops.xformers, "_has_cutlassB_kernel_for"):
-        pytest.skip(
-            "xformers doesnt have any _has_cutlassB_kernel_for implementation since it uses torch CUTLASS"
-        )
 
     for k in [16, 32, 64, 128, 256]:
         assert torch.ops.xformers._has_cutlassF_kernel_for(
@@ -2354,6 +2348,7 @@ def test_local_attn_bias() -> None:
 
 @cuda_only
 @disable_on_rocm
+@skip_if_pt_cutlass
 @pytest.mark.parametrize("cc", [60, 70, 80])
 @pytest.mark.parametrize("maxK", [32, 64, 128, 256])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
@@ -2404,11 +2399,6 @@ def test_cutlassB_iter_order(
         the same block of dQ
     .. and we test this across variable causal masks+local attention combinations
     """
-
-    if hasattr(torch.ops.xformers, "_cutlassB_iteration_data"):
-        pytest.skip(
-            "xformers doesnt have any _cutlassB_iteration_data implementation since it uses torch CUTLASS"
-        )
 
     if (
         window_size > 0
