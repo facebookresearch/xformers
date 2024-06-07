@@ -190,8 +190,6 @@
         
           <li><a href="../../../index.html">Module code</a> &gt;</li>
         
-          <li><a href="../fmha.html">xformers.ops.fmha</a> &gt;</li>
-        
       <li>xformers.ops.fmha.attn_bias</li>
     
     
@@ -259,7 +257,7 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 
 
-<div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionBias">[docs]</a><span class="k">class</span> <span class="nc">AttentionBias</span><span class="p">:</span>
+<div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias">[docs]</a><span class="k">class</span> <span class="nc">AttentionBias</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for a custom bias that can be applied \</span>
 <span class="sd">        as the attn_bias argument in</span>
 <span class="sd">        :attr:`xformers.ops.memory_efficient_attention`.</span>
@@ -295,7 +293,7 @@
 
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">False</span>
 
-<div class="viewcode-block" id="AttentionBias.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.AttentionBias.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="AttentionBias.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -338,7 +336,7 @@
     <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="LocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="LocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A local attention mask</span>
@@ -421,7 +419,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="LowerTriangularFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularFromBottomRightMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A causal masking.</span>
 
@@ -451,7 +449,7 @@
             <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">from_bottomright</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="LowerTriangularFromBottomRightMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularFromBottomRightMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
+<div class="viewcode-block" id="LowerTriangularFromBottomRightMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularFromBottomRightLocalAttentionMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -462,7 +460,7 @@
         <span class="k">return</span> <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">(</span><span class="n">window_size</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="LowerTriangularFromBottomRightLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularFromBottomRightLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="LowerTriangularFromBottomRightLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">(</span>
     <span class="n">LowerTriangularFromBottomRightMask</span>
 <span class="p">):</span>
@@ -774,7 +772,7 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;_PaddedSeqLenInfo.split&quot;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="BlockDiagonalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A block-diagonal mask that can be passed as ``attn_bias``</span>
@@ -830,7 +828,7 @@
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -862,7 +860,7 @@
             <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="BlockDiagonalMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -885,7 +883,7 @@
             <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_SeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.from_tensor_list"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.from_tensor_list">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="BlockDiagonalMask.from_tensor_list"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_tensor_list</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">tensors</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
@@ -951,7 +949,7 @@
     <span class="k">def</span> <span class="nf">split_kv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalMask.split"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.split">[docs]</a>    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.split"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split">[docs]</a>    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;The inverse operation of :attr:`BlockDiagonalCausalMask.from_tensor_list`</span>
 
 <span class="sd">        Args:</span>
@@ -963,7 +961,7 @@
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_causal"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_causal">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_causal"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
@@ -971,7 +969,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_causal_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_causal_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal_from_bottomright</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_causal_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal_from_bottomright</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal with a possible non-causal prefix&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
@@ -979,7 +977,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention&quot;&quot;&quot;</span>
@@ -990,7 +988,7 @@
             <span class="n">_window_size</span><span class="o">=</span><span class="n">window_size</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalMask.make_local_attention_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention_from_bottomright</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention_from_bottomright</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention, start from bottom right&quot;&quot;&quot;</span>
@@ -1002,7 +1000,7 @@
         <span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
@@ -1026,7 +1024,7 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
@@ -1066,7 +1064,7 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
@@ -1095,7 +1093,7 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1123,7 +1121,7 @@
             <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1166,7 +1164,7 @@
         <span class="k">return</span> <span class="n">paged_bias</span></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
@@ -1198,7 +1196,7 @@
             <span class="n">shape</span><span class="o">=</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1226,7 +1224,7 @@
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as BlockDiagonalPaddedKeysMask, but for paged attention.</span>
@@ -1244,7 +1242,7 @@
         <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalPaddedKeysMask</span>
 
-<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1283,7 +1281,7 @@
                 <span class="p">]</span> <span class="o">=</span> <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
-<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1318,7 +1316,7 @@
         <span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
     <span class="n">PagedBlockDiagonalPaddedKeysMask</span>
 <span class="p">):</span>
@@ -1332,7 +1330,7 @@
     <span class="n">_UNPAGED_TYPE</span> <span class="o">=</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
@@ -1344,7 +1342,7 @@
     <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
     <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_GappySeqInfo</span>
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1368,7 +1366,7 @@
             <span class="n">mask</span> <span class="o">=</span> <span class="n">mask</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1386,7 +1384,7 @@
         <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_GappySeqInfo</span><span class="o">.</span><span class="n">from_seqlens_gappy</span><span class="p">(</span><span class="n">kv_seqstarts</span><span class="p">,</span> <span class="n">kv_seqlen</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.make_paged"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalGappyKeysMask.make_paged">[docs]</a>    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.make_paged"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.make_paged">[docs]</a>    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1418,7 +1416,7 @@
         <span class="k">return</span> <span class="n">paged_bias</span></div></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
@@ -1429,7 +1427,7 @@
 <span class="sd">    than Q is to the final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalWithOffsetGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1459,7 +1457,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">PagedBlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Equivalent BlockDiagonalGappyKeysMask, but for paged attention.</span>
@@ -1477,7 +1475,7 @@
         <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalGappyKeysMask</span>
 
-<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1520,7 +1518,7 @@
                 <span class="p">]</span> <span class="o">=</span> <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
-<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.PagedBlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
+<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1556,7 +1554,7 @@
         <span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionMask</span><span class="p">(</span><span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Experimental feature)</span>
@@ -1608,7 +1606,7 @@
         <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.BlockDiagonalCausalLocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
+<div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">(</span>
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span>
 <span class="p">):</span>
@@ -1710,7 +1708,7 @@
         <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_out</span>
 
 
-<div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A lower-triangular (aka causal) mask</span>
 
@@ -1731,14 +1729,14 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_materialize_causal_mask</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
-<div class="viewcode-block" id="LowerTriangularMask.add_bias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularMask.add_bias">[docs]</a>    <span class="k">def</span> <span class="nf">add_bias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularMaskWithTensorBias&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="LowerTriangularMask.add_bias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">[docs]</a>    <span class="k">def</span> <span class="nf">add_bias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularMaskWithTensorBias&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">_AddDenseBias</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="LowerTriangularMaskWithTensorBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.LowerTriangularMaskWithTensorBias">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMaskWithTensorBias</span><span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularMaskWithTensorBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMaskWithTensorBias</span><span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A lower-triangular (aka causal) mask with an additive bias&quot;&quot;&quot;</span>
 
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">True</span>
