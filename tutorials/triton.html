@@ -251,9 +251,9 @@ Log-softmax is also available. The actual Triton kernel is very similar to <cite
 <section id="fused-linear-layer">
 <h2>Fused linear layer<a class="headerlink" href="#fused-linear-layer" title="Permalink to this heading">¶</a></h2>
 <p>This is a drop-in replacement to two PyTorch operands: a <cite>torch.nn.Linear</cite>, and an activation, like <cite>torch.nn.ReLU</cite>. It is Torch AMP and autograd aware, and can be used very simply:</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">FusedLinearLayer</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">xformers.triton</span> <span class="kn">import</span> <span class="n">FusedLinear</span>
 
-<span class="n">my_linear_layer</span> <span class="o">=</span> <span class="n">FusedLinearLayer</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">out_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="o">/</span><span class="kc">False</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;squared_relu&quot;</span><span class="p">)</span>
+<span class="n">my_linear_layer</span> <span class="o">=</span> <span class="n">FusedLinear</span><span class="p">(</span><span class="n">in_features</span><span class="p">,</span> <span class="n">out_features</span><span class="p">,</span> <span class="n">bias</span><span class="o">=</span><span class="kc">True</span><span class="o">/</span><span class="kc">False</span><span class="p">,</span> <span class="n">activation</span><span class="o">=</span><span class="s2">&quot;squared_relu&quot;</span><span class="p">)</span>
 
 <span class="o">...</span>
 
