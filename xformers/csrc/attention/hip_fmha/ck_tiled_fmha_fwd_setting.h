@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023, Advanced Micro Devices, Inc. All rights reserved.
+ * Copyright (c) 2023-2024, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,12 +7,6 @@
 #pragma once
 
 #include <ck/tile_program/tile/tile_fmha_shape.hpp>
-
-enum struct CausalMaskType {
-  MaskDisabled,
-  MaskUpperTriangleFromTopLeft,
-  MaskUpperTriangleFromBottomRight
-};
 
 template <typename DataType>
 struct FmhaFwdTypeConfig;
@@ -23,6 +17,7 @@ struct FmhaFwdTypeConfig<ck::half_t> {
   using KDataType = ck::half_t;
   using VDataType = ck::half_t;
   using BiasDataType = ck::half_t;
+  using RandValOutputDataType = unsigned short;
   using LSEDataType =
       float; // data type for lse(logsumexp L_j = max_j + log(l_j))
   using SaccDataType = float; // data type for first gemm accumulation
@@ -38,6 +33,7 @@ struct FmhaFwdTypeConfig<ck::bhalf_t> {
   using KDataType = ck::bhalf_t;
   using VDataType = ck::bhalf_t;
   using BiasDataType = ck::bhalf_t;
+  using RandValOutputDataType = unsigned short;
   using LSEDataType =
       float; // data type for lse(logsumexp L_j = max_j + log(l_j))
   using SaccDataType = float; // data type for first gemm accumulation

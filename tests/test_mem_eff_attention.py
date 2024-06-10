@@ -2511,6 +2511,7 @@ def test_paged_attention(
 
 
 @sm80_or_better_only
+@disable_on_rocm
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
 @pytest.mark.parametrize("page_size", [256])

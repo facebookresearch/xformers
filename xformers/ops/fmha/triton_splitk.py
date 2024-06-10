@@ -155,6 +155,7 @@ if TYPE_CHECKING or _has_triton21():
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         IS_SPLITK: tl.constexpr,
+        SPLIT_K_EARLY_EXIT: tl.constexpr,
         IS_CAUSAL: tl.constexpr,
         NUM_QUERIES_CAUSAL: tl.constexpr,  # The N_CTX_Q queries are from this many sequence positions
         USE_PAGED_ATTENTION: tl.constexpr,
@@ -210,6 +211,8 @@ if TYPE_CHECKING or _has_triton21():
 
         if USE_SEQ_LEN:
             kv_len = tl.load(Seq_len + off_z)
+            if SPLIT_K_EARLY_EXIT and kv_len == 0:
+                return
         else:
             kv_len = N_CTX_K
 
@@ -226,6 +229,8 @@ if TYPE_CHECKING or _has_triton21():
             queries_use_batch_dim = 0
             off_m = tl.load(Seq_starts_q + off_z) * Seq_starts_q_multiplier
             q_len = tl.load(Seq_starts_q + off_z + 1) * Seq_starts_q_multiplier - off_m
+            if q_len == 0:
+                return
 
         k_base = K + off_h * stride_kh + off_g * stride_kg
         v_base = V + off_h * stride_vh + off_g * stride_vg
@@ -314,6 +319,9 @@ if TYPE_CHECKING or _has_triton21():
                     block_shape=(BLOCK_M, BLOCK_N),
                     order=(0, 1),
                 )
+
+        if SPLIT_K_EARLY_EXIT and lo >= hi:
+            return
 
         Q_block_ptr = tl.make_block_ptr(
             base=Q
@@ -1163,6 +1171,13 @@ class FwOp(AttentionFwOpBase):
     SPLIT_K: Optional[int] = None
     MAX_BLOCK_M = 32
 
+    # Whether blocks attending to no part of a variable sequence length
+    # should exit early. This requires extra kernels to run beforehand
+    # to initialise the outputs.
+    # TODO: avoid these by making the reduce kernel work out it doesn't need
+    # to look at the irrelevant places.
+    SPLIT_K_EARLY_EXIT: bool = False
+
     # Perform kernel-level Triton autotune
     AUTOTUNE = False
 
@@ -1329,7 +1344,8 @@ class FwOp(AttentionFwOpBase):
             assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
-            multiple_q = attn_bias.q_seqinfo.max_seqlen > 1  # type: ignore
+            # force a bool because triton cannot take np.bool_
+            multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)  # type: ignore
             IS_CAUSAL = multiple_q and _is_supported_causal_bias(attn_bias)
             variable_q = multiple_q and not IS_CAUSAL
             Kkv = v.shape[-1]
@@ -1415,11 +1431,18 @@ class FwOp(AttentionFwOpBase):
             o_splitk_dtype = (
                 torch.float64 if output_dtype == torch.float64 else torch.float32
             )
-            o_splitk = torch.empty(
-                [Bqq, G, H, split_k, M_ceil, Kq],
-                dtype=o_splitk_dtype,
-                device=q.device,
-            )
+            if cls.SPLIT_K_EARLY_EXIT:
+                o_splitk = torch.zeros(
+                    [Bqq, G, H, split_k, M_ceil, Kq],
+                    dtype=o_splitk_dtype,
+                    device=q.device,
+                )
+            else:
+                o_splitk = torch.empty(
+                    [Bqq, G, H, split_k, M_ceil, Kq],
+                    dtype=o_splitk_dtype,
+                    device=q.device,
+                )
         else:
             o_splitk = torch.empty(
                 [Bqq, split_k, Mqq, G, H, Kq],
@@ -1430,11 +1453,23 @@ class FwOp(AttentionFwOpBase):
         # LSE may need higher precision than output
         output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK or needs_gradient:
-            lse_splitk = torch.empty(
-                [Bqq, G, H, split_k, Mqq],
-                dtype=torch.float64 if IS_SPLITK or output_f64_lse else torch.float32,
-                device=q.device,
-            )
+            if cls.SPLIT_K_EARLY_EXIT:
+                lse_splitk = torch.full(
+                    [Bqq, G, H, split_k, Mqq],
+                    -float("inf"),
+                    dtype=torch.float64
+                    if IS_SPLITK or output_f64_lse
+                    else torch.float32,
+                    device=q.device,
+                )
+            else:
+                lse_splitk = torch.empty(
+                    [Bqq, G, H, split_k, Mqq],
+                    dtype=torch.float64
+                    if IS_SPLITK or output_f64_lse
+                    else torch.float32,
+                    device=q.device,
+                )
 
         def grid(META):
             return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
@@ -1504,6 +1539,7 @@ class FwOp(AttentionFwOpBase):
             IS_CAUSAL=IS_CAUSAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
+            SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
             WRITE_LSE=IS_SPLITK or needs_gradient,
@@ -1606,6 +1642,7 @@ class FwOp(AttentionFwOpBase):
         block_n: Optional[int] = None,
         num_warps: Optional[int] = None,
         num_stages: Optional[int] = None,
+        split_k_early_exit: Optional[bool] = None,
     ) -> Type[AttentionFwOpBase]:
         kwargs = {
             "NAME": f"triton_splitK{splitk}",
@@ -1619,6 +1656,8 @@ class FwOp(AttentionFwOpBase):
             kwargs["NUM_WARPS"] = num_warps
         if num_stages is not None:
             kwargs["NUM_STAGES"] = num_stages
+        if split_k_early_exit is not None:
+            kwargs["SPLIT_K_EARLY_EXIT"] = split_k_early_exit
         return type(
             f"FwOp_S{splitk}",
             (cls,),

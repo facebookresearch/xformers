@@ -28,6 +28,9 @@ struct BatchedInferParams {
   std::array<int, 4> out_strides;
   std::array<int, 4> attn_bias_strides; // 4d tensor_view [B, H, M, N]
 
+  // BHM mode strides, completely contiguous
+  std::array<int, 3> lse_strides;
+
   const void* q_ptr;
   const void* k_ptr;
   const void* v_ptr;
@@ -40,7 +43,6 @@ struct BatchedInferParams {
 };
 
 struct BatchedForwardParams : public BatchedInferParams {
-  bool use_dropout;
   bool compute_logsumexp;
 
   float dropout_prob;
@@ -78,6 +80,9 @@ struct GroupedInferParams {
   // 4d tensor view [B, H, M, N]
   std::array<int, 4> attn_bias_strides;
 
+  // BHM mode strides, completely contiguous
+  std::array<int, 3> lse_strides;
+
   const void* q_ptr;
   const void* k_ptr;
   const void* v_ptr;
@@ -99,9 +104,6 @@ struct GroupedForwardParams : public GroupedInferParams {
 
   // completely contiguous
   void* logsumexp_ptr;
-
-  // TODO: need remove this after dev-op fix
-  std::vector<void*> randvals_ptrs;
 };
 
 struct BatchedBackwardParams {
@@ -117,7 +119,6 @@ struct BatchedBackwardParams {
   bool has_attn_bias;
   bool bias_has_grad;
 
-  bool use_fp32_qkv_grad;
   bool is_mqa_gqa;
 
   // BMHK mode strides, last-dim contiguous
@@ -126,9 +127,13 @@ struct BatchedBackwardParams {
   std::array<int, 4> v_strides;
   std::array<int, 4> attn_bias_strides; // 4d tensor_view [B, H, M, N]
   std::array<int, 4> out_strides;
+  std::array<int, 4> grad_out_strides;
 
-  std::array<int, 4> tmp_grad_k_strides;
-  std::array<int, 4> tmp_grad_v_strides;
+  std::array<int, 4> grad_k_strides;
+  std::array<int, 4> grad_v_strides;
+
+  // BHM mode strides, completely contiguous
+  std::array<int, 3> lsed_strides;
 
   const void* q_ptr;
   const void* k_ptr;
@@ -138,6 +143,7 @@ struct BatchedBackwardParams {
   const void* out_ptr;
 
   uint8_t custom_mask_type;
+  int window_size; // local-attention
 
   void* grad_q_ptr;
   void* grad_k_ptr;
@@ -150,6 +156,7 @@ struct BatchedBackwardParams {
 
   // BHM mode lengths, completely contiguous
   const void* logsumexp_ptr;
+  void* dot_out_ptr;
 };
 
 struct GroupedBackwardParams {
@@ -162,16 +169,16 @@ struct GroupedBackwardParams {
   int Kv; // embed_dim for Value
 
   int max_seqlen_q;
+  int max_seqlen_k;
 
-  std::vector<int> host_seqstart_q;
-  std::vector<int> host_seqstart_k;
-  std::vector<int> host_seqlen_k;
+  void* seqstart_q_dev_ptr;
+  void* seqstart_k_dev_ptr;
+  void* seqlen_k_dev_ptr;
 
   float scale;
   bool has_attn_bias;
   bool bias_has_grad;
 
-  bool use_fp32_qkv_grad;
   bool is_mqa_gqa;
 
   // MHK mode strides, last-dim contiguous
@@ -179,37 +186,36 @@ struct GroupedBackwardParams {
   std::array<int, 3> k_strides;
   std::array<int, 3> v_strides;
   std::array<int, 3> out_strides;
+  std::array<int, 3> grad_out_strides;
   // 4d tensor view [B, H, M, N]
   std::array<int, 4> attn_bias_strides;
 
-  std::array<int, 3> tmp_grad_k_strides;
-  std::array<int, 3> tmp_grad_v_strides;
+  std::array<int, 3> grad_k_strides;
+  std::array<int, 3> grad_v_strides;
 
-  std::vector<const void*> q_ptrs;
-  std::vector<const void*> k_ptrs;
-  std::vector<const void*> v_ptrs;
-  std::vector<const void*> attn_bias_ptrs;
-  std::vector<const void*> grad_out_ptrs;
-  std::vector<const void*> out_ptrs;
+  // BHM mode strides, completely contiguous
+  std::array<int, 3> lsed_strides;
 
-  // used by the light_v2 kernel
-  // TODO use these as workspace
-  std::vector<void*> ydotdy_ptrs;
+  const void* q_ptr;
+  const void* k_ptr;
+  const void* v_ptr;
+  const void* attn_bias_ptr;
+  const void* grad_out_ptr;
+  const void* out_ptr;
 
   uint8_t custom_mask_type;
+  int window_size; // local-attention
 
-  std::vector<void*> grad_q_ptrs;
-  std::vector<void*> grad_k_ptrs;
-  std::vector<void*> grad_v_ptrs;
-  std::vector<void*> grad_bias_ptrs;
+  void* grad_q_ptr;
+  void* grad_k_ptr;
+  void* grad_v_ptr;
+  void* grad_bias_ptr;
 
   float dropout_prob;
   int64_t philox_seed;
   int64_t philox_offset;
 
   // BHM mode lengths, completely contiguous
-  std::vector<const void*> logsumexp_ptrs;
-
-  // TODO: need remove this after dev-op fix
-  std::vector<void*> randvals_ptrs;
+  const void* logsumexp_ptr;
+  void* dot_out_ptr;
 };
