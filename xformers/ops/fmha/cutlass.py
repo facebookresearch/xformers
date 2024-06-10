@@ -35,6 +35,7 @@ from .common import (
     _attn_bias_apply,
     check_lastdim_alignment_stride1,
 )
+from .torch_attention_compat import is_pt_cutlass_compatible
 
 
 def _uses_tensorcores(sm: int, is_half: bool) -> bool:
@@ -157,8 +158,12 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     return int(_CustomMaskType.NoCustomMask)
 
 
-USE_TORCH_CUTLASS = not torch._C._dispatch_has_kernel_for_dispatch_key(
-    "xformers::efficient_attention_forward_cutlass", "CUDA"
+USE_TORCH_CUTLASS = (
+    is_pt_cutlass_compatible(force=False)
+    and hasattr(torch.ops.xformers, "efficient_attention_forward_cutlass")
+    and not torch._C._dispatch_has_kernel_for_dispatch_key(
+        "xformers::efficient_attention_forward_cutlass", "CUDA"
+    )
 )
 
 
@@ -287,19 +292,25 @@ class FwOp(AttentionFwOpBase):
             compute_log_sumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            seqlen_k=inp.attn_bias.k_seqinfo.seqlen
-            if isinstance(inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-            else None,
-            window_size=inp.attn_bias._window_size
-            if isinstance(
-                inp.attn_bias,
-                (
-                    BlockDiagonalCausalLocalAttentionMask,
-                    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-                    LowerTriangularFromBottomRightLocalAttentionMask,
-                ),
-            )
-            else None,
+            seqlen_k=(
+                inp.attn_bias.k_seqinfo.seqlen
+                if isinstance(
+                    inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+                )
+                else None
+            ),
+            window_size=(
+                inp.attn_bias._window_size
+                if isinstance(
+                    inp.attn_bias,
+                    (
+                        BlockDiagonalCausalLocalAttentionMask,
+                        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                        LowerTriangularFromBottomRightLocalAttentionMask,
+                    ),
+                )
+                else None
+            ),
         )
         ctx: Optional[Context] = None
         if needs_gradient:
@@ -439,9 +450,9 @@ class BwOp(AttentionBwOpBase):
             inp.key,
             inp.value,
             bias=tensor_bias,
-            bias_requires_grad=tensor_bias.requires_grad
-            if tensor_bias is not None
-            else False,
+            bias_requires_grad=(
+                tensor_bias.requires_grad if tensor_bias is not None else False
+            ),
             cu_seqlens_q=seqstart_q,
             cu_seqlens_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
@@ -458,16 +469,18 @@ class BwOp(AttentionBwOpBase):
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
             num_splits_key=-1,  # Let C++ determine it
-            window_size=inp.attn_bias._window_size
-            if isinstance(
-                inp.attn_bias,
-                (
-                    BlockDiagonalCausalLocalAttentionMask,
-                    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-                    LowerTriangularFromBottomRightLocalAttentionMask,
-                ),
-            )
-            else None,
+            window_size=(
+                inp.attn_bias._window_size
+                if isinstance(
+                    inp.attn_bias,
+                    (
+                        BlockDiagonalCausalLocalAttentionMask,
+                        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+                        LowerTriangularFromBottomRightLocalAttentionMask,
+                    ),
+                )
+                else None
+            ),
         )
 
         # c++/CUDA implementation returns an uninitialized tensor if bias doesn't

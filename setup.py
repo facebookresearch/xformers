@@ -8,6 +8,7 @@
 import datetime
 import distutils.command.clean
 import glob
+import importlib.util
 import json
 import os
 import platform
@@ -21,7 +22,6 @@ from typing import List, Optional
 
 import setuptools
 import torch
-from torch._C import parse_schema
 from torch.utils.cpp_extension import (
     CUDA_HOME,
     BuildExtension,
@@ -30,6 +30,18 @@ from torch.utils.cpp_extension import (
 )
 
 this_dir = os.path.dirname(__file__)
+pt_attn_compat_file_path = os.path.join(
+    this_dir, "xformers", "ops", "fmha", "torch_attention_compat.py"
+)
+
+# Define the module name
+module_name = "torch_attention_compat"
+
+# Load the module
+spec = importlib.util.spec_from_file_location(module_name, pt_attn_compat_file_path)
+attn_compat_module = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = attn_compat_module
+spec.loader.exec_module(attn_compat_module)
 
 
 def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
@@ -143,54 +155,6 @@ def get_hip_version(rocm_dir) -> Optional[str]:
     return None
 
 
-def is_pt_cutlass_compatible(force: bool) -> bool:
-    compatible = True
-
-    fwd_schema_str = (
-        "aten::_efficient_attention_forward(Tensor query, Tensor key, Tensor value, "
-        "Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, SymInt? max_seqlen_q, "
-        "SymInt? max_seqlen_k, float dropout_p, int custom_mask_type, bool compute_log_sumexp=False, *, "
-        "float? scale=None, Tensor? seqlen_k=None, int? window_size=None) -> "
-        "(Tensor output, Tensor logsumexp, Tensor philox_seed, Tensor philox_offset, "
-        "SymInt max_seqlen_batch_q, SymInt max_seqlen_batch_k)"
-    )
-    expected_fwd_schema = parse_schema(fwd_schema_str)
-
-    current_schema = torch.ops.aten._efficient_attention_forward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_fwd_schema):
-        compatible = False
-
-        if force:
-            raise ImportError(
-                f"Current Torch CUTLASS doesnt have a compatible aten::_efficient_attention_forward schema\n"
-                f"EXPECTED:\n{expected_fwd_schema}\n"
-                f"but GOT:\n{current_schema}"
-            )
-
-    bwd_schema_str = (
-        "aten::_efficient_attention_backward(Tensor grad_out_, Tensor query, Tensor key, Tensor value, "
-        "Tensor? bias, Tensor out, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, SymInt max_seqlen_q, "
-        "SymInt max_seqlen_k, Tensor logsumexp, float dropout_p, Tensor philox_seed, Tensor philox_offset, "
-        "int custom_mask_type, bool bias_requires_grad, *, float? scale=None, int? num_splits_key=None, "
-        "int? window_size=None, bool shared_storage_dqdkdv=False) -> (Tensor, Tensor, Tensor, Tensor)"
-    )
-
-    expected_bwd_schema = parse_schema(bwd_schema_str)
-
-    current_schema = torch.ops.aten._efficient_attention_backward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_bwd_schema):
-        compatible = False
-
-        if force:
-            raise ImportError(
-                f"Current Torch CUTLASS doesnt have a compatible aten::_efficient_attention_backward schema\n"
-                f"EXPECTED:\n{expected_bwd_schema}\n"
-                f"but GOT:\n{current_schema}"
-            )
-
-    return compatible
-
-
 def get_flash_attention_nvcc_archs_flags(cuda_version: int):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
@@ -296,76 +260,6 @@ def rename_cpp_cu(cpp_files):
         shutil.copy(entry, os.path.splitext(entry)[0] + ".cu")
 
 
-def is_pt_flash_compatible(cuda_version: int, force: bool) -> bool:
-    if not hasattr(torch.nn, "attention") or not hasattr(
-        torch.nn.attention, "_get_flash_version"
-    ):
-        if force:
-            raise ImportError(
-                f"Current Torch {torch.__version__} doesnt implement "
-                "torch.nn.attention._get_flash_version()"
-            )
-        return False
-
-    # check if the current device supports flash_attention
-    nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
-    if not nvcc_archs_flags:
-        if force:
-            raise ImportError(
-                "Current Torch Flash-Attention is not available on this device"
-            )
-        return False
-
-    FLASH_VERSION = torch.nn.attention._get_flash_version()
-
-    compatible = True
-
-    fwd_schema_str = (
-        "aten::_flash_attention_forward(Tensor query, Tensor key, Tensor value, "
-        "Tensor? cum_seq_q, Tensor? cum_seq_k, SymInt max_q, SymInt max_k, float dropout_p, "
-        "bool is_causal, bool return_debug_mask, *, float? scale=None, "
-        "SymInt? window_size_left=None, SymInt? window_size_right=None, "
-        "Tensor? seqused_k=None, Tensor? alibi_slopes=None) -> (Tensor output, Tensor softmax_logsumexp, "
-        "Tensor philox_seed, Tensor philox_offset, Tensor debug_attn_mask)"
-    )
-    expected_fwd_schema = parse_schema(fwd_schema_str)
-
-    current_schema = torch.ops.aten._flash_attention_forward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_fwd_schema):
-        compatible = False
-
-        if force:
-            raise ImportError(
-                f"Current Torch with Flash-Attention {FLASH_VERSION} doesnt have "
-                "a compatible aten::_flash_attention_forward schema\n"
-                f"EXPECTED:\n{expected_fwd_schema}\n"
-                f"but GOT:\n{current_schema}"
-            )
-
-    bwd_schema_str = (
-        "aten::_flash_attention_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, "
-        "Tensor out, Tensor logsumexp, Tensor cum_seq_q, Tensor cum_seq_k, SymInt max_q, SymInt max_k, "
-        "float dropout_p, bool is_causal, Tensor philox_seed, Tensor philox_offset, *, float? scale=None, "
-        "SymInt? window_size_left=None, SymInt? window_size_right=None) -> (Tensor, Tensor, Tensor)"
-    )
-
-    expected_bwd_schema = parse_schema(bwd_schema_str)
-
-    current_schema = torch.ops.aten._flash_attention_backward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_bwd_schema):
-        compatible = False
-
-        if force:
-            raise ImportError(
-                f"Current Torch with Flash-Attention {FLASH_VERSION} doesnt have "
-                "a compatible aten::_flash_attention_backward schema\n"
-                f"EXPECTED:\n{expected_bwd_schema}\n"
-                f"but GOT:\n{current_schema}"
-            )
-
-    return compatible
-
-
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
@@ -398,10 +292,12 @@ def get_extensions():
     xformers_pt_cutlass_attn = os.getenv("XFORMERS_PT_CUTLASS_ATTN")
     # By default, we try to link to torch internal CUTLASS attention implementation
     # and silently switch to local CUTLASS attention build if no compatibility
-    # If we force 'torch FA switch' then setup will fail when no compatibility
+    # If we force 'torch CUTLASS switch' then setup will fail when no compatibility
     if (
         xformers_pt_cutlass_attn is None or xformers_pt_cutlass_attn == "1"
-    ) and is_pt_cutlass_compatible(force=xformers_pt_cutlass_attn == "1"):
+    ) and attn_compat_module.is_pt_cutlass_compatible(
+        force=xformers_pt_cutlass_attn == "1"
+    ):
         source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
 
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
@@ -429,6 +325,7 @@ def get_extensions():
     cuda_version = None
     hip_version = None
     flash_version = "0.0.0"
+    use_pt_flash = False
 
     if (
         (torch.cuda.is_available() and ((CUDA_HOME is not None)))
@@ -466,30 +363,33 @@ def get_extensions():
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
+        flash_extensions = []
         xformers_pt_flash_attn = os.getenv("XFORMERS_PT_FLASH_ATTN")
-        # By default, we try to link to torch internal flash attention implementation
-        # and silently switch to local flash attention build if no compatibility
-        # If we force 'torch FA switch' then setup will fail when no compatibility
-        if (
-            xformers_pt_flash_attn is None or xformers_pt_flash_attn == "1"
-        ) and is_pt_flash_compatible(
-            cuda_version=cuda_version, force=xformers_pt_flash_attn == "1"
-        ):
-            FLASH_VERSION = torch.nn.attention._get_flash_version()
 
-            flash_extensions = []
-            use_pt_flash = True
+        # check if the current device supports flash_attention
+        nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
+        if not nvcc_archs_flags:
+            if xformers_pt_flash_attn == "1":
+                raise ValueError(
+                    "Current Torch Flash-Attention is not available on this device"
+                )
         else:
-            flash_extensions = get_flash_attention_extensions(
-                cuda_version=cuda_version, extra_compile_args=extra_compile_args
-            )
-            use_pt_flash = False
-
-        if use_pt_flash:
-            flash_version = FLASH_VERSION
-        else:
-            if flash_extensions:
-                flash_version = get_flash_version()
+            # By default, we try to link to torch internal flash attention implementation
+            # and silently switch to local flash attention build if no compatibility
+            # If we force 'torch FA switch' then setup will fail when no compatibility
+            if (
+                xformers_pt_flash_attn is None or xformers_pt_flash_attn == "1"
+            ) and attn_compat_module.is_pt_flash_compatible(
+                force=xformers_pt_flash_attn == "1"
+            ):
+                flash_version = torch.nn.attention._get_flash_version() + "-pt"
+                use_pt_flash = True
+            else:
+                flash_extensions = get_flash_attention_extensions(
+                    cuda_version=cuda_version, extra_compile_args=extra_compile_args
+                )
+                if flash_extensions:
+                    flash_version = get_flash_version()
 
         ext_modules += flash_extensions
 
@@ -566,6 +466,7 @@ def get_extensions():
             "torch": torch.__version__,
             "python": platform.python_version(),
             "flash": flash_version,
+            "use_torch_flash": use_pt_flash,
         },
         "env": {
             k: os.environ.get(k)

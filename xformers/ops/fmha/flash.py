@@ -37,6 +37,7 @@ from .common import (
     Inputs,
     check_lastdim_alignment_stride1,
 )
+from .torch_attention_compat import is_pt_flash_compatible
 
 FLASH_VERSION = "0.0.0"
 FLASH_SUPPORTS_UNPADDED_LSE = False
@@ -74,29 +75,8 @@ try:
                 "arg19" in _C_flashattention.varlen_fwd.__doc__
             )
         except ImportError:
-            if not torch.backends.cuda.flash_sdp_enabled():
-                raise ImportError("SDP Flash-Attention needs to be enabled in pytorch")
-
-            # switch to TORCH FA.
-            from ..._cpp_lib import _build_metadata
-
-            if _build_metadata is not None:
-                FLASH_VERSION = _build_metadata.flash_version
-
-                # Check the compatibility device options set during xformers setup.
-                if FLASH_VERSION == "0.0.0":
-                    raise ImportError(
-                        "Current Torch Flash-Attention is not available on this device"
-                    )
-            else:
-                if not hasattr(torch.nn, "attention") or not hasattr(
-                    torch.nn.attention, "_get_flash_version"
-                ):
-                    raise ImportError(
-                        f"Current Torch {torch.__version__} doesnt implement "
-                        "torch.nn.attention._get_flash_version()"
-                    )
-                FLASH_VERSION = torch.nn.attention._get_flash_version()
+            assert is_pt_flash_compatible(force=True)
+            FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
             _USE_PT_FLASH_ATTN = True
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
