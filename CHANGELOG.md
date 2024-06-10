@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - backwards pass for merge_attentions
 - fMHA: Added `torch.compile` support for 2 biases (`LowerTriangularMask` and `LowerTriangularMaskWithTensorBias`)
 - fMHA: Added `torch.compile` support in `memory_efficient_attention` when passing the flash operator explicitely (eg `memory_efficient_attention(..., op=(flash.FwOp, flash.BwOp))`)
+- 2:4 sparsity: Added `xformers.ops.sp24.sparsify24_ste` for Straight Through Estimator (STE) with options to rescale the gradient differently for masked out/kept values
 ### Improved
 - fMHA: Fixed out-of-bounds reading for Split-K triton implementation
 - Profiler: fix bug with modules that take a single tuple as argument

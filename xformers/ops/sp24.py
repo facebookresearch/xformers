@@ -488,6 +488,35 @@ BACKEND_CUSPARSELT = "cusparselt"
 BACKEND_DENSE = "dense"
 
 
+def _sparsify24_forward(x: torch.Tensor, *, algo: str, backend: str) -> Sparse24Tensor:
+    assert backend in [
+        BACKEND_CUTLASS,
+        BACKEND_CUSPARSELT,
+    ], f"Invalid backend: {backend}"
+    if isinstance(x, Sparse24Tensor):
+        if x.threads_masks is None:
+            raise ValueError("Input to `sparsify24` is already sparse")
+        return x
+
+    (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
+        x, algorithm=algo, backend=backend
+    )
+    cls = (
+        Sparse24TensorCutlass
+        if backend == BACKEND_CUTLASS
+        else Sparse24TensorCuSparseLt
+    )
+    return cls(
+        x.shape,
+        packed=packed,
+        meta=meta,
+        packed_t=packed_t,
+        meta_t=meta_t,
+        threads_masks=threads_masks,
+        requires_grad=False,
+    )
+
+
 class _Sparsify24Func(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x: torch.Tensor, algo: str, gradient: str, backend: str):  # type: ignore[override]
@@ -496,32 +525,7 @@ class _Sparsify24Func(torch.autograd.Function):
                 f"Invalid gradient type: '{gradient}'. "
                 f"Expected '{GRADIENT_SP24}' or '{GRADIENT_DENSE}' or '{GRADIENT_STE}"
             )
-        assert backend in [
-            BACKEND_CUTLASS,
-            BACKEND_CUSPARSELT,
-        ], f"Invalid backend: {backend}"
-        if not isinstance(x, Sparse24Tensor):
-            (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
-                x, algorithm=algo, backend=backend
-            )
-            cls = (
-                Sparse24TensorCutlass
-                if backend == BACKEND_CUTLASS
-                else Sparse24TensorCuSparseLt
-            )
-            out = cls(
-                x.shape,
-                packed=packed,
-                meta=meta,
-                packed_t=packed_t,
-                meta_t=meta_t,
-                threads_masks=threads_masks,
-                requires_grad=False,
-            )
-        else:
-            if x.threads_masks is None:
-                raise ValueError("!!")
-            out = x
+        out = _sparsify24_forward(x, algo=algo, backend=backend)
         ctx.threads_masks = out.threads_masks
         ctx.meta = out.meta
         ctx.meta_t = out.meta_t
@@ -556,6 +560,40 @@ class _Sparsify24Func(torch.autograd.Function):
             None,
             None,
             None,
+        )
+
+
+class _Sparsify24STEFunc(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        x: torch.Tensor,
+        algo: str,
+        backend: str,
+        bw_mul0: float,
+        bw_mul1: float,
+    ):  # type: ignore[override]
+        out = _sparsify24_forward(x, algo=algo, backend=backend)
+        ctx.threads_masks = out.threads_masks
+        ctx.bw_mul0 = bw_mul0
+        ctx.bw_mul1 = bw_mul1
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out: torch.Tensor):  # type: ignore[override]
+        assert not isinstance(grad_out, Sparse24Tensor)
+        if ctx.bw_mul0 == 1.0 and ctx.bw_mul1 == 1.0:
+            grad_in = grad_out
+        else:
+            grad_in = SparsifyApplyDenseOutput.OPERATOR(
+                grad_out, ctx.threads_masks, mul0=ctx.bw_mul0, mul1=ctx.bw_mul1
+            )
+        return (
+            grad_in,
+            None,  # algo
+            None,  # backend
+            None,  # bw_mul0
+            None,  # bw_mul1
         )
 
 
@@ -660,6 +698,23 @@ def sparsify24(
     backend: str = BACKEND_CUTLASS,
 ) -> Sparse24Tensor:
     return _Sparsify24Func.apply(x, algo, gradient, backend)
+
+
+@allow_in_graph
+def sparsify24_ste(
+    x: torch.Tensor,
+    algo: str = "",
+    backend: str = BACKEND_CUTLASS,
+    bw_mul0: float = 1.0,
+    bw_mul1: float = 1.0,
+) -> Sparse24Tensor:
+    """
+    2:4 sparsification, with Straight Through Estimator for the
+    backward pass (eg the gradient is *not* sparsified).
+    Optionally, `bw_mul[0-1]` provide the option to rescale the gradient
+    differently for pruned (`bw_mul0`) and kept values (`bw_mul1`).
+    """
+    return _Sparsify24STEFunc.apply(x, algo, backend, bw_mul0, bw_mul1)
 
 
 @allow_in_graph

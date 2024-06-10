@@ -999,14 +999,14 @@ def test_sp24_ste():
 
 
 @requires_sp24_gemm
-def test_apply_dense_scaled():
-    x = torch.randn([512, 512], dtype=torch.float16, device="cuda", requires_grad=True)
-    spX = sp24.sparsify24(x)
-    spXd = spX._sp24_to_dense()
+@parametrize_dtype
+def test_sparsify24_ste(dtype):
+    x = torch.randn([512, 512], dtype=dtype, device="cuda", requires_grad=True)
+    y = torch.randn([512, 512], dtype=dtype, device="cuda", requires_grad=True)
     mul0 = 2.0  # (numbers that have an exact representation in f16)
     mul1 = 0.5
-    out = sp24.SparsifyApplyDenseOutput.OPERATOR(
-        x, spX.threads_masks, mul0=mul0, mul1=mul1
-    )
-    ref = mul1 * (spXd) + mul0 * (x - spXd)
-    assert_allclose(out, ref, "SparsifyApplyDenseOutput")
+    spX = sp24.sparsify24_ste(x, bw_mul0=mul0, bw_mul1=mul1)
+    spX.backward(y)
+    spYd = sp24.sparsify24_like(y, pattern=spX)._sp24_to_dense()
+    ref = mul1 * (spYd) + mul0 * (y - spYd)
+    assert_allclose(x.grad, ref, "grad")
