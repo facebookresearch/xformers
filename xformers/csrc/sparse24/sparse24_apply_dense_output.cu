@@ -9,16 +9,20 @@
 using namespace xformers::sp24;
 
 namespace {
+template <typename T>
 struct Params {
   uint64_t const* threads_masks;
 
-  uint16_t const* input;
+  T const* input;
   int64_t input_stride;
   int64_t input_dim0;
   int64_t input_dim1;
 
-  uint16_t* output;
+  T* output;
   int64_t output_stride;
+
+  T mul0;
+  T mul1;
 
   __host__ dim3 getBlocksGrid() const {
     return dim3(
@@ -41,10 +45,10 @@ struct Params {
   }
 };
 
-template <bool kInputRowMajor = true, bool kOutputRowMajor = true>
-__global__ void __launch_bounds__(32 /* num_threads */, 32)
-    sparse24_apply_dense_output_k(Params p) {
-  using Fragment = cutlass::Array<uint16_t, 8>;
+template <typename T, bool kInputRowMajor = true, bool kOutputRowMajor = true>
+__global__ void __launch_bounds__(32 /* num_threads */)
+    sparse24_apply_dense_output_k(Params<T> p) {
+  using Fragment = cutlass::Array<T, 8>;
 
   // Top-left of the 8x8 tile we own
   int warp_x = blockIdx.x * kWarpX;
@@ -52,20 +56,20 @@ __global__ void __launch_bounds__(32 /* num_threads */, 32)
   int x = warp_x + threadIdx.x * kThreadX;
   int y = warp_y + threadIdx.y * kThreadY;
 
-  uint16_t* output = p.output + x * p.output_stride + y;
+  T* output = p.output + x * p.output_stride + y;
   Tile8x8Masks indices = *p.getCurrentThreadIndices();
 
   // Load dense
   Fragment lines[8];
   if (kInputRowMajor) {
-    uint16_t const* input = p.input + x * p.input_stride + y;
+    T const* input = p.input + x * p.input_stride + y;
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < 8; ++i) {
       cutlass::arch::global_load<Fragment, sizeof(Fragment)>(
           lines[i], input + i * p.input_stride, true);
     }
   } else {
-    uint16_t const* input = p.input + x + y * p.input_stride;
+    T const* input = p.input + x + y * p.input_stride;
     Fragment columns[8];
     CUTLASS_PRAGMA_UNROLL
     for (int i = 0; i < 8; ++i) {
@@ -99,8 +103,13 @@ __global__ void __launch_bounds__(32 /* num_threads */, 32)
       for (int r = 0; r < 4; ++r) {
         CUTLASS_PRAGMA_UNROLL
         for (int c = 0; c < 4; ++c) {
-          lines[4 * row + r][4 * m + c] = lines[4 * row + r][4 * m + c] *
-              int((masks[m] >> (4 * r + c)) & 1);
+          if ((masks[m] >> (4 * r + c)) & 1) {
+            lines[4 * row + r][4 * m + c] =
+                p.mul1 * lines[4 * row + r][4 * m + c];
+          } else {
+            lines[4 * row + r][4 * m + c] =
+                p.mul0 * lines[4 * row + r][4 * m + c];
+          }
         }
       }
     }
@@ -114,14 +123,12 @@ __global__ void __launch_bounds__(32 /* num_threads */, 32)
   }
 }
 
-template <bool kIsMeta = false>
-at::Tensor sparse24_apply_dense_output(
+template <typename T, bool kIsMeta = false>
+at::Tensor sparse24_apply_dense_output_typed(
     at::Tensor input,
-    at::Tensor threads_masks) {
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Unsupported `input` dtype");
+    at::Tensor threads_masks,
+    float mul0,
+    float mul1) {
   TORCH_CHECK(
       input.stride(0) == 1 || input.stride(1) == 1,
       "`input` should be either RowMajor or ColMajor. Invalid memory layout - try .contiguous()?");
@@ -129,11 +136,11 @@ at::Tensor sparse24_apply_dense_output(
   auto roundedx = cutlass::round_up(input.size(0), kWarpX);
   auto roundedy = cutlass::round_up(input.size(1), kWarpY);
 
-  Params p;
+  Params<T> p;
   p.input_dim0 = input.size(0);
   p.input_dim1 = input.size(1);
   if (!kIsMeta) {
-    p.input = (uint16_t const*)input.data_ptr();
+    p.input = (T const*)input.data_ptr();
     p.threads_masks = (uint64_t const*)threads_masks.data_ptr();
   }
 
@@ -152,7 +159,9 @@ at::Tensor sparse24_apply_dense_output(
   if (kIsMeta) {
     return output;
   }
-  p.output = (uint16_t*)output.data_ptr();
+  p.output = (T*)output.data_ptr();
+  p.mul0 = T(mul0);
+  p.mul1 = T(mul1);
 
   bool inputRowMajor = input.stride(-1) == 1;
   bool outputRowMajor = output.stride(-1) == 1;
@@ -163,10 +172,10 @@ at::Tensor sparse24_apply_dense_output(
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
   size_t smem_bytes = 0;
   if (inputRowMajor && outputRowMajor) {
-    sparse24_apply_dense_output_k<true, true>
+    sparse24_apply_dense_output_k<T, true, true>
         <<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   } else if (!inputRowMajor && outputRowMajor) {
-    sparse24_apply_dense_output_k<false, true>
+    sparse24_apply_dense_output_k<T, false, true>
         <<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   } else {
     TORCH_CHECK(
@@ -180,13 +189,34 @@ at::Tensor sparse24_apply_dense_output(
   return output;
 }
 
+template <bool kIsMeta = false>
+at::Tensor sparse24_apply_dense_output(
+    at::Tensor input,
+    at::Tensor threads_masks,
+    double mul0,
+    double mul1) {
+  TORCH_CHECK(
+      input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Unsupported `input` dtype");
+  if (input.scalar_type() == at::ScalarType::Half) {
+    return sparse24_apply_dense_output_typed<cutlass::half_t, kIsMeta>(
+        input, threads_masks, mul0, mul1);
+  } else {
+    return sparse24_apply_dense_output_typed<cutlass::bfloat16_t, kIsMeta>(
+        input, threads_masks, mul0, mul1);
+  }
+}
+
 at::Tensor sparse24_apply_dense_output_autocast(
     at::Tensor input,
-    at::Tensor threads_masks) {
+    at::Tensor threads_masks,
+    double mul0,
+    double mul1) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return sparse24_apply_dense_output(
-      at::autocast::cached_cast(exec_type, input), threads_masks);
+      at::autocast::cached_cast(exec_type, input), threads_masks, mul0, mul1);
 }
 } // namespace
 
