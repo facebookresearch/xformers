@@ -31,3 +31,7 @@ runs:
     - name: Remove link.exe
       shell: bash
       run: rm /usr/bin/link
+
+    # host compiler is too new for cuda 12.1 :(
+    - run: echo "NVCC_FLAGS=-allow-unsupported-compiler" >> $GITHUB_ENV
+      shell: bash

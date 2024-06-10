@@ -5,6 +5,7 @@ on:
     paths:
       - "packaging/compute_wheel_version.sh"
       - ".github/workflows/wheel*"
+      - ".github/actions/setup-windows-runner/action.yml"
       - "setup.py"
       - "requirements*.txt"
   push:

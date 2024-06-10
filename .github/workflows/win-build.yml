@@ -6,6 +6,7 @@ on:
       - "third_party/**"
       - "xformers/csrc/**"
       - ".github/workflows/win-build.yml"
+      - ".github/actions/setup-windows-runner/action.yml"
       - "setup.py"
       - "requirements*.txt"
 
