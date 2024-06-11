@@ -39,7 +39,7 @@ import torch
 class AttentionBias:
     """Base class for a custom bias that can be applied \
         as the attn_bias argument in
-        :attr:`xformers.ops.memory_efficient_attention`.
+    :attr:`xformers.ops.memory_efficient_attention`.
 
     That function has the ability to add a tensor, the
     attention bias, to the QK^T matrix before it is used

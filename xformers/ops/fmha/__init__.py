@@ -538,10 +538,11 @@ def memory_efficient_attention_partial(
     output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
-    Returns a tuple (output, lse), where `output` is the attention and  `lse`
-    is a least squared error. The cat'ed outputs of calls to this with the same query
-    and separate keys and values can be merged with merge_attentions to obtain
-    the attention of the queries against the disjoint union of the keys and values.
+    Returns a tuple (output, lse), where `output` is the attention in the style of
+    memory_efficient_attention, and  `lse` is extra data, a log-sum-exp.
+    The outputs of calls to this with the same query and separate keys and values
+    can be merged with merge_attentions to obtain the attention of the queries
+    against the disjoint union of the keys and values.
     """
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
