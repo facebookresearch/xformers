@@ -747,7 +747,7 @@
     <span class="k">return</span> <span class="n">grads</span>
 
 
-<span class="k">def</span> <span class="nf">memory_efficient_attention_partial</span><span class="p">(</span>
+<div class="viewcode-block" id="memory_efficient_attention_partial"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_partial">[docs]</a><span class="k">def</span> <span class="nf">memory_efficient_attention_partial</span><span class="p">(</span>
     <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -759,10 +759,11 @@
     <span class="n">output_dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Returns a tuple (output, lse), where `output` is the attention and  `lse`</span>
-<span class="sd">    is a least squared error. The cat&#39;ed outputs of calls to this with the same query</span>
-<span class="sd">    and separate keys and values can be merged with merge_attentions to obtain</span>
-<span class="sd">    the attention of the queries against the disjoint union of the keys and values.</span>
+<span class="sd">    Returns a tuple (output, lse), where `output` is the attention in the style of</span>
+<span class="sd">    memory_efficient_attention, and  `lse` is extra data, a log-sum-exp.</span>
+<span class="sd">    The outputs of calls to this with the same query and separate keys and values</span>
+<span class="sd">    can be merged with merge_attentions to obtain the attention of the queries</span>
+<span class="sd">    against the disjoint union of the keys and values.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;dropout is not supported.&quot;</span><span class="p">)</span>
@@ -798,10 +799,10 @@
         <span class="p">),</span>
         <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span>
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span></div>
 
 
-<span class="k">def</span> <span class="nf">merge_attentions</span><span class="p">(</span>
+<div class="viewcode-block" id="merge_attentions"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.merge_attentions">[docs]</a><span class="k">def</span> <span class="nf">merge_attentions</span><span class="p">(</span>
     <span class="n">attn_split</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
     <span class="n">lse_split</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
     <span class="n">write_lse</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -960,7 +961,7 @@
         <span class="k">if</span> <span class="n">lse_out</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">lse_out</span> <span class="o">=</span> <span class="n">lse_out</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
 
-    <span class="k">return</span> <span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span>
+    <span class="k">return</span> <span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span></div>
 
 
 <span class="k">class</span> <span class="nc">_MergeAttentions</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
