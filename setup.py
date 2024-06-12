@@ -352,15 +352,6 @@ def get_extensions():
         ]
 
         include_dirs += [
-            Path(this_dir)
-            / "third_party"
-            / "composable_kernel_tiled"
-            / "example"
-            / "91_tile_program"
-            / "fmha"
-        ]
-
-        include_dirs += [
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
@@ -377,7 +368,7 @@ def get_extensions():
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_FMHA_FWD_FAST_EXP2=1",
                 "-fgpu-flush-denormals-to-zero",
-                "-Rpass-analysis=kernel-resource-usage",
+                ##"-Rpass-analysis=kernel-resource-usage",
             ]
             + generator_flag
             + cc_flag,

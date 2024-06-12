@@ -13,60 +13,12 @@
 
 #include <torch/torch.h>
 
-#include <ck/ck.hpp>
-#include <ck/utility/data_type.hpp>
-#include <ck/utility/sequence.hpp>
-
 #define XFORMERS_CHECK(COND, ERR)          \
   if (!(COND)) {                           \
     std::ostringstream ostr;               \
     ostr << "'" #COND "' failed: " << ERR; \
     throw std::runtime_error(ostr.str());  \
   }
-
-#define DISPATCH_TYPES(InDataType, func)                                 \
-  {                                                                      \
-    if (InDataType == at::ScalarType::Half) {                            \
-      using scalar_t = ck::half_t;                                       \
-      func();                                                            \
-    } else if (InDataType == at::ScalarType::BFloat16) {                 \
-      using scalar_t = ck::bhalf_t;                                      \
-      func();                                                            \
-    } else {                                                             \
-      XFORMERS_CHECK(                                                    \
-          false, "Only half & bf16 input type supported at the moment"); \
-    }                                                                    \
-  }
-
-template <typename scalar_t>
-struct CkToAtenDtype;
-
-template <>
-struct CkToAtenDtype<ck::half_t> {
-  using scalar_t = ck::half_t;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::Half;
-  }
-};
-
-template <>
-struct CkToAtenDtype<ck::bhalf_t> {
-  using scalar_t = ck::bhalf_t;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::BFloat16;
-  }
-};
-
-template <>
-struct CkToAtenDtype<float> {
-  using scalar_t = float;
-
-  static constexpr __host__ at::ScalarType atScalarType() {
-    return at::ScalarType::Float;
-  }
-};
 
 #define CHECK_NOSPARSE_CONTIGUOUS_CUDA(TENSOR)                            \
   XFORMERS_CHECK(TENSOR.is_cuda(), #TENSOR " must be a CUDA tensor");     \

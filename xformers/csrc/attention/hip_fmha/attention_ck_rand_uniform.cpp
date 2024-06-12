@@ -13,10 +13,10 @@
 #include <torch/types.h>
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
-#include <ck/ck.hpp>
-#include <ck/host_utility/kernel_launch.hpp>
+#include <ck_tile/core.hpp>
+#include <ck_tile/host/kernel_launch.hpp>
 
-#include "fmha_rand_uniform_kernel.hpp"
+#include "ck_tiled_rand_uniform_kernel.h"
 
 namespace {
 
@@ -76,15 +76,13 @@ at::Tensor rand_uniform_int(
 
     dim3 kGridSize = FmhaRandUniformKernel_::GridSize(B, num_heads, M, N);
     constexpr dim3 kBlockSize = FmhaRandUniformKernel_::BlockSize();
-    constexpr ck::index_t kBlockPerCu = FmhaRandUniformKernel_::kBlockPerCu;
+    constexpr ck_tile::index_t kBlockPerCu =
+        FmhaRandUniformKernel_::kBlockPerCu;
 
-    (void)launch_kernel<kBlockSize.x, kBlockPerCu>(
-        StreamConfig{stream, false},
-        FmhaRandUniformKernel_{},
-        kGridSize,
-        kBlockSize,
-        0,
-        kargs);
+    (void)ck_tile::launch_kernel(
+        ck_tile::stream_config{stream, false},
+        ck_tile::make_kernel<kBlockSize.x, kBlockPerCu>(
+            FmhaRandUniformKernel_{}, kGridSize, kBlockSize, 0, kargs));
   }
 
   (void)hipStreamSynchronize(stream);

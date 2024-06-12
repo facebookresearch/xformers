@@ -4,9 +4,10 @@
 #include <ck/stream_config.hpp>
 #include <ck/tensor_operation/gpu/device/device_base.hpp>
 #include <ck/utility/data_type.hpp>
-#include <ck/utility/inner_product.hpp>
 #include <ck/utility/math.hpp>
-#include <ck/utility/math_v2.hpp>
+
+#include "ck_attention_inner_product.h"
+#include "ck_attention_math_ext.h"
 
 namespace {
 

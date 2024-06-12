@@ -20,13 +20,13 @@
 extern void batched_backward_fp16(
     BatchedBackwardParams& param,
     hipStream_t stream);
-extern void batched_backward_bp16(
+extern void batched_backward_bf16(
     BatchedBackwardParams& param,
     hipStream_t stream);
 extern void grouped_backward_fp16(
     GroupedBackwardParams& param,
     hipStream_t stream);
-extern void grouped_backward_bp16(
+extern void grouped_backward_bf16(
     GroupedBackwardParams& param,
     hipStream_t stream);
 
@@ -492,7 +492,7 @@ efficient_attention_backward_ck(
     if (inDataType == at::ScalarType::Half) {
       batched_backward_fp16(batched_backward_params, stream);
     } else if (inDataType == at::ScalarType::BFloat16) {
-      batched_backward_bp16(batched_backward_params, stream);
+      batched_backward_bf16(batched_backward_params, stream);
     } else
       throw std::runtime_error("input data-type is not supported");
   } else { // input is grouped
@@ -503,7 +503,7 @@ efficient_attention_backward_ck(
     if (inDataType == at::ScalarType::Half) {
       grouped_backward_fp16(grouped_backward_params, stream);
     } else if (inDataType == at::ScalarType::BFloat16) {
-      grouped_backward_bp16(grouped_backward_params, stream);
+      grouped_backward_bf16(grouped_backward_params, stream);
     } else
       throw std::runtime_error("input data-type is not supported");
   }
