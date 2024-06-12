@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Tuple, Type, Union, cast
+from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
 
 import torch
 
@@ -127,11 +127,11 @@ class _fMHA(torch.autograd.Function):
         ctx.scale = inp.scale
         ctx.attn_bias_ctx = attn_bias_ctx
         ctx.n_args = len(args)
-        return out
+        return out, op_ctx.lse
 
     @staticmethod
     @torch.autograd.function.once_differentiable
-    def backward(ctx, grad):
+    def backward(ctx, grad, grad_lse):
         # Re-create context
         query, key, value, out, lse = ctx.saved_tensors
         attn_bias_tensor = ctx.attn_bias_tensor
@@ -402,7 +402,7 @@ def _memory_efficient_attention(
     op_bw = _serialize_op(op[1] if op is not None else None)
     return _fMHA.apply(
         op_fw, op_bw, inp.query, inp.key, inp.value, inp.attn_bias, inp.p, inp.scale
-    ).reshape(output_shape)
+    )[0].reshape(output_shape)
 
 
 def _memory_efficient_attention_forward(
@@ -534,7 +534,7 @@ def memory_efficient_attention_partial(
     p: float = 0.0,
     scale: Optional[float] = None,
     *,
-    op: Optional[Type[AttentionFwOpBase]] = None,
+    op: Optional[Union[AttentionOp, Type[AttentionFwOpBase]]] = None,
     output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
@@ -543,9 +543,14 @@ def memory_efficient_attention_partial(
     The outputs of calls to this with the same query and separate keys and values
     can be merged with merge_attentions to obtain the attention of the queries
     against the disjoint union of the keys and values.
+
+    Warning: The backward pass of this function is quite restricted. In particular
+    we assume that in the forward pass the outputs were only used in merge_attention
+    calculations, and that LSEs weren't used anywhere except in merge attentions.
     """
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
+    fwop: Optional[Type[AttentionFwOpBase]] = op[0] if isinstance(op, tuple) else op
     if not (
         isinstance(
             attn_bias,
@@ -559,31 +564,61 @@ def memory_efficient_attention_partial(
                 _attn_bias.LowerTriangularMask,
             ),
         )
-        or op is None
-        or op.UNPADDED_LSE
+        or fwop is None
+        or fwop.UNPADDED_LSE
     ):
         raise ValueError(
             f"{type(attn_bias)} is not supported in memory_efficient_attention_partial."
         )
-    out, ctx = _memory_efficient_attention_forward_requires_grad(
-        Inputs(
-            query=query,
-            key=key,
-            value=value,
-            p=p,
-            attn_bias=attn_bias,
-            scale=scale,
-            output_dtype=output_dtype,
-            is_partial=True,
-        ),
-        op=op,
+    inp = Inputs(
+        query=query,
+        key=key,
+        value=value,
+        p=p,
+        attn_bias=attn_bias,
+        scale=scale,
+        output_dtype=output_dtype,
+        is_partial=True,
     )
-    return out, ctx.lse
+
+    is_grad = torch.is_grad_enabled() and any(
+        x.requires_grad for x in [query, key, value]
+    )
+
+    if not is_grad:
+        out, ctx = _memory_efficient_attention_forward_requires_grad(
+            inp,
+            op=fwop,
+        )
+        return out, ctx.lse
+
+    if query.ndim == 5:
+        raise ValueError("gradients not supported for 5D tensors")
+    if isinstance(op, tuple):
+        op_fw = _serialize_op(op[0])
+        op_bw = _serialize_op(op[1])
+    elif op is None:
+        op_fw = op_bw = None
+    else:
+        op_fw = _serialize_op(op)
+        op_bw = None
+    return _fMHA.apply(
+        op_fw,
+        op_bw,
+        inp.query,
+        inp.key,
+        inp.value,
+        inp.attn_bias,
+        inp.p,
+        inp.scale,
+        inp.output_dtype,
+        inp.is_partial,
+    )
 
 
 def merge_attentions(
-    attn_split: Union[torch.Tensor, List[torch.Tensor]],
-    lse_split: Union[torch.Tensor, List[torch.Tensor]],
+    attn_split: Union[torch.Tensor, Sequence[torch.Tensor]],
+    lse_split: Union[torch.Tensor, Sequence[torch.Tensor]],
     write_lse: bool = True,
     output_dtype: Optional[torch.dtype] = None,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:

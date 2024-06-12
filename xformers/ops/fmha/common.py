@@ -450,6 +450,7 @@ class AttentionBwOpBase(AttentionOpBase):
         torch.bfloat16: 0.1,
     }
     SUPPORTS_ATTN_BIAS_GRAD = False
+    SUPPORTS_PARTIAL = True
     SUPPORTS_UNPADDED_LSE = False
 
     @classmethod
