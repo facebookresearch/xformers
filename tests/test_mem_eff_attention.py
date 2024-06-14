@@ -1587,6 +1587,24 @@ def test_attn_bias_padded() -> None:
     )
 
 
+@cuda_only
+def test_attn_bias_to_copy() -> None:
+    def _test_to_copy(attn_bias: torch.Tensor) -> None:
+        assert attn_bias.device.type == "cpu", f"{attn_bias.device}"
+        attn_bias_cuda = attn_bias.cuda()
+        assert attn_bias_cuda.device.type == "cuda", f"{attn_bias_cuda.device}"
+        attn_bias_fp16 = attn_bias.to(torch.float16)
+        assert attn_bias_fp16.device.type == "cpu", f"{attn_bias_fp16.device}"
+        assert attn_bias_fp16.dtype == torch.float16, f"{attn_bias_fp16.dtype}"
+
+    attn_bias = fmha.attn_bias.LowerTriangularMask()
+    _test_to_copy(attn_bias)
+
+    tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
+    attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias)
+    _test_to_copy(attn_bias)
+
+
 def _kv_heads_label(kv_heads: Optional[int]) -> str:
     if kv_heads is None:
         return ""

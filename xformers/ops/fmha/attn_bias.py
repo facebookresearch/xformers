@@ -1435,7 +1435,7 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
             cls,
             [],
             device=_subtensor.device,
-            dtype=torch.float32,
+            dtype=_subtensor.dtype,
             requires_grad=False,
         )
         tensor._subtensor = _subtensor
@@ -1449,8 +1449,13 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        if func._overloadpacket in [torch.ops.aten.clone, torch.ops.aten.detach]:
-            return cls(_subtensor=func(args[0]._subtensor))
+        kwargs = kwargs or {}
+        if func._overloadpacket in [
+            torch.ops.aten.clone,
+            torch.ops.aten.detach,
+            torch.ops.aten._to_copy,
+        ]:
+            return cls(_subtensor=func(args[0]._subtensor, **kwargs))
         return NotImplemented
 
     def __tensor_flatten__(self):
@@ -1542,14 +1547,19 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
         if func._overloadpacket in [
             torch.ops.aten.unsqueeze,
             torch.ops.aten.select,
             torch.ops.aten.slice,
             torch.ops.aten.clone,
             torch.ops.aten.detach,
+            torch.ops.aten._to_copy,
         ]:
-            output = func(*[a._subtensor if isinstance(a, cls) else a for a in args])
+            output = func(
+                *[a._subtensor if isinstance(a, cls) else a for a in args],
+                **kwargs,
+            )
             return cls(output)
         return NotImplemented
 
