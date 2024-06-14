@@ -49,8 +49,7 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
       using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
-      using FmhaFwdTilePartitioner_ =
-          ck_tile::FmhaFwdTilePartitioner<FmhaFwdShape_>;
+
       constexpr ck_tile::index_t occupancy =
           (MaxK == 64) ? 3 : (MaxK == 256) ? 1 : 2;
 
@@ -92,12 +91,26 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
                     kPadSeqLenQ,
                     kPadHeadDimV>>;
 
-            using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
-                FmhaFwdTilePartitioner_,
-                FmhaFwdPipeline_,
-                FmhaFwdEpilogue_>;
+            if (param.seqlen_k_dev_ptr !=
+                nullptr) { // seqlen_k of batches are padded
+              using FmhaTilePartitioner =
+                  ck_tile::FmhaFwdTilePartitioner_HBS<FmhaFwdShape_>;
+              using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
+                  FmhaTilePartitioner,
+                  FmhaFwdPipeline_,
+                  FmhaFwdEpilogue_>;
 
-            RunWithKernel<FmhaFwdKernel_>(param, stream);
+              RunWithKernel<FmhaFwdKernel_>(param, stream);
+            } else {
+              using FmhaTilePartitioner =
+                  ck_tile::FmhaFwdTilePartitioner_SHB<FmhaFwdShape_>;
+              using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
+                  FmhaTilePartitioner,
+                  FmhaFwdPipeline_,
+                  FmhaFwdEpilogue_>;
+
+              RunWithKernel<FmhaFwdKernel_>(param, stream);
+            }
           });
     });
   };

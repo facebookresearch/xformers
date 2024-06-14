@@ -50,7 +50,6 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
       using FmhaShape = FmhaFwdShape<MaxK>;
-      using FmhaTilePartitioner = ck_tile::FmhaFwdTilePartitioner<FmhaShape>;
       constexpr ck_tile::index_t occupancy =
           (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
@@ -94,12 +93,26 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
                       kPadSeqLenQ,
                       kPadHeadDimV>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+              if (param.seqlen_k_dev_ptr !=
+                  nullptr) { // seqlen_k of batches are padded
+                using FmhaTilePartitioner =
+                    ck_tile::FmhaFwdTilePartitioner_HBS<FmhaShape>;
+                using FmhaKernel = ck_tile::FmhaFwdKernel<
+                    FmhaTilePartitioner,
+                    FmhaPipeline,
+                    FmhaEpilogue>;
 
-              RunWithKernel<FmhaKernel>(param, stream);
+                RunWithKernel<FmhaKernel>(param, stream);
+              } else {
+                using FmhaTilePartitioner =
+                    ck_tile::FmhaFwdTilePartitioner_SHB<FmhaShape>;
+                using FmhaKernel = ck_tile::FmhaFwdKernel<
+                    FmhaTilePartitioner,
+                    FmhaPipeline,
+                    FmhaEpilogue>;
+
+                RunWithKernel<FmhaKernel>(param, stream);
+              }
             });
       } else {
         using FmhaTraits = ck_tile::TileFmhaTraits<
@@ -127,10 +140,22 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
                 true,
                 true>>;
 
-        using FmhaKernel = ck_tile::
-            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+        if (param.seqlen_k_dev_ptr !=
+            nullptr) { // seqlen_k of batches are padded
+          using FmhaTilePartitioner =
+              ck_tile::FmhaFwdTilePartitioner_HBS<FmhaShape>;
+          using FmhaKernel = ck_tile::
+              FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
 
-        RunWithKernel<FmhaKernel>(param, stream);
+          RunWithKernel<FmhaKernel>(param, stream);
+        } else {
+          using FmhaTilePartitioner =
+              ck_tile::FmhaFwdTilePartitioner_SHB<FmhaShape>;
+          using FmhaKernel = ck_tile::
+              FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+          RunWithKernel<FmhaKernel>(param, stream);
+        }
       }
     });
   };
