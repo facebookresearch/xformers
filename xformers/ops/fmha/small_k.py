@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
 
 import torch
 
@@ -56,7 +56,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {torch.float}
     SUPPORTED_MAX_K: float = 32
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None), torch.Tensor}
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (type(None), torch.Tensor)
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = False
     NAME = "smallkF"
@@ -71,7 +71,11 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
-        if isinstance(d.attn_bias, torch.Tensor) and d.attn_bias.stride(1) != 0:
+        if (
+            not reasons
+            and isinstance(d.attn_bias, torch.Tensor)
+            and d.attn_bias.stride(1) != 0
+        ):
             reasons.append("bias with non-zero stride not supported")
         buffer_size = 8
         k = d.query.shape[-1]

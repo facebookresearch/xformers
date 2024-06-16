@@ -8,24 +8,21 @@ import logging
 import os
 import queue
 import socket
+import time
 import weakref
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch.cuda.memory
 import torch.cuda.nvtx
 import torch.nn as nn
 import torch.profiler
-import torch.utils.hooks
+
+from .device_limits import get_device_limits
+from .profile_analyzer import AnalyzedTrace
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_tuple(x):
-    if not isinstance(x, tuple):
-        return (x,)
-    return x
 
 
 class NsightProfiler:
@@ -41,12 +38,10 @@ class NsightProfiler:
         # TODO figure out if there is a way to know if nsys is launched at this point
 
     def __enter__(self):
-        self.main_profiler._install_hooks()
         torch.cuda.profiler.start()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         torch.cuda.profiler.stop()
-        self.main_profiler._remove_hooks()
 
     def step(self) -> None:
         pass
@@ -64,41 +59,75 @@ class PyTorchProfiler:
 
     def __init__(self, main_profiler: "_Profiler") -> None:
         self.main_profiler = main_profiler
-        activities_str = "_".join(a.name for a in self.ACTIVITIES)
-        trace_handler = torch.profiler.tensorboard_trace_handler(
-            dir_name=str(
-                main_profiler.output_dir
-                / f"profile_{activities_str}_{main_profiler.done_steps:06}"
-            ),
-            worker_name=main_profiler.worker_name,
-            use_gzip=True,
-        )
-        self.hta = torch.profiler.profile(
-            on_trace_ready=trace_handler,
+        self.pytorch_profiler = torch.profiler.profile(
+            on_trace_ready=self._on_trace,
             profile_memory=True,
             record_shapes=True,
             with_stack=True,
+            with_flops=True,
             activities=self.ACTIVITIES,
         )
-        self.done_steps = 0
+
+    def _on_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        activities_str = "_".join(a.name for a in self.ACTIVITIES)
+        dir_name = str(
+            self.main_profiler.output_dir
+            / f"profile_{activities_str}_{self.main_profiler.done_steps:06}"
+        )
+        worker_name = self.main_profiler.worker_name
+        if worker_name == "":
+            worker_name = f"{socket.gethostname()}_{os.getpid()}"
+        os.makedirs(dir_name, exist_ok=True)
+        file_name = f"{worker_name}.{time.time_ns()}.pt.trace.json.gz"
+        prof.export_chrome_trace(os.path.join(dir_name, file_name))
+        try:
+            self._analyze_trace(prof)
+        except Exception as exc:
+            self.main_profiler.summary.append(("TraceAnalysis", "Error"))
+            logger.warn("Exception analyzing kineto trace", exc_info=exc)
+
+    def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        if prof.profiler is None or prof.profiler.kineto_results is None:
+            return
+        results = AnalyzedTrace.from_profile(prof.profiler.kineto_results.events())
+        limits = get_device_limits(torch.device("cuda"))
+        hw_flops: Dict[torch.dtype, float] = {}
+        if limits is not None:
+            for dtype, tflops in limits.gemm_tflops.items():
+                hw_flops[dtype] = tflops * (1000**4)
+        total_flops = 0.0
+        total_hfu = 0.0
+        total_mfu = 0.0
+        for dtype in results.operations_per_dtype_fw.keys():
+            total_flops += results.compute_num_ops(dtype) / results.total_time_s
+            total_hfu += results.compute_hfu(hw_flops)
+            total_mfu += results.compute_mfu(hw_flops)
+        s = self.main_profiler.summary
+        s.append(("Step time (ms)", f"{int(results.total_time_s * 1000)}"))
+        s.append(("TFlops", f"{total_flops / (1000**4):0.1f}"))
+        s.append(("HFU", f"{total_hfu:0.3f}"))
+        s.append(("MFU", f"{total_mfu:0.3f}"))
 
     def __enter__(self):
         torch.cuda.synchronize()
-        self.hta.__enter__()
+        self.pytorch_profiler.__enter__()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         torch.cuda.synchronize()
-        self.hta.__exit__(exc_type, exc_val, exc_tb)
+        self.pytorch_profiler.__exit__(exc_type, exc_val, exc_tb)
 
     def step(self) -> None:
-        self.hta.step()
-        self.done_steps += 1
+        self.pytorch_profiler.step()
 
 
 class PyTorchProfiler_CUDAOnly(PyTorchProfiler):
     # This profiler does not profile the CPU-side of things
     # so we expect it to have almost no overhead
     ACTIVITIES = [torch.profiler.ProfilerActivity.CUDA]
+
+    def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
+        # Can't analyze trace without CPU trace for operator shapes etc...
+        pass
 
 
 class MemSnapshotsProfiler:
@@ -174,6 +203,7 @@ class _Profiler:
         module: Optional[nn.Module],
     ) -> None:
         self.check_schedule(schedule)
+        self.schedule = schedule
         self.done_steps = 0
         self.output_dir = Path(output_dir).absolute()
         self.output_dir.mkdir(exist_ok=True, parents=True)
@@ -182,11 +212,14 @@ class _Profiler:
             self.worker_name = "{}_{}".format(socket.gethostname(), str(os.getpid()))
 
         self.module = weakref.ref(module if module is not None else nn.Module())
-        self.parents = ["Global"]
-        self.hooks: List[torch.utils.hooks.RemovableHandle] = []
-        self.hooks_refcount = 0
+        self.init_schedule()
+
+    def init_schedule(self, offset: int = 0) -> None:
         self.profilers: List[_ProfilerState] = sorted(
-            [_ProfilerState(cls, begin, end) for cls, begin, end in schedule],
+            [
+                _ProfilerState(cls, begin + offset, end + offset)
+                for cls, begin, end in self.schedule
+            ],
             key=lambda x: x.iter_begin,
         )
         self.last_step = self.profilers[-1].iter_end if self.profilers else 0
@@ -250,79 +283,6 @@ class _Profiler:
             return folder / f"{self.done_steps:06}_{self.worker_name}{file.suffix}"
         return self.output_dir / f"{self.done_steps:06}_{filename}"
 
-    def _install_hooks(self) -> None:
-        self.hooks_refcount += 1
-        # Already installed
-        if self.hooks:
-            return
-        module = self.module()
-        if module is None:
-            return
-        for name, sub_mod in module.named_modules():
-            if name == "":
-                continue
-            name = name.split(".")[-1]
-            self.hooks += [
-                sub_mod.register_forward_pre_hook(self._enter_module_hook(name)),
-                sub_mod.register_forward_hook(self._exit_module_hook(name)),
-            ]
-
-    def _remove_hooks(self) -> None:
-        self.hooks_refcount -= 1
-        if self.hooks_refcount == 0:
-            for h in self.hooks:
-                h.remove()
-
-    def _enter_module_hook(self, name):
-        class PopState(torch.autograd.Function):
-            @staticmethod
-            def forward(ctx, *args):
-                if len(args) == 1:
-                    return args[0]
-                return args
-
-            @staticmethod
-            def backward(ctx, *grad_outs):
-                self._exit_module(name)
-                return grad_outs
-
-        def f(module, inputs):
-            self._enter_module(name)
-            inputs = _normalize_tuple(inputs)
-            out = PopState.apply(*inputs)
-            return out
-
-        return f
-
-    def _exit_module_hook(self, name):
-        class PushState(torch.autograd.Function):
-            @staticmethod
-            def forward(ctx, *args):
-                if len(args) == 1:
-                    return args[0]
-                return args
-
-            @staticmethod
-            def backward(ctx, *grad_outs):
-                self._enter_module(name)
-                return grad_outs
-
-        def f(module, inputs, outputs):
-            self._exit_module(name)
-            outputs = _normalize_tuple(outputs)
-            return PushState.apply(*outputs)
-
-        return f
-
-    def _enter_module(self, name) -> None:
-        self.parents.append(name)
-        torch.cuda.nvtx.range_push(name)
-
-    def _exit_module(self, name) -> None:
-        torch.cuda.nvtx.range_pop()
-        assert self.parents[-1] == name
-        self.parents.pop()
-
     def start(self):
         self.__enter__()
 
@@ -349,10 +309,30 @@ class _Profiler:
         self.done_steps += 1
 
         if self.done_steps <= self.last_step:
-            self.parents = ["Global"]
             self.update_profilers_on_step()
         if self.done_steps == self.last_step:
             logger.info("xFormers profiler done. %s", self.format_summary())
+
+        # Check if we triggered a manual profile step
+        CHECK_TRIGGER_EVERY = 10
+        if (
+            self.done_steps > self.last_step
+            and (self.done_steps % CHECK_TRIGGER_EVERY) == 0
+        ):
+            try:
+                (self.output_dir / "trigger").unlink()
+                (
+                    self.output_dir
+                    / f"trigger.{self.done_steps + CHECK_TRIGGER_EVERY:09}"
+                ).write_text(self.worker_name)
+            except FileNotFoundError:
+                pass
+            step_trigger = self.output_dir / f"trigger.{self.done_steps:09}"
+            if step_trigger.exists():
+                logger.info(
+                    "xFormers profiler manually triggered at step %d", self.done_steps
+                )
+                self.init_schedule(offset=self.done_steps + 1)
 
     def format_summary(self) -> str:
         if len(self.summary) == 0:

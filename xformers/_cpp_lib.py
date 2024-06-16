@@ -44,6 +44,10 @@ class _BuildInfo:
         return self.metadata["version"].get("flash", "0.0.0")
 
     @property
+    def use_torch_flash(self) -> bool:
+        return self.metadata["version"].get("use_torch_flash", False)
+
+    @property
     def build_env(self) -> Dict[str, Any]:
         return self.metadata["env"]
 

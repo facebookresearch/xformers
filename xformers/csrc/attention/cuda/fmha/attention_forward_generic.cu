@@ -23,37 +23,40 @@
 #include "kernel_forward.h"
 #include "pytorch_utils.h"
 
+#define USE_MEM_EFF_ATTENTION
+
 namespace {
+using namespace at;
 /*
   There are 2 modes for using this function.
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<Tensor, Tensor, Tensor, Tensor, c10::SymInt, c10::SymInt>
 efficient_attention_forward_cutlass(
     const at::Tensor& query, // [b, seqlen, num_heads, K]
     const at::Tensor& key, // [b, seqlen, num_heads, K]
     const at::Tensor& value, // [b, seqlen, num_heads, Kv]
-    const c10::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
+    const std::optional<at::Tensor>& bias, // [b, num_heads, seqlen, seqlen]
     // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
     // position of the first query token for batch $b
-    const c10::optional<at::Tensor>& seqstart_q,
+    const std::optional<at::Tensor>& seqstart_q,
     // (Mode 1MHK only) [b+1]: cu_seqlen_k[b] contains the
     // position of the first key token for batch $b
-    const c10::optional<at::Tensor>& seqstart_k,
+    const std::optional<at::Tensor>& seqstart_k,
     // (Mode 1MHK only) Maximum sequence length across batches
-    const c10::optional<int64_t> max_seqlen_q_,
+    const std::optional<int64_t> max_seqlen_q_,
+    const std::optional<int64_t> max_seqlen_k_,
     double dropout_p, // attention matrix dropout probability
-    bool compute_logsumexp,
     int64_t custom_mask_type,
-    c10::optional<double> scale,
-    const c10::optional<at::Tensor>& seqlen_k,
-    const c10::optional<int64_t> window_size) {
-#ifdef XFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD
-  TORCH_CHECK(
-      false,
-      "MemoryEfficient build has been disabled at build time with -DXFORMERS_MEM_EFF_ATTENTION_DISABLE_FORWARD");
-#else
+    bool compute_logsumexp,
+    std::optional<double> scale,
+    const std::optional<at::Tensor>& seqlen_k,
+    const std::optional<int64_t> window_size) {
+#if defined(USE_MEM_EFF_ATTENTION)
+  // TODO In theory it is possible to compile with _CUDA_ARCH < 5.0 and run on a
+  // machine that is >= 5.0. In practice, this is not a problem but since
+  // this would avoid runtime architecture checks, we should look into it
 
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
@@ -73,7 +76,7 @@ efficient_attention_forward_cutlass(
   // Embedding per head
   TORCH_CHECK(query.size(3) == key.size(3));
 
-  int64_t max_seqlen_q, max_seqlen_k;
+  int64_t max_seqlen_q = 0, max_seqlen_k = 0;
   TORCH_CHECK(seqstart_q.has_value() == seqstart_k.has_value());
   if (seqstart_q.has_value()) {
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
@@ -85,7 +88,9 @@ efficient_attention_forward_cutlass(
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
     max_seqlen_q = *max_seqlen_q_;
-    max_seqlen_k = 0; // Will be set inside the kernel
+    max_seqlen_k =
+        0; // TODO: is this actually being set inside the kernel anywhere?
+           // see https://github.com/pytorch/pytorch/issues/115590s
   } else {
     max_seqlen_q = query.size(1);
     max_seqlen_k = key.size(1);
@@ -107,18 +112,49 @@ efficient_attention_forward_cutlass(
 
   at::Tensor res;
   at::Tensor logsumexp;
+  at::Tensor seed_t, offset_t;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  at::PhiloxCudaState rng_engine_inputs;
-  if (use_dropout) {
-    at::CUDAGeneratorImpl* gen =
-        at::get_generator_or_default<at::CUDAGeneratorImpl>(
-            c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
 
+  // Note [Seed and Offset Device]
+  // If we are currently in graph capture mode, we need to create the seed and
+  // offset tensors on the device. This is necessary for CUDA graph-safe random
+  // number generation, which requires the seed and offset tensors to be single
+  // element tensors on device. During graph capture, when the seed and offset
+  // tensors are passed the pointers act as scratch space for storing the RNG
+  // state for the backwards pass. When calling backwards, we either construct a
+  // PhiloxState with the pointers or the actual values. For more information on
+  // CUDA graph-safe RNG states, see Note [CUDA Graph-safe RNG states].
+
+  at::PhiloxCudaState philox_state;
+  const bool in_capture_stream =
+      at::cuda::currentStreamCaptureStatus() != at::cuda::CaptureStatus::None;
+  auto device = in_capture_stream ? at::kCUDA : at::kCPU;
+  if (use_dropout) {
+    auto gen = at::get_generator_or_default<at::CUDAGeneratorImpl>(
+        c10::nullopt, at::cuda::detail::getDefaultCUDAGenerator());
+
+    // See Note [Acquire lock when using random generators]
     std::lock_guard<std::mutex> lock(gen->mutex_);
     // if using dropout, we produce 1 random number for each element of the
     // attention tensor
-    rng_engine_inputs = gen->philox_cuda_state(B * num_heads * M * N);
+    philox_state = gen->philox_cuda_state(B * num_heads * M * N);
+
+    if (in_capture_stream) {
+      // The seed and offset will be populated by the kernel
+      seed_t = at::empty({}, at::dtype(at::kLong).device(device));
+      offset_t = at::empty({}, at::dtype(at::kLong).device(device));
+    } else {
+      auto [seed, offset] = at::cuda::philox::unpack(philox_state);
+      seed_t = at::scalar_tensor(
+          at::Scalar(static_cast<int64_t>(seed)), at::dtype(at::kLong));
+      offset_t = at::scalar_tensor(
+          at::Scalar(static_cast<int64_t>(offset)), at::dtype(at::kLong));
+    }
+  } else {
+    // Not using dropout
+    seed_t = at::empty({}, at::dtype(at::kLong).device(device));
+    offset_t = at::empty({}, at::dtype(at::kLong).device(device));
   }
 
   cudaDeviceProp* p = at::cuda::getDeviceProperties(query.device().index());
@@ -172,11 +208,10 @@ efficient_attention_forward_cutlass(
          num_heads,
          compute_logsumexp ? ceil_div(max_seqlen_q, kAlignLSE) * kAlignLSE : 0},
         query.options().dtype(at::ScalarType::Float));
-
     typename Kernel::Params p;
-    p.query_ptr = (scalar_t*)query.data_ptr();
-    p.key_ptr = (scalar_t*)key.data_ptr();
-    p.value_ptr = (scalar_t*)value.data_ptr();
+    p.query_ptr = (const scalar_t*)query.const_data_ptr();
+    p.key_ptr = (const scalar_t*)key.const_data_ptr();
+    p.value_ptr = (const scalar_t*)value.const_data_ptr();
     p.logsumexp_ptr = compute_logsumexp
         ? (typename Kernel::lse_scalar_t*)logsumexp.data_ptr()
         : nullptr;
@@ -195,8 +230,8 @@ efficient_attention_forward_cutlass(
     p.output_ptr = (typename Kernel::output_t*)res.data_ptr();
 
     if (seqstart_q.has_value()) {
-      p.seqstart_q_ptr = (int32_t*)seqstart_q->data_ptr();
-      p.seqstart_k_ptr = (int32_t*)seqstart_k->data_ptr();
+      p.seqstart_q_ptr = (const int32_t*)seqstart_q->const_data_ptr();
+      p.seqstart_k_ptr = (const int32_t*)seqstart_k->const_data_ptr();
     }
 
     p.num_heads = num_heads;
@@ -211,7 +246,7 @@ efficient_attention_forward_cutlass(
     if (seqlen_k.has_value()) {
       CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(seqlen_k.value());
       TORCH_CHECK(seqlen_k->scalar_type() == at::ScalarType::Int);
-      p.seqlen_k_ptr = (int32_t*)seqlen_k->data_ptr();
+      p.seqlen_k_ptr = (const int32_t*)seqlen_k->const_data_ptr();
     }
 
     if (window_size.has_value()) {
@@ -240,7 +275,7 @@ efficient_attention_forward_cutlass(
       TORCH_CHECK(
           bias->scalar_type() == CutlassToAtenDtype<scalar_t>::atScalarType(),
           "invalid dtype for bias - should match query's dtype");
-      p.attn_bias_ptr = (scalar_t*)bias->data_ptr();
+      p.attn_bias_ptr = (const scalar_t*)bias->const_data_ptr();
 
       TORCH_CHECK(bias->dim() == 4, "Bias expected in BMHK format");
       TORCH_CHECK(
@@ -265,14 +300,16 @@ efficient_attention_forward_cutlass(
 
     p.use_dropout = use_dropout;
     if (p.use_dropout) {
-      p.rng_engine_inputs = rng_engine_inputs;
+      p.rng_engine_inputs = philox_state;
       p.dropout_prob = dropout_p;
+      p.seed = seed_t.data_ptr<int64_t>();
+      p.extragraph_offset = offset_t.data_ptr<int64_t>();
     }
 
     if (smem_bytes > 0xc000) {
       auto err = cudaFuncSetAttribute(
           kernel_fn, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes);
-      XFORMERS_CHECK(
+      TORCH_CHECK(
           err != cudaErrorInvalidValue,
           "This GPU does not have enough shared-memory (kernel requires ",
           smem_bytes / 1024,
@@ -295,16 +332,17 @@ efficient_attention_forward_cutlass(
   TORCH_CHECK(kernel_launched, "cutlassF: no kernel found to launch!");
   AT_CUDA_CHECK(cudaGetLastError());
 
-  // uint64_t -> int64_t bitwise casting as PyTorch don't support uint64_t
-  // so just fake it as a int64_t
-  int64_t seed, offset;
-  if (use_dropout) {
-    std::memcpy(&seed, &rng_engine_inputs.seed_, sizeof(seed));
-    std::memcpy(&offset, &rng_engine_inputs.offset_.val, sizeof(offset));
-  }
-
-  return std::make_tuple(res, logsumexp, seed, offset);
+  return std::make_tuple(
+      std::move(res),
+      std::move(logsumexp),
+      std::move(seed_t),
+      std::move(offset_t),
+      max_seqlen_q,
+      // TODO: why isn't this being set in the kernel?
+      max_seqlen_k_.has_value() ? max_seqlen_k_.value() : max_seqlen_k);
 #endif
+  TORCH_CHECK(false, "USE_MEM_EFF_ATTENTION was not enabled for build.")
+  return std::make_tuple(Tensor{}, Tensor{}, Tensor{}, Tensor{}, 0, 0);
 }
 
 // For testing in xFormers

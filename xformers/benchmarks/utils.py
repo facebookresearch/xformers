@@ -31,6 +31,10 @@ sns.set()
 TestCase = namedtuple("TestCase", ["function", "name"])
 
 
+class NotSupportedInputError(Exception):
+    pass
+
+
 _triton_is_available = torch.cuda.is_available()
 if _triton_is_available:
     try:
@@ -396,12 +400,10 @@ def _render_bar_plot(results: List[Any], store_results_folder: str) -> None:
         print(f"Saved plot: {filename_full}")
 
 
-def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -> None:
+def create_argparser() -> argparse.ArgumentParser:
     """
-    Helper function to run benchmarks.
-    Supports loading previous results for comparison, and saving current results to file.
+    Create CLI argument parser.
     """
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--fn", default=None, type=str, help="Only benchmark this function"
@@ -430,7 +432,18 @@ def benchmark_main_helper(benchmark_fn, cases: List[Dict[str, Any]], **kwargs) -
         action="store_true",
         help="Skip intermediate results and progress bar",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def benchmark_main_helper(
+    benchmark_fn, cases: List[Dict[str, Any]], arg_parser=None, **kwargs
+) -> None:
+    """
+    Helper function to run benchmarks.
+    Supports loading previous results for comparison, and saving current results to file.
+    """
+    arg_parser = arg_parser or create_argparser()
+    args = arg_parser.parse_args()
 
     if args.fn is not None and args.fn != get_func_name(benchmark_fn):
         print(f'Skipping benchmark "{get_func_name(benchmark_fn)}"')
@@ -694,7 +707,10 @@ def benchmark_main_helper2(
 
     def handle_case(**case) -> Iterator[benchmark.Timer]:
         for k, benchmark_cls in functions.items():
-            benchmark_object = benchmark_cls(**case, bw=bw)
+            try:
+                benchmark_object = benchmark_cls(**case, bw=bw)
+            except NotSupportedInputError:
+                continue
             label = benchmark_object.label
             label += "fw" if fw else ""
             label += "bw" if bw else ""
@@ -707,7 +723,6 @@ def benchmark_main_helper2(
 
             if cuda_graph:
                 run_one()
-                benchmark_object = benchmark_cls(**case, bw=bw)
                 g = torch.cuda.CUDAGraph()
                 with torch.cuda.graph(g):
                     run_one()

@@ -18,9 +18,9 @@ namespace {
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
     const at::Tensor& x,
     const at::Tensor& w0,
-    const c10::optional<at::Tensor>& b0,
+    const std::optional<at::Tensor>& b0,
     const at::Tensor& w1,
-    const c10::optional<at::Tensor>& b1) {
+    const std::optional<at::Tensor>& b1) {
   static auto op =
       c10::Dispatcher::singleton()
           .findSchemaOrThrow("xformers::dual_gemm_silu_identity_mul", "")
@@ -85,13 +85,13 @@ class SwiGLUPackedWeights
       torch::autograd::AutogradContext* ctx,
       const at::Tensor& x,
       const at::Tensor& w1w2,
-      const c10::optional<at::Tensor>& b1b2,
+      const std::optional<at::Tensor>& b1b2,
       const at::Tensor w3,
-      const c10::optional<at::Tensor>& b3) {
+      const std::optional<at::Tensor>& b3) {
     at::AutoDispatchBelowADInplaceOrView g;
     auto w1 = w1w2[0];
     auto w2 = w1w2[1];
-    c10::optional<at::Tensor> b1, b2;
+    std::optional<at::Tensor> b1, b2;
     if (b1b2.has_value()) {
       b1 = b1b2.value()[0];
       b2 = b1b2.value()[1];
@@ -183,18 +183,18 @@ class SwiGLUPackedWeights
 at::Tensor swiglu_packedw_autograd(
     const at::Tensor& x,
     const at::Tensor& w1w2,
-    const c10::optional<at::Tensor> b1b2,
+    const std::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3) {
+    const std::optional<at::Tensor> b3) {
   return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 
 at::Tensor swiglu_packedw_autocast(
     const at::Tensor& x,
     const at::Tensor& w1w2,
-    const c10::optional<at::Tensor> b1b2,
+    const std::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3) {
+    const std::optional<at::Tensor> b3) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_gpu_dtype();
   return SwiGLUPackedWeights::apply(
@@ -208,9 +208,9 @@ at::Tensor swiglu_packedw_autocast(
 at::Tensor swiglu_packedw_cuda(
     const at::Tensor& x,
     const at::Tensor& w1w2,
-    const c10::optional<at::Tensor> b1b2,
+    const std::optional<at::Tensor> b1b2,
     const at::Tensor w3,
-    const c10::optional<at::Tensor> b3) {
+    const std::optional<at::Tensor> b3) {
   if (x.requires_grad()) {
     return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
   } else {

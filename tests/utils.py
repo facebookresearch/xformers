@@ -7,7 +7,18 @@ from functools import wraps
 from typing import List, Optional, Tuple
 
 import numpy as np
+import pytest
 import torch
+
+from xformers.attn_bias_utils import ref_attention, ref_attention_bmhk
+
+cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
+rocm_only = pytest.mark.skipif(
+    not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM"
+)
+disable_on_rocm = pytest.mark.skipif(
+    not not torch.version.hip, reason="could not be done on ROCM"
+)
 
 
 def disable_tf32(fn):
@@ -30,6 +41,10 @@ def disable_tf32(fn):
             )
 
     return wrapped
+
+
+ref_attention_for_test = disable_tf32(ref_attention)
+ref_attention_bmhk_for_test = disable_tf32(ref_attention_bmhk)
 
 
 def assert_allclose(

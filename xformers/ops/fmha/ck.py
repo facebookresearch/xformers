@@ -7,7 +7,7 @@
 from dataclasses import replace
 from enum import Enum
 from functools import partial
-from typing import Any, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
@@ -42,7 +42,7 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
 
 def _get_seqlen_info(
     inp: Inputs,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int]:
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
     attn_bias = inp.attn_bias
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
@@ -60,14 +60,15 @@ def _get_seqlen_info(
         max_seqlen_k = -1
 
     return seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k
-    
+
+
 def _get_tensor_bias(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
 ) -> Optional[torch.Tensor]:
     if isinstance(attn_bias, torch.Tensor):
         return attn_bias
     elif isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-        return attn_bias._bias
+        return attn_bias._subtensor
     return None
 
 
@@ -157,7 +158,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
 
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
         LowerTriangularMask,
@@ -170,7 +171,7 @@ class FwOp(AttentionFwOpBase):
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
-    }
+    )
 
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
@@ -323,9 +324,6 @@ class FwOp(AttentionFwOpBase):
         check_lastdim_alignment_stride1(reasons, "value", d.value, matmul_alignment_mn)
         _check_bias_alignment(reasons, d.attn_bias)
         _check_large_shapes(reasons, d)
-        requires_grad = (
-            d.query.requires_grad or d.key.requires_grad or d.value.requires_grad
-        )
         return reasons
 
     @classmethod
@@ -360,8 +358,8 @@ class BwOp(AttentionBwOpBase):
     OPERATOR = get_xformers_operator("efficient_attention_backward_ck")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
-    SUPPORTED_MAX_K = 128 
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_MAX_K = 128
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
         LowerTriangularMask,
@@ -373,7 +371,7 @@ class BwOp(AttentionBwOpBase):
         BlockDiagonalCausalMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
-    }
+    )
     SUPPORTS_ATTN_BIAS_GRAD = True
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
@@ -382,7 +380,7 @@ class BwOp(AttentionBwOpBase):
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
-        64, 
+        64,
         128,  # 64x128/128x128 kernel
     ]
 

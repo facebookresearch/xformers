@@ -4,10 +4,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.26] - TBD
+## [0.0.27] - TBD
 ### Added
+- fMHA: PagedBlockDiagonalGappyKeysMask
+- fMHA: heterogeneous queries in triton_splitk
+- fMHA: support for paged attention in flash
+- backwards pass for merge_attentions
+- fMHA: Added `torch.compile` support for 2 biases (`LowerTriangularMask` and `LowerTriangularMaskWithTensorBias`)
+- fMHA: Added `torch.compile` support in `memory_efficient_attention` when passing the flash operator explicitely (eg `memory_efficient_attention(..., op=(flash.FwOp, flash.BwOp))`)
+- 2:4 sparsity: Added `xformers.ops.sp24.sparsify24_ste` for Straight Through Estimator (STE) with options to rescale the gradient differently for masked out/kept values
 ### Improved
+- fMHA: Fixed out-of-bounds reading for Split-K triton implementation
+- Profiler: fix bug with modules that take a single tuple as argument
+- Profiler: Added manual trigger for a profiling step, by creating a `trigger` file in the profiling directory
 ### Removed
+- Removed support for PyTorch version older than 2.2.0
+
+## [0.0.26] - 2024-04-29
+### Added
+- [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
+- [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient
+- Basic support for `torch.compile` for the `memory_efficient_attention` operator. Currently only supports Flash-Attention, and without any bias provided. We want to expand this coverage progressively.
+### Improved
+- merge_attentions no longer needs inputs to be stacked.
+- fMHA: triton_splitk now supports additive bias
+- fMHA: benchmark cleanup
 
 ## [0.0.25.post1] - 2024-03-29
 Pre-built binary wheels require PyTorch 2.2.2
@@ -16,6 +37,7 @@ Pre-built binary wheels require PyTorch 2.2.2
 Pre-built binary wheels require PyTorch 2.2.1
 ### Added
 - New `merge_attentions` function
+- fMHA: New gappy attention biases.
 ### Improved
 - fMHA: Updated Flash-Attention to v2.5.6: this has a performance improvement for multiquery.
 - fMHA: triton_splitk changed and expanded. Now amalgamates using LSE. Can autotune, supports causal with a small number of queries - not just 1. Experimental support for paged attention.

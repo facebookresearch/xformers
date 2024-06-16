@@ -6,7 +6,18 @@
 import math
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, List, Mapping, Optional, Set, Tuple, Type, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    Union,
+)
 
 import torch
 
@@ -14,9 +25,9 @@ from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
 from .attn_bias import (
     AttentionBias,
+    AttentionBiasSubTensor,
     BlockDiagonalMask,
     LowerTriangularMask,
-    LowerTriangularMaskWithTensorBias,
 )
 
 
@@ -33,10 +44,8 @@ def _attn_bias_apply(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
     op: Callable[[torch.Tensor], torch.Tensor],
 ) -> Optional[Union[torch.Tensor, AttentionBias]]:
-    if isinstance(attn_bias, torch.Tensor):
+    if isinstance(attn_bias, torch.Tensor) and attn_bias.ndim != 0:
         return op(attn_bias)
-    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-        return LowerTriangularMaskWithTensorBias(op(attn_bias._bias))
     return attn_bias
 
 
@@ -138,10 +147,11 @@ class Inputs:
                 f"than BMK when using bias type `{type(self.attn_bias).__name__}`"
             )
         attn_bias_t: Optional[torch.Tensor] = None
-        if isinstance(self.attn_bias, torch.Tensor):
+        if isinstance(self.attn_bias, AttentionBiasSubTensor):
+            if self.attn_bias.HOLDS_DENSE_TENSOR:
+                attn_bias_t = self.attn_bias._subtensor
+        elif isinstance(self.attn_bias, torch.Tensor):
             attn_bias_t = self.attn_bias
-        if isinstance(self.attn_bias, LowerTriangularMaskWithTensorBias):
-            attn_bias_t = self.attn_bias._bias
         if self.query.ndim == 4 and attn_bias_t is not None:
             expected_shape = (
                 self.query.shape[0],
@@ -219,8 +229,11 @@ class Inputs:
 class Context:
     lse: torch.Tensor
     out: torch.Tensor
+    # NOTE: If `rng_state` is set, `op_bw` should be set as well
+    # as the randomness is backend-dependant
     op_bw: Optional[Type["AttentionBwOpBase"]] = None
-    rng_state: Optional[torch.Tensor] = None
+    rng_state: Optional[Any] = None
+    qkv_share_storage: bool = False
 
     def get_padded_lse(self, pad_to: int, force_pad_inf: bool = False) -> torch.Tensor:
         pad_amount = (pad_to - (self.lse.shape[2] % pad_to)) % pad_to
@@ -264,7 +277,7 @@ class AttentionOpBase(BaseOperator):
     CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {type(None)}
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (type(None),)
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
     SUPPORTS_DIFFERENT_VALUE_EMBED: bool = False
@@ -370,6 +383,7 @@ class AttentionFwOpBase(AttentionOpBase):
         torch.half: 4e-4,
         torch.bfloat16: 5e-3,
     }
+    UNPADDED_LSE: bool = False
 
     @classmethod
     def apply(
@@ -438,6 +452,8 @@ class AttentionBwOpBase(AttentionOpBase):
         torch.bfloat16: 0.1,
     }
     SUPPORTS_ATTN_BIAS_GRAD = False
+    SUPPORTS_PARTIAL = True
+    SUPPORTS_UNPADDED_LSE = False
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

@@ -49,7 +49,7 @@ def get_metrics_transform(
         # which consolidates on all the activation gradient
         flop += a.shape[0] * a.shape[1] * w.shape[1]
 
-        # backward will also ouput another gradient with respect to the weight,
+        # backward will also output another gradient with respect to the weight,
         # which is another matmul, in between the grad_out and the inputs this time
         flop += a.shape[0] * a.shape[1] * w.shape[1] * (2 * a.shape[2] - 1)
 

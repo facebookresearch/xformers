@@ -23,6 +23,8 @@ def rope_padded(
     *,
     theta: float = 10000.0,
     out_q: Optional[torch.Tensor] = None,
+    first_seqpos: Optional[torch.Tensor] = None,
+    seqpos: Optional[torch.Tensor] = None,
     adjacents: bool = True,
     internal_dtype: str = "",
 ):
@@ -57,6 +59,15 @@ def rope_padded(
                 Used to determine frequencies for the
                 RoPE calculation as well as the locations in cache_k and cache_v
                 to write to. Must be on the device.
+        first_seqpos: Optionally a tensor containing the sequence position of the
+                    beginning of the cache for each batch element.
+                    Providing a tensor of zeros is the same as providing None.
+                    This affects the numerical calculation but not which memory
+                    locations are read or written.
+        seqpos: Optionally a 1D tensor containing the sequence position of each
+                    query. This should have length equal to xq.shape[1] .
+                    This affects the numerical calculation but not which memory
+                    locations are read or written.
         adjacents: If True, the inputs are in adjacent pairs along the final dim axis.
                   This is like the released LLaMA model.
                   If False, the dim axis is split in two equal pieces.
@@ -180,6 +191,22 @@ def rope_padded(
 
     logical_bsz = len(attn_bias.q_seqinfo.seqstart_py) - 1
 
+    if first_seqpos is not None and seqpos is not None:
+        raise ValueError("seqpos and first_seqpos may not both be provided")
+    stride_seqpos = 0
+    if first_seqpos is not None:
+        if first_seqpos.shape != (logical_bsz,):
+            shape = tuple(first_seqpos.shape)
+            raise ValueError(
+                f"first_seqpos.shape {shape} but ({logical_bsz},) expected."
+            )
+        stride_seqpos = first_seqpos.stride(0)
+    elif seqpos is not None:
+        if seqpos.shape != (n_total_queries,):
+            shape = tuple(seqpos.shape)
+            raise ValueError(f"seqpos.shape {shape} but ({n_total_queries},) expected.")
+        stride_seqpos = seqpos.stride(0)
+
     # Less than 64KB per feature: enqueue fused kernel
     MAX_FUSED_SIZE = 65536 // xq.element_size()
     BLOCK_SIZE = min(MAX_FUSED_SIZE, triton.next_power_of_2(dim))
@@ -210,6 +237,8 @@ def rope_padded(
             seqstartk,
             seqlenk,
             theta,
+            first_seqpos,
+            seqpos,
             k_start,
             v_start,
             n_groups,
@@ -235,6 +264,7 @@ def rope_padded(
             out_q_stride[1],
             out_q_stride[2] if ndim == 5 else 0,
             out_q_stride[-2],
+            stride_seqpos,
             internal_dtype,
             const_batch_strides=False,
             cache_padding_length=0,

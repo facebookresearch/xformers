@@ -7,7 +7,7 @@ black == 22.3.0
 flake8 == 6.1.0
 flake8-copyright
 isort == 5.7.0
-mypy == 1.5.1
+mypy == 1.10.0
 pyre-check == 0.9.16
 pyre-extensions == 0.0.29
 click == 8.0.4
@@ -19,7 +19,6 @@ pytest-cov == 2.10.0
 pytest-mpi == 0.4
 pytest-timeout == 1.4.2
 pytest-random-order == 1.1.1
-git+https://github.com/rwightman/pytorch-image-models@v0.4.5#egg=timm
 
 # Dependency for factory
 hydra-core >= 1.1

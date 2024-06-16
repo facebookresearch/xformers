@@ -8,6 +8,7 @@
 import datetime
 import distutils.command.clean
 import glob
+import importlib.util
 import json
 import os
 import platform
@@ -17,7 +18,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import setuptools
 import torch
@@ -29,6 +30,18 @@ from torch.utils.cpp_extension import (
 )
 
 this_dir = os.path.dirname(__file__)
+pt_attn_compat_file_path = os.path.join(
+    this_dir, "xformers", "ops", "fmha", "torch_attention_compat.py"
+)
+
+# Define the module name
+module_name = "torch_attention_compat"
+
+# Load the module
+spec = importlib.util.spec_from_file_location(module_name, pt_attn_compat_file_path)
+attn_compat_module = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = attn_compat_module
+spec.loader.exec_module(attn_compat_module)
 
 
 def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
@@ -125,7 +138,7 @@ def get_cuda_version(cuda_dir) -> int:
     return bare_metal_major * 100 + bare_metal_minor
 
 
-def get_hip_version(rocm_dir) -> str:
+def get_hip_version(rocm_dir) -> Optional[str]:
     hipcc_bin = "hipcc" if rocm_dir is None else os.path.join(rocm_dir, "bin", "hipcc")
     try:
         raw_output = subprocess.check_output(
@@ -142,7 +155,7 @@ def get_hip_version(rocm_dir) -> str:
     return None
 
 
-def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
+def get_flash_attention_nvcc_archs_flags(cuda_version: int):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
     if platform.system() != "Linux" and cuda_version < 1200:
@@ -185,6 +198,13 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
             nvcc_archs_flags.append(
                 f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
             )
+
+    return nvcc_archs_flags
+
+
+def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
+    nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
+
     if not nvcc_archs_flags:
         return []
 
@@ -245,6 +265,16 @@ def get_extensions():
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
     source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
+    fmha_source_cuda = glob.glob(
+        os.path.join(extensions_dir, "**", "fmha", "**", "*.cu"), recursive=True
+    )
+    exclude_files = ["small_k.cu", "decoder.cu", "attention_cutlass_rand_uniform.cu"]
+    fmha_source_cuda = [
+        c
+        for c in fmha_source_cuda
+        if not any(exclude_file in c for exclude_file in exclude_files)
+    ]
+
     source_hip = glob.glob(
         os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
         recursive=True,
@@ -258,6 +288,18 @@ def get_extensions():
     sources = list(set(sources) - set(source_hip))
 
     sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
+
+    xformers_pt_cutlass_attn = os.getenv("XFORMERS_PT_CUTLASS_ATTN")
+    # By default, we try to link to torch internal CUTLASS attention implementation
+    # and silently switch to local CUTLASS attention build if no compatibility
+    # If we force 'torch CUTLASS switch' then setup will fail when no compatibility
+    if (
+        xformers_pt_cutlass_attn is None or xformers_pt_cutlass_attn == "1"
+    ) and attn_compat_module.is_pt_cutlass_compatible(
+        force=xformers_pt_cutlass_attn == "1"
+    ):
+        source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
+
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):
@@ -283,6 +325,7 @@ def get_extensions():
     cuda_version = None
     hip_version = None
     flash_version = "0.0.0"
+    use_pt_flash = False
 
     if (
         (torch.cuda.is_available() and ((CUDA_HOME is not None)))
@@ -320,12 +363,34 @@ def get_extensions():
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
-        flash_extensions = get_flash_attention_extensions(
-            cuda_version=cuda_version, extra_compile_args=extra_compile_args
-        )
+        flash_extensions = []
+        xformers_pt_flash_attn = os.getenv("XFORMERS_PT_FLASH_ATTN")
 
-        if flash_extensions:
-            flash_version = get_flash_version()
+        # check if the current device supports flash_attention
+        nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
+        if not nvcc_archs_flags:
+            if xformers_pt_flash_attn == "1":
+                raise ValueError(
+                    "Current Torch Flash-Attention is not available on this device"
+                )
+        else:
+            # By default, we try to link to torch internal flash attention implementation
+            # and silently switch to local flash attention build if no compatibility
+            # If we force 'torch FA switch' then setup will fail when no compatibility
+            if (
+                xformers_pt_flash_attn is None or xformers_pt_flash_attn == "1"
+            ) and attn_compat_module.is_pt_flash_compatible(
+                force=xformers_pt_flash_attn == "1"
+            ):
+                flash_version = torch.nn.attention._get_flash_version() + "-pt"
+                use_pt_flash = True
+            else:
+                flash_extensions = get_flash_attention_extensions(
+                    cuda_version=cuda_version, extra_compile_args=extra_compile_args
+                )
+                if flash_extensions:
+                    flash_version = get_flash_version()
+
         ext_modules += flash_extensions
 
         # NOTE: This should not be applied to Flash-Attention
@@ -368,7 +433,8 @@ def get_extensions():
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_FMHA_FWD_FAST_EXP2=1",
                 "-fgpu-flush-denormals-to-zero",
-                ##"-Rpass-analysis=kernel-resource-usage",
+                "-Werror",
+                "-Woverloaded-virtual",
             ]
             + generator_flag
             + cc_flag,
@@ -391,6 +457,7 @@ def get_extensions():
             "torch": torch.__version__,
             "python": platform.python_version(),
             "flash": flash_version,
+            "use_torch_flash": use_pt_flash,
         },
         "env": {
             k: os.environ.get(k)

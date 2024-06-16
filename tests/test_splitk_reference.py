@@ -11,10 +11,7 @@ import torch
 import xformers.ops
 from xformers.ops import fmha
 
-from .test_mem_eff_attention import ref_attention
-from .utils import assert_allclose, disable_tf32
-
-torch.backends.cuda.matmul.allow_tf32 = False
+from .utils import assert_allclose, disable_tf32, ref_attention_for_test
 
 
 @disable_tf32
@@ -48,12 +45,8 @@ def ref_attention_splitk(
     if q.ndim == 5:
 
         def attn_bias_group(group: int):
-            if isinstance(attn_bias, torch.Tensor):
+            if getattr(attn_bias, "HOLDS_DENSE_TENSOR", True):
                 return attn_bias[:, group]
-            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
-                    attn_bias._bias[:, group]
-                )
             return attn_bias
 
         return torch.stack(
@@ -215,7 +208,7 @@ def test_splitk_reference(
         causal_diagonal=causal_diagonal,
         kv_padding=padding,
     )
-    ref_out = ref_attention(q, k, v, attn_bias)
+    ref_out = ref_attention_for_test(q, k, v, attn_bias)
     splitk_out = ref_attention_splitk(q, k, v, attn_bias, None, split_k=split_k)
     assert_allclose(
         ref_out,

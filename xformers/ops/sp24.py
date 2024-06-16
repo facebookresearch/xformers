@@ -85,7 +85,9 @@ class Sp24GemmCusplt(BaseOperator):
 
 def _has_cusparseLt() -> bool:
     available = _cusplt_version >= (0, 4, 0)
-    if available and _cusplt_version < (0, 5, 0):
+    if not available:
+        return False
+    if _cusplt_version < (0, 5, 0):
         # Version 0.5.0 has much better perf because it can fuse the
         # transpose within the GEMM epilogue
         warnings.warn(
@@ -93,6 +95,14 @@ def _has_cusparseLt() -> bool:
             f"but you get better performance with v0.5.0+ if "
             f"you replace the .so file ({_get_cusparselt_lib()})"
         )
+
+    # Sm90 added in 6.0
+    compute_capability = (0, 0)
+    if torch.cuda.is_available():
+        compute_capability = torch.cuda.get_device_capability("cuda")
+    if _cusplt_version < (6, 0, 0):
+        if compute_capability >= (9, 0):
+            return False
     return available
 
 
@@ -471,41 +481,51 @@ if torch.__version__ >= "2.1.0":
 
 GRADIENT_SP24 = "24sparse"
 GRADIENT_DENSE = "24dense"
+GRADIENT_STE = "ste"  # Straight-Through Estimator
 
 BACKEND_CUTLASS = "cutlass"
 BACKEND_CUSPARSELT = "cusparselt"
+BACKEND_DENSE = "dense"
+
+
+def _sparsify24_forward(x: torch.Tensor, *, algo: str, backend: str) -> Sparse24Tensor:
+    assert backend in [
+        BACKEND_CUTLASS,
+        BACKEND_CUSPARSELT,
+    ], f"Invalid backend: {backend}"
+    if isinstance(x, Sparse24Tensor):
+        if x.threads_masks is None:
+            raise ValueError("Input to `sparsify24` is already sparse")
+        return x
+
+    (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
+        x, algorithm=algo, backend=backend
+    )
+    cls = (
+        Sparse24TensorCutlass
+        if backend == BACKEND_CUTLASS
+        else Sparse24TensorCuSparseLt
+    )
+    return cls(
+        x.shape,
+        packed=packed,
+        meta=meta,
+        packed_t=packed_t,
+        meta_t=meta_t,
+        threads_masks=threads_masks,
+        requires_grad=False,
+    )
 
 
 class _Sparsify24Func(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x: torch.Tensor, algo: str, gradient: str, backend: str):  # type: ignore[override]
-        if gradient not in [GRADIENT_SP24, GRADIENT_DENSE]:
+        if gradient not in [GRADIENT_SP24, GRADIENT_DENSE, GRADIENT_STE]:
             raise ValueError(
                 f"Invalid gradient type: '{gradient}'. "
-                f"Expected '{GRADIENT_SP24}' or '{GRADIENT_DENSE}'"
+                f"Expected '{GRADIENT_SP24}' or '{GRADIENT_DENSE}' or '{GRADIENT_STE}"
             )
-        if not isinstance(x, Sparse24Tensor):
-            (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
-                x, algorithm=algo, backend=backend
-            )
-            cls = (
-                Sparse24TensorCutlass
-                if backend == BACKEND_CUTLASS
-                else Sparse24TensorCuSparseLt
-            )
-            out = cls(
-                x.shape,
-                packed=packed,
-                meta=meta,
-                packed_t=packed_t,
-                meta_t=meta_t,
-                threads_masks=threads_masks,
-                requires_grad=False,
-            )
-        else:
-            if x.threads_masks is None:
-                raise ValueError("!!")
-            out = x
+        out = _sparsify24_forward(x, algo=algo, backend=backend)
         ctx.threads_masks = out.threads_masks
         ctx.meta = out.meta
         ctx.meta_t = out.meta_t
@@ -515,12 +535,12 @@ class _Sparsify24Func(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out: torch.Tensor):  # type: ignore[override]
-        if isinstance(grad_out, Sparse24Tensor):
+        if isinstance(grad_out, Sparse24Tensor) or ctx.gradient == GRADIENT_STE:
             return grad_out, None, None, None
         assert not isinstance(grad_out, Sparse24Tensor)
         assert grad_out.dtype == ctx.dtype
         if ctx.gradient == GRADIENT_SP24:
-            packed, packed_t = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
+            packed, _, packed_t, _ = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
             grad_in: torch.Tensor = Sparse24TensorCutlass(
                 grad_out.shape,
                 packed,
@@ -543,43 +563,107 @@ class _Sparsify24Func(torch.autograd.Function):
         )
 
 
+class _Sparsify24STEFunc(torch.autograd.Function):
+    @staticmethod
+    def forward(
+        ctx,
+        x: torch.Tensor,
+        algo: str,
+        backend: str,
+        bw_mul0: float,
+        bw_mul1: float,
+    ):  # type: ignore[override]
+        out = _sparsify24_forward(x, algo=algo, backend=backend)
+        ctx.threads_masks = out.threads_masks
+        ctx.bw_mul0 = bw_mul0
+        ctx.bw_mul1 = bw_mul1
+        return out
+
+    @staticmethod
+    def backward(ctx, grad_out: torch.Tensor):  # type: ignore[override]
+        assert not isinstance(grad_out, Sparse24Tensor)
+        if ctx.bw_mul0 == 1.0 and ctx.bw_mul1 == 1.0:
+            grad_in = grad_out
+        else:
+            grad_in = SparsifyApplyDenseOutput.OPERATOR(
+                grad_out, ctx.threads_masks, mul0=ctx.bw_mul0, mul1=ctx.bw_mul1
+            )
+        return (
+            grad_in,
+            None,  # algo
+            None,  # backend
+            None,  # bw_mul0
+            None,  # bw_mul1
+        )
+
+
 class _Sparsify24LikeFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x: torch.Tensor, pattern: Sparse24Tensor, out_dense: bool):  # type: ignore[override]
-        assert isinstance(pattern, Sparse24Tensor)
-        if not isinstance(pattern, Sparse24TensorCutlass):
+    def forward(ctx, x: torch.Tensor, pattern: Sparse24Tensor, gradient: str, backend: str):  # type: ignore[override]
+        if not isinstance(pattern, Sparse24Tensor):
             raise NotImplementedError(
-                "`sparsify24_like(x, pattern)` is only implemented for CUTLASS backend"
+                "`sparsify24_like`: `pattern` must be a sparse tensor"
             )
         if not pattern.threads_masks.is_contiguous():
             raise NotImplementedError(
-                "`sparsify24_like(x, pattern)` is not implemented when `pattern` is transposed"
+                "`sparsify24_like` is not implemented when `pattern` is transposed"
             )
+        if gradient not in [GRADIENT_DENSE, GRADIENT_SP24, GRADIENT_STE]:
+            raise ValueError(f'`sparsify24_like`: invalid gradient type "{gradient}"')
         ctx.threads_masks = pattern.threads_masks
         ctx.meta = pattern.meta
         ctx.meta_t = pattern.meta_t
         ctx.dtype = pattern.dtype
-        if out_dense:
+        ctx.gradient = gradient
+        if backend == BACKEND_DENSE:
             assert ctx.threads_masks.is_contiguous()
             return SparsifyApplyDenseOutput.OPERATOR(x, ctx.threads_masks)
-        packed, packed_t = SparsifyApply.OPERATOR(x, ctx.threads_masks)
-        return Sparse24TensorCutlass(
+        packed, meta, packed_t, meta_t = SparsifyApply.OPERATOR(
+            x, ctx.threads_masks, backend=backend
+        )
+        if backend == BACKEND_CUTLASS:
+            return Sparse24TensorCutlass(
+                x.shape,
+                packed,
+                ctx.meta,
+                packed_t,
+                ctx.meta_t,
+                ctx.threads_masks,
+                requires_grad=x.requires_grad,
+            )
+        assert backend == BACKEND_CUSPARSELT, f"Invalid backend: {backend}"
+        meta.copy_(pattern.meta)
+        meta_t.copy_(pattern.meta_t)
+        return Sparse24TensorCuSparseLt(
             x.shape,
             packed,
-            ctx.meta,
+            meta,
             packed_t,
-            ctx.meta_t,
+            meta_t,
             ctx.threads_masks,
             requires_grad=x.requires_grad,
         )
 
     @staticmethod
     def backward(ctx, grad_out: torch.Tensor):  # type: ignore[override]
-        if isinstance(grad_out, Sparse24Tensor):
-            return grad_out, None, None
+        if ctx.gradient == GRADIENT_STE or isinstance(grad_out, Sparse24Tensor):
+            return grad_out, None, None, None
         assert not isinstance(grad_out, Sparse24Tensor)
         assert grad_out.dtype == ctx.dtype
-        packed, packed_t = SparsifyApply.OPERATOR(grad_out, ctx.threads_masks)
+
+        if ctx.gradient == GRADIENT_DENSE:
+            assert ctx.threads_masks.is_contiguous()
+            return (
+                SparsifyApplyDenseOutput.OPERATOR(grad_out, ctx.threads_masks),
+                None,
+                None,
+                None,
+            )
+        assert ctx.gradient == GRADIENT_SP24
+
+        packed, _, packed_t, _ = SparsifyApply.OPERATOR(
+            grad_out, ctx.threads_masks, backend=BACKEND_CUTLASS
+        )
         return (
             Sparse24TensorCutlass(
                 grad_out.shape,
@@ -590,6 +674,7 @@ class _Sparsify24LikeFunc(torch.autograd.Function):
                 ctx.threads_masks,
                 requires_grad=grad_out.requires_grad,
             ),
+            None,
             None,
             None,
         )
@@ -616,14 +701,43 @@ def sparsify24(
 
 
 @allow_in_graph
-def sparsify24_like(
-    x: torch.Tensor, pattern: torch.Tensor, out_dense: bool = False
+def sparsify24_ste(
+    x: torch.Tensor,
+    algo: str = "",
+    backend: str = BACKEND_CUTLASS,
+    bw_mul0: float = 1.0,
+    bw_mul1: float = 1.0,
 ) -> Sparse24Tensor:
+    """
+    2:4 sparsification, with Straight Through Estimator for the
+    backward pass (eg the gradient is *not* sparsified).
+    Optionally, `bw_mul[0-1]` provide the option to rescale the gradient
+    differently for pruned (`bw_mul0`) and kept values (`bw_mul1`).
+    """
+    return _Sparsify24STEFunc.apply(x, algo, backend, bw_mul0, bw_mul1)
+
+
+@allow_in_graph
+def sparsify24_like(
+    x: torch.Tensor,
+    pattern: torch.Tensor,
+    gradient: str = GRADIENT_SP24,
+    backend: str = "",
+    out_dense: Optional[bool] = None,  # <-- TODO: Deprecate this in favor of "gradient"
+) -> Sparse24Tensor:
+    if out_dense is not None and out_dense:
+        backend = BACKEND_DENSE
+    if backend == "":
+        backend = (
+            BACKEND_CUSPARSELT
+            if isinstance(pattern, Sparse24TensorCuSparseLt)
+            else BACKEND_CUTLASS
+        )
     if not isinstance(pattern, Sparse24Tensor):
         raise ValueError(
             f"`pattern` must be a `Sparse24Tensor` but got a {type(pattern)}"
         )
     # Handle transposed case
     if not pattern.threads_masks.is_contiguous():
-        return _Sparsify24LikeFunc.apply(x.t(), pattern.t(), out_dense).t()
-    return _Sparsify24LikeFunc.apply(x, pattern, out_dense)
+        return _Sparsify24LikeFunc.apply(x.t(), pattern.t(), gradient, backend).t()
+    return _Sparsify24LikeFunc.apply(x, pattern, gradient, backend)

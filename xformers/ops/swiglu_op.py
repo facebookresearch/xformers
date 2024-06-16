@@ -13,6 +13,27 @@ from torch import nn
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .unbind import stack_or_none, unbind
 
+if torch.version.hip:
+
+    @torch.library.register_kernel("xformers::dual_gemm_silu_identity_mul", "cuda")  # type: ignore
+    def dual_gemm_silu_identity_mul_cuda(
+        x: torch.Tensor,
+        w1: torch.Tensor,
+        b1: Optional[torch.Tensor],
+        w2: torch.Tensor,
+        b2: Optional[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        x1 = x @ w1.T
+        if b1 is not None:
+            x1 += b1
+
+        x2 = x @ w2.T
+        if b2 is not None:
+            x2 += b2
+
+        x4 = F.silu(x1) * x2
+        return x1, x2, x4
+
 
 @register_operator
 class DualGemmSiluOp(BaseOperator):
@@ -186,10 +207,6 @@ class SwiGLUOp:
 
 class _ForwardToPythonAutogradFunc(SwiGLUOp):
     def supports(self, op: "SwiGLUOpDispatch") -> bool:
-        # Let's disable autocast in bf16 until this issue is fixed
-        # https://github.com/pytorch/pytorch/issues/87979
-        if op.dtype_autocast_gpu == torch.bfloat16:
-            return False
         return super().supports(op)
 
     def __call__(self, *args, **kwargs):

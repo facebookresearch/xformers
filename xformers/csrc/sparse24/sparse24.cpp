@@ -19,7 +19,7 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::_sparse24_meta_shuffle_test(Tensor local_meta, bool transposed) -> Tensor"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::sparse24_apply(Tensor input, Tensor threads_masks) -> (Tensor, Tensor)"));
+      "xformers::sparse24_apply(Tensor input, Tensor threads_masks, str backend = 'cutlass') -> (Tensor, Tensor, Tensor, Tensor)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::sparse24_apply_dense_output(Tensor input, Tensor threads_masks) -> Tensor"));
+      "xformers::sparse24_apply_dense_output(Tensor input, Tensor threads_masks, float mul0=0.0, float mul1=1.0) -> Tensor"));
 }

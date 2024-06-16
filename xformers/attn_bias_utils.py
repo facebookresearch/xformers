@@ -9,7 +9,8 @@ from typing import List, Optional, Sequence, Tuple, Type
 
 import torch
 
-from xformers.ops import fmha
+from xformers.ops import AttentionBias, fmha
+from xformers.ops.fmha.attn_bias import AttentionBiasSubTensor
 from xformers.ops.fmha.common import AttentionOpBase
 
 
@@ -58,6 +59,17 @@ def create_attn_bias(
                 * 3
             )
             attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
+        elif issubclass(op, fmha.triton_splitk.FwOp):
+            attn_bias = (
+                torch.randn(
+                    (batch_size, num_heads_groups, num_heads, q_len, kv_len),
+                    device=device,
+                    dtype=dtype,
+                )
+                * 3
+            )
+            if fmt in ["BMK", "BMHK"]:
+                attn_bias = attn_bias[:, 0]
         else:
             attn_bias = _create_aligned_bias(
                 batch_size,
@@ -172,8 +184,10 @@ def create_attn_bias(
         if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask):
             assert page_size is not None
             pages_per_row = (kv_len + page_size - 1) // page_size
-            block_tables = torch.randperm(
-                batch_size * pages_per_row, device=device, dtype=torch.int32
+            block_tables = torch.tensor(
+                r.sample(range(batch_size * pages_per_row), batch_size * pages_per_row),
+                device=device,
+                dtype=torch.int32,
             ).reshape(batch_size, pages_per_row)
             return g_block_diag.make_paged(
                 block_tables=block_tables, page_size=page_size, paged_type=bias_type
@@ -194,6 +208,35 @@ def create_attn_bias(
             q_seqlen=q,
             kv_seqstarts=starts,
             kv_seqlen=k,
+        )
+    if bias_type in [
+        fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+    ]:
+        assert fmt in ["BMHK", "BMGHK"]
+        assert page_size is not None
+        pages_per_row = (kv_len + page_size - 1) // page_size
+        total_queries = q_len * batch_size
+        q = _rand_maxed_partition(r, total_queries, batch_size, total_queries, False)
+        k = [r.randint(1, kv_len) for _ in range(batch_size)]
+        row_size = pages_per_row * page_size
+        starts = [row_size * i + r.randint(0, row_size - ki) for i, ki in enumerate(k)]
+        starts.append(pages_per_row * batch_size * page_size)
+        block_diag_type = bias_type._UNPAGED_TYPE  # type: ignore
+        g_block_diag = block_diag_type.from_seqlens(
+            q_seqlen=q,
+            kv_seqstarts=starts,
+            kv_seqlen=k,
+        )
+        block_tables = torch.tensor(
+            r.sample(range(batch_size * pages_per_row), batch_size * pages_per_row),
+            device=device,
+            dtype=torch.int32,
+        ).reshape(batch_size, pages_per_row)
+        return g_block_diag.make_paged(
+            block_tables=block_tables,
+            page_size=page_size,
+            paged_type=bias_type,
+            notional_padding=page_size * pages_per_row,
         )
     if bias_type == fmha.attn_bias.LocalAttentionFromBottomRightMask:
         return bias_type(
@@ -313,3 +356,79 @@ def _rand_seqlens_padded_k(
         q_seqlens = _rand_maxed_partition(r, q_len * bs, bs, kv_len)
         k_seqlens = [r.randint(i, kv_len) for i in q_seqlens]
     return q_seqlens, k_seqlens
+
+
+def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
+    if q.ndim == 5:
+
+        def attn_bias_group(group: int):
+            if isinstance(attn_bias, fmha.attn_bias.AttentionBiasSubTensor):
+                if attn_bias.HOLDS_DENSE_TENSOR:
+                    return attn_bias[:, group]
+            elif isinstance(attn_bias, torch.Tensor):
+                return attn_bias[:, group]
+            return attn_bias
+
+        return torch.stack(
+            [
+                ref_attention_bmhk(
+                    q[:, :, g],
+                    k[:, :, g],
+                    v[:, :, g],
+                    scale=scale,
+                    attn_bias=attn_bias_group(g),
+                )
+                for g in range(q.shape[2])
+            ],
+            dim=2,
+        )
+    if q.ndim == 4:
+        assert p == 0.0
+        return ref_attention_bmhk(q, k, v, scale=scale, attn_bias=attn_bias)
+    q = q.float()
+    k = k.float()
+    v = v.float()
+
+    scale = scale if scale is not None else (1 / q.shape[-1] ** 0.5)
+    q = q * scale
+
+    attn = q @ k.transpose(-2, -1)
+    if attn_bias is not None:
+        if isinstance(attn_bias, (AttentionBias, AttentionBiasSubTensor)):
+            # Always create in B,H,Mq,Mk format
+            attn_bias_tensor = attn_bias.materialize(
+                (q.shape[0], 1, q.shape[1], k.shape[1]),
+                device=q.device,
+                dtype=torch.float32,
+            )
+        else:
+            attn_bias_tensor = attn_bias
+        if attn_bias_tensor.ndim == 4:
+            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
+            attn_bias_tensor = attn_bias_tensor.reshape(
+                [-1, *attn_bias_tensor.shape[2:]]
+            )
+        attn = attn + attn_bias_tensor.float()
+    attn = attn.softmax(-1)
+    if drop_mask is not None:
+        attn = attn * (drop_mask / (1 - p))
+    return attn @ v
+
+
+def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
+    assert q.ndim == 4
+
+    def T(t):
+        return t.permute((0, 2, 1, 3)).reshape(
+            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
+        )
+
+    if isinstance(attn_bias, (AttentionBias, AttentionBiasSubTensor)):
+        attn_bias = attn_bias.materialize(
+            (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
+            device=q.device,
+            dtype=torch.float32,
+        ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
+    out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
+    out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
+    return out.permute((0, 2, 1, 3))

@@ -14,18 +14,6 @@ from .. import _is_triton_available
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .ipc import init_ipc
 
-if _is_triton_available():
-    from ._triton.sequence_parallel_fused_kernels import (
-        BACKWARDS_WITH_ME_FIRST,
-        FORWARDS_WITH_ME_LAST,
-        _launch_triton_matmul,
-    )
-
-    TRITON_IS_AVAILABLE = True
-else:
-    TRITON_IS_AVAILABLE = False
-
-
 # The sequence numbers will be communicated as 32-bit integers, due to
 # limitations in both CUDA (memset can only operate on 4 bytes at a time at
 # most) and Triton (scalar arguments are int32 if they fit). 32 bits are not
@@ -196,7 +184,7 @@ class _FusedSequenceParallel:
     def _should_use_triton(self, _triton: bool):
         if not int(os.getenv("XFORMERS_FUSED_SEQPAR_ENABLE_TRITON", "1")):
             return False
-        if not TRITON_IS_AVAILABLE:
+        if not _is_triton_available():
             return False
         # Triton seems to be having issues on P100 and V100 GPUs, such as
         # https://github.com/openai/triton/issues/1609
@@ -316,6 +304,11 @@ class _FusedSequenceParallel:
 
         # If we're doing a regular matmul, we have a faster fused Triton kernel!
         if _is_regular_matmul and self._should_use_triton(_triton):
+            from ._triton.sequence_parallel_fused_kernels import (
+                BACKWARDS_WITH_ME_FIRST,
+                _launch_triton_matmul,
+            )
+
             # Wait for buddy to signal that it wrote into the data before we
             # read from it (this wait matches up with write [A] above).
             _launch_triton_matmul(
@@ -458,6 +451,11 @@ class _FusedSequenceParallel:
 
         # If we're doing a regular matmul, we have a faster fused Triton kernel!
         if _is_regular_matmul and self._should_use_triton(_triton):
+            from ._triton.sequence_parallel_fused_kernels import (
+                FORWARDS_WITH_ME_LAST,
+                _launch_triton_matmul,
+            )
+
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [1] below).
             _launch_triton_matmul(
@@ -726,7 +724,7 @@ def fused_allgather_and_linear(
         for w, scale_weight, go in zip(weights, scales_weights, gathered_outputs):
             with torch.cuda.stream(stream_factory()):
                 if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty(1, dtype=torch.float32, device=w.device)
+                    output_amax = torch.empty((), dtype=torch.float32, device=w.device)
                     torch._scaled_mm(
                         inputs[0],
                         w.t(),
@@ -941,7 +939,7 @@ def fused_linear_and_reducescatter(
         for w, scale_weight, o in zip(weights, scales_weights, outputs):
             with torch.cuda.stream(stream_factory()):
                 if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty(1, dtype=torch.float32, device=o.device)
+                    output_amax = torch.empty((), dtype=torch.float32, device=o.device)
                     torch._scaled_mm(
                         gathered_input[dst_rank],
                         w.t(),

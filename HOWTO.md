@@ -158,7 +158,6 @@ Let's say you're used to working with a given Transformer based model, and want 
 ```python
 import timm
 from timm.models.vision_transformer import VisionTransformer
-from xformers.components.attention import ScaledDotProduct
 from xformers.helpers.timm_sparse_attention import TimmSparseAttention
 img_size = 224
 patch_size = 16

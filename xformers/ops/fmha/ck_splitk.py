@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Set, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import torch
 
@@ -28,10 +28,10 @@ class FwOp(AttentionFwOpBase):
         torch.float,
     }  # Those are dtypes of Q. In the quantized case K/V has dtype int32
     SUPPORTED_MAX_K = 256
-    SUPPORTED_ATTN_BIAS_TYPES: Set[Any] = {
+    SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    }
+    )
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_BMGHK = True

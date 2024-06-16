@@ -149,9 +149,7 @@ def turn_into_pytorch_op(fn: ClsT, dispatch_key: str) -> ClsT:
         ba = sign.bind(*args, **kwargs)
         for name, value in ba.arguments.items():
             if sign.parameters[name].annotation is torch.distributed.ProcessGroup:
-                from .._C import unbox_process_group
-
-                ba.arguments[name] = unbox_process_group(value)
+                ba.arguments[name] = torch.distributed.ProcessGroup.unbox(value)
         return fn(*ba.args, **ba.kwargs)
 
     xformers_lib = get_python_lib()
@@ -164,9 +162,7 @@ def turn_into_pytorch_op(fn: ClsT, dispatch_key: str) -> ClsT:
         ba = sign.bind(*args, **kwargs)
         for name, value in ba.arguments.items():
             if sign.parameters[name].annotation is torch.distributed.ProcessGroup:
-                from .._C import box_process_group
-
-                ba.arguments[name] = box_process_group(value)
+                ba.arguments[name] = value.boxed()
         return dispatcher_impl(*ba.args, **ba.kwargs)
 
     return caller  # type: ignore

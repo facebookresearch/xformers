@@ -5,7 +5,7 @@ Memory-efficient attention
 ---------------------------
 
 .. automodule:: xformers.ops
-    :members: memory_efficient_attention, AttentionOpBase, AttentionBias
+    :members: memory_efficient_attention, AttentionOpBase
     :show-inheritance:
     :imported-members:
 
@@ -43,6 +43,13 @@ Attention biases
 .. automodule:: xformers.ops.fmha.attn_bias
     :members:
     :show-inheritance:
+    :member-order: bysource
+
+Partial Attention
+~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: xformers.ops.fmha
+    :members: memory_efficient_attention_partial, merge_attentions
     :member-order: bysource
 
 
