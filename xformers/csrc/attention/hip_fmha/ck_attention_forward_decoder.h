@@ -434,14 +434,16 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
   struct Invoker : public BaseInvoker {
     using Argument = DeviceOp::Argument;
     float Run(
-        const Argument& arg,
+        const BaseArgument* argp_,
         const StreamConfig& stream_config = StreamConfig{}) {
-      auto threads_per_wavefront = arg.block_dim.x;
+      const Argument* argp = dynamic_cast<const Argument*>(argp_);
+
+      auto threads_per_wavefront = argp->block_dim.x;
 
       auto Q_size_k_alignment_necessary = 0;
 
       for (auto vec_size : {4, 2, 1}) {
-        if (arg.Q_size_k <= vec_size * threads_per_wavefront) {
+        if (argp->Q_size_k <= vec_size * threads_per_wavefront) {
           Q_size_k_alignment_necessary = vec_size;
         }
       }
@@ -450,7 +452,7 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
         throw std::runtime_error("Unsupported Q_size_k");
       }
 
-      if (arg.Q_size_k % Q_size_k_alignment_necessary) {
+      if (argp->Q_size_k % Q_size_k_alignment_necessary) {
         throw std::runtime_error("Unsupported alignment for Q_size_k");
       }
 
@@ -465,29 +467,29 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
                             scalar_t,
                             1>
                       : nullptr,
-          arg.grid_dim,
-          arg.block_dim,
-          arg.lds_bytes,
-          arg.XQ,
-          arg.cache_K,
-          arg.cache_V,
-          arg.O,
-          arg.seq_kv_lens,
-          arg.XQ_stride_b,
-          arg.XQ_stride_m,
-          arg.XQ_stride_g,
-          arg.XQ_stride_h,
-          arg.K_stride_b,
-          arg.K_stride_m,
-          arg.K_stride_g,
-          arg.K_stride_h,
-          arg.Q_size_m,
-          arg.Q_size_g,
-          arg.Q_size_h,
-          arg.Q_size_k,
-          arg.K_size_m,
-          arg.multiquery,
-          arg.qk_scale);
+          argp->grid_dim,
+          argp->block_dim,
+          argp->lds_bytes,
+          argp->XQ,
+          argp->cache_K,
+          argp->cache_V,
+          argp->O,
+          argp->seq_kv_lens,
+          argp->XQ_stride_b,
+          argp->XQ_stride_m,
+          argp->XQ_stride_g,
+          argp->XQ_stride_h,
+          argp->K_stride_b,
+          argp->K_stride_m,
+          argp->K_stride_g,
+          argp->K_stride_h,
+          argp->Q_size_m,
+          argp->Q_size_g,
+          argp->Q_size_h,
+          argp->Q_size_k,
+          argp->K_size_m,
+          argp->multiquery,
+          argp->qk_scale);
     }
   };
 };
