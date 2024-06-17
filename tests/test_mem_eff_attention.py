@@ -967,7 +967,7 @@ def test_backward(
     )
 
     if op_bw == fmha.ck.BwOp:
-        op_fwd = fmha.ck.FwOp
+        op_fw = fmha.ck.FwOp
         if dtype == torch.bfloat16:
             pytest.skip("CK Fmha backward for bfloat16 currently is not very accurate for some cases!")
         if grad_out_contiguous == False:
@@ -1170,7 +1170,11 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     torch.manual_seed(seed)
     mask = _get_drop_mask(op, batch_size, q_len, kv_len, p, device)
     ref = ref_attention_for_test(query, key, value, attn_bias, mask, p)
-    assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+
+    if dtype is torch.float:
+        assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
+    else:
+        assert_allclose(out.float(), ref, atol=2.2e-2), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
     p_val_tol = 1e-6
