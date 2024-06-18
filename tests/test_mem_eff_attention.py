@@ -266,6 +266,7 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_BW_OPS, max_shapes_per_op=1),
 )
 
+
 def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
     # returns list of n nonnegative integers summing to total
     idx = {0, total}
@@ -518,6 +519,7 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         rtol=op.ERROR_RTOL.get(dtype, 1e-5),
     )
 
+
 @cuda_only
 @pytest.mark.parametrize("k_len", [5, 6, 32])
 @pytest.mark.parametrize("batch_size", [1, 4])
@@ -704,7 +706,7 @@ def test_backward(
         op_fw = fmha.ck.FwOp
         if dtype == torch.bfloat16:
             pytest.skip("CK Fmha backward for bfloat16 currently is not very accurate for some cases!")
-        if grad_out_contiguous == False:
+        if grad_out_contiguous is False:
             pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
         if k % 2 != 0:
             pytest.skip("CK Fmha currently requires the headdim size of query input be an even value!")
@@ -876,9 +878,9 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     device = "cuda"
     scale = 3
 
-    dtype=torch.float
+    dtype = torch.float
     if torch.version.hip and op == fmha.ck.FwOp:
-        dtype=torch.float16
+        dtype = torch.float16
 
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -1028,7 +1030,8 @@ def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
         dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
 
-cuda_only
+
+@cuda_only
 @pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
 @pytest.mark.parametrize("k", [16, 64, 128])
 @pytest.mark.parametrize("batch_size", [1, 2])
@@ -1045,6 +1048,7 @@ def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
         op=fmha.ck.FwOp,
         dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
+
 
 @cuda_only
 @disable_tf32
@@ -1651,6 +1655,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
     if kv_heads == 1:
         return "mq"
     return f"gqa{kv_heads}"
+
 
 @sm70_or_better_only
 @pytest.mark.parametrize(

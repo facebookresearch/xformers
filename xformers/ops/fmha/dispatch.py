@@ -139,8 +139,8 @@ def _dispatch_bw(inp: Inputs) -> Type[AttentionBwOpBase]:
         ]
     else:
         priority_list_ops = [
-                ck.BwOp,
-            ]
+            ck.BwOp,
+        ]
 
     if torch.version.cuda and _is_cutlassB_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.BwOp)
