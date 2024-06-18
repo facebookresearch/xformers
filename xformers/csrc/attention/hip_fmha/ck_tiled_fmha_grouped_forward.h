@@ -50,8 +50,9 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
 
       using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
 
-      constexpr ck_tile::index_t occupancy =
-          (MaxK == 64) ? 3 : (MaxK == 256) ? 1 : 2;
+      constexpr ck_tile::index_t occupancy = (MaxK == 64) ? 3
+          : (MaxK == 256)                                 ? 1
+                                                          : 2;
 
       constexpr auto kBiasEnum = kHasBias
           ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
