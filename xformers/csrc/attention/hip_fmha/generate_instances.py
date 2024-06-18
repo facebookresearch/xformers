@@ -1,3 +1,4 @@
+# noqa: C801
 # Copyright (c) 2023-2024, Advanced Micro Devices, Inc. All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
