@@ -461,12 +461,10 @@ struct FMHADecoderSeqlen1DeviceOp : public BaseOperator {
           Q_size_k_alignment_necessary == 4
               ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 4>
               : Q_size_k_alignment_necessary == 2
-                  ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
-                  : Q_size_k_alignment_necessary == 1
-                      ? efficient_attention_forward_decoder_ck_kernel<
-                            scalar_t,
-                            1>
-                      : nullptr,
+              ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 2>
+              : Q_size_k_alignment_necessary == 1
+              ? efficient_attention_forward_decoder_ck_kernel<scalar_t, 1>
+              : nullptr,
           argp->grid_dim,
           argp->block_dim,
           argp->lds_bytes,
