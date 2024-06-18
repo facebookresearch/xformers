@@ -73,6 +73,7 @@ def _get_tensor_bias(
         return attn_bias
     return None
 
+
 def _check_bias_alignment(
     reasons: List[str], attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
 ) -> None:
