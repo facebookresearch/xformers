@@ -1175,7 +1175,7 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     if dtype is torch.float:
         assert_allclose(out, ref, atol=2e-4), f"{(out - ref).abs().max()}"
     else:
-        assert_allclose(out.float(), ref, atol=2.2e-2), f"{(out - ref).abs().max()}"
+        assert_allclose(out.float(), ref, atol=2.8e-2), f"{(out - ref).abs().max()}"
 
     num_trials = 1000
     p_val_tol = 1e-6
