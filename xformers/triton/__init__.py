@@ -4,10 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 
-import torch
+from .. import _is_triton_available
 
-_triton_available = torch.cuda.is_available()
-if _triton_available:
+if _is_triton_available():
     try:
         from .dropout import FusedDropoutBias, dropout  # noqa
         from .fused_linear_layer import FusedLinear  # noqa

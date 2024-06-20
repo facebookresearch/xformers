@@ -43,6 +43,8 @@ def compute_once(func):
 
 @compute_once
 def _is_triton_available():
+    if os.environ.get("XFORMERS_ENABLE_TRITON", "0") == "1":
+        return True
     if not torch.cuda.is_available():
         return False
     if os.environ.get("XFORMERS_FORCE_DISABLE_TRITON", "0") == "1":

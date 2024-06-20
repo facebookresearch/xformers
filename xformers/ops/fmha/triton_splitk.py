@@ -20,7 +20,8 @@ from typing import (
 
 import torch
 
-from ..common import _has_triton21, register_operator
+from ... import _is_triton_available
+from ..common import register_operator
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
@@ -84,7 +85,7 @@ AUTOTUNER_KEY = [
     "BLOCK_N_PER_SPLIT",
 ]
 
-if TYPE_CHECKING or _has_triton21():
+if TYPE_CHECKING or _is_triton_available():
     import triton
     import triton.language as tl
 
