@@ -7,4 +7,4 @@
 [submodule "third_party/composable_kernel_tiled"]
 	path = third_party/composable_kernel_tiled
 	url = https://github.com/ROCm/composable_kernel.git
-	branch = ck_tile/dev
+	branch = develop 

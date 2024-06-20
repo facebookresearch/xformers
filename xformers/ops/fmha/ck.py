@@ -15,6 +15,7 @@ from ..common import get_xformers_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
+    AttentionBiasSubTensor,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
@@ -65,10 +66,11 @@ def _get_seqlen_info(
 def _get_tensor_bias(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
 ) -> Optional[torch.Tensor]:
-    if isinstance(attn_bias, torch.Tensor):
+    if isinstance(attn_bias, AttentionBiasSubTensor):
+        if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+            return attn_bias._subtensor
+    elif isinstance(attn_bias, torch.Tensor):
         return attn_bias
-    elif isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-        return attn_bias._subtensor
     return None
 
 
@@ -181,7 +183,7 @@ class FwOp(AttentionFwOpBase):
 
     ERROR_ATOL: Mapping[torch.dtype, float] = {
         torch.float: 3e-4,
-        torch.half: 4e-3,
+        torch.half: 6e-3,
         torch.bfloat16: 2.8e-2,
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {

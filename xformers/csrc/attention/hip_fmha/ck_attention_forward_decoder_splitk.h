@@ -4,9 +4,10 @@
 #include <ck/stream_config.hpp>
 #include <ck/tensor_operation/gpu/device/device_base.hpp>
 #include <ck/utility/data_type.hpp>
-#include <ck/utility/inner_product.hpp>
 #include <ck/utility/math.hpp>
-#include <ck/utility/math_v2.hpp>
+
+#include "ck_attention_inner_product.h"
+#include "ck_attention_math_ext.h"
 
 namespace {
 
@@ -592,13 +593,15 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
   struct Invoker : public BaseInvoker {
     using Argument = DeviceOp::Argument;
     float Run(
-        const Argument& arg,
+        const BaseArgument* argp_,
         const StreamConfig& stream_config = StreamConfig{}) {
-      auto threads_per_wavefront = arg.block_dim.x;
+      const Argument* argp = dynamic_cast<const Argument*>(argp_);
+
+      auto threads_per_wavefront = argp->block_dim.x;
       auto Q_size_k_alignment_necessary = 0;
 
       for (auto vec_size : {4, 2, 1}) {
-        if (arg.Q_size_k <= vec_size * threads_per_wavefront) {
+        if (argp->Q_size_k <= vec_size * threads_per_wavefront) {
           Q_size_k_alignment_necessary = vec_size;
         }
       }
@@ -607,7 +610,7 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
         throw std::runtime_error("Unsupported Q_size_k");
       }
 
-      if (arg.Q_size_k % Q_size_k_alignment_necessary) {
+      if (argp->Q_size_k % Q_size_k_alignment_necessary) {
         throw std::runtime_error("Unsupported alignment for Q_size_k");
       }
 
@@ -638,36 +641,36 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
                     KV_M_MAX,
                     compute_t>
               : nullptr,
-          arg.grid_dim,
-          arg.block_dim,
-          arg.lds_bytes,
-          arg.XQ,
-          arg.cache_K,
-          arg.cache_V,
-          arg.split_O,
-          arg.split_max,
-          arg.split_sumexp,
-          arg.seq_kv_lens,
-          arg.XQ_stride_b,
-          arg.XQ_stride_m,
-          arg.XQ_stride_g,
-          arg.XQ_stride_h,
-          arg.K_stride_b,
-          arg.K_stride_m,
-          arg.K_stride_g,
-          arg.K_stride_h,
-          arg.O_stride_split,
-          arg.Q_size_m,
-          arg.Q_size_g,
-          arg.Q_size_h,
-          arg.Q_size_k,
-          arg.K_size_m,
-          arg.multiquery,
-          arg.qk_scale,
-          arg.split_k);
+          argp->grid_dim,
+          argp->block_dim,
+          argp->lds_bytes,
+          argp->XQ,
+          argp->cache_K,
+          argp->cache_V,
+          argp->split_O,
+          argp->split_max,
+          argp->split_sumexp,
+          argp->seq_kv_lens,
+          argp->XQ_stride_b,
+          argp->XQ_stride_m,
+          argp->XQ_stride_g,
+          argp->XQ_stride_h,
+          argp->K_stride_b,
+          argp->K_stride_m,
+          argp->K_stride_g,
+          argp->K_stride_h,
+          argp->O_stride_split,
+          argp->Q_size_m,
+          argp->Q_size_g,
+          argp->Q_size_h,
+          argp->Q_size_k,
+          argp->K_size_m,
+          argp->multiquery,
+          argp->qk_scale,
+          argp->split_k);
 
-      const dim3 reduce_gridsize = {arg.grid_dim.x};
-      const dim3 reduce_blocksize = {arg.block_dim.x};
+      const dim3 reduce_gridsize = {argp->grid_dim.x};
+      const dim3 reduce_blocksize = {argp->block_dim.x};
       constexpr int32_t reduce_lds_bytes = 0;
       float reduce_result = launch_and_time_kernel(
           stream_config,
@@ -687,20 +690,20 @@ struct FMHADecoderSplitKDeviceOp : public BaseOperator {
           reduce_gridsize,
           reduce_blocksize,
           reduce_lds_bytes,
-          arg.split_O,
-          arg.split_max,
-          arg.split_sumexp,
-          arg.O,
-          arg.Q_size_m,
-          arg.Q_size_g,
-          arg.Q_size_h,
-          arg.Q_size_k,
-          arg.O_stride_split,
-          arg.XQ_stride_b,
-          arg.XQ_stride_m,
-          arg.XQ_stride_g,
-          arg.XQ_stride_h,
-          arg.split_k);
+          argp->split_O,
+          argp->split_max,
+          argp->split_sumexp,
+          argp->O,
+          argp->Q_size_m,
+          argp->Q_size_g,
+          argp->Q_size_h,
+          argp->Q_size_k,
+          argp->O_stride_split,
+          argp->XQ_stride_b,
+          argp->XQ_stride_m,
+          argp->XQ_stride_g,
+          argp->XQ_stride_h,
+          argp->split_k);
       return split_attention_result + reduce_result;
     }
   };
