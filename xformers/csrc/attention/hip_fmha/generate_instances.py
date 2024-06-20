@@ -31,8 +31,10 @@ template void run_{mode}_infer_causalmask_bias_dropout_dispatch<
     {max_k}>({cap_mode}ForwardParams& param, hipStream_t stream);
 """
 
-FMHA_INFER_INSTANCE_FNAME = "fmha_{mode}_infer_{dtype_str}_{has_or_no_causalmask_str}_"\
-                            "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+FMHA_INFER_INSTANCE_FNAME = (
+    "fmha_{mode}_infer_{dtype_str}_{has_or_no_causalmask_str}_"
+    "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+)
 
 FMHA_FORWARD_INSTANCE_TEMPLATE = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
@@ -46,8 +48,10 @@ template void run_{mode}_forward_causalmask_bias_dropout_dispatch<
     {max_k}>({cap_mode}ForwardParams& param, hipStream_t stream);
 """
 
-FMHA_FORWARD_INSTANCE_FNAME = "fmha_{mode}_forward_{dtype_str}_{has_or_no_causalmask_str}_"\
-                              "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+FMHA_FORWARD_INSTANCE_FNAME = (
+    "fmha_{mode}_forward_{dtype_str}_{has_or_no_causalmask_str}_"
+    "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+)
 
 FMHA_BACKWARD_INSTANCE_TEMPLATE = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
@@ -62,54 +66,53 @@ template void run_{mode}_backward_causalmask_bias_dropout_dispatch<
     {max_k}>({cap_mode}BackwardParams& param, hipStream_t stream);
 """
 
-FMHA_BACKWARD_INSTANCE_FNAME = "fmha_{mode}_backward_{dtype_str}_{has_or_no_causalmask_str}_"\
-                               "{has_or_no_bias_str}_{has_or_no_biasgrad_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+FMHA_BACKWARD_INSTANCE_FNAME = (
+    "fmha_{mode}_backward_{dtype_str}_{has_or_no_causalmask_str}_"
+    "{has_or_no_bias_str}_{has_or_no_biasgrad_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
+)
 
-BOOL_MAP = {
-    True : "true",
-    False : "false"
-}
+BOOL_MAP = {True: "true", False: "false"}
 
 BOOL_MAP_CAUSALMASK = {
-    True : "has_causalmask",
-    False : "no_causalmask",
+    True: "has_causalmask",
+    False: "no_causalmask",
 }
 
 BOOL_MAP_BIAS = {
-    True : "has_bias",
-    False : "no_bias",
+    True: "has_bias",
+    False: "no_bias",
 }
 
 BOOL_MAP_BIASGRAD = {
-    True : "has_biasgrad",
-    False : "no_biasgrad",
+    True: "has_biasgrad",
+    False: "no_biasgrad",
 }
 
 BOOL_MAP_DROPOUT = {
-    True : "has_dropout",
-    False : "no_dropout",
+    True: "has_dropout",
+    False: "no_dropout",
 }
 
 INT_MAP_MAX_K = {
-    32 : "maxk_32",
-    64 : "maxk_64",
-    128 : "maxk_128",
-    256 : "maxk_256",
+    32: "maxk_32",
+    64: "maxk_64",
+    128: "maxk_128",
+    256: "maxk_256",
 }
 
 TYPE_CTYPE_MAP = {
-    "fp16" : "ck_tile::fp16_t",
-    "bf16" : "ck_tile::bf16_t",
+    "fp16": "ck_tile::fp16_t",
+    "bf16": "ck_tile::bf16_t",
 }
 
 TYPE_FNAME_MAP = {
-    "fp16" : "half",
-    "bf16" : "bfloat16",
+    "fp16": "half",
+    "bf16": "bfloat16",
 }
 
 MODE_NAME_MAP = {
-    "batched" : "Batched",
-    "grouped" : "Grouped",
+    "batched": "Batched",
+    "grouped": "Grouped",
 }
 
 
@@ -123,7 +126,9 @@ def create_infer_instances(instance_dir: Path) -> None:
                             fname = FMHA_INFER_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[has_causalmask],
+                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[
+                                    has_causalmask
+                                ],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
@@ -138,7 +143,9 @@ def create_infer_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_INSTANCE_HEADER + infer_instance)
+                            (instance_dir / fname).write_text(
+                                FMHA_INSTANCE_HEADER + infer_instance
+                            )
 
 
 def create_forward_instances(instance_dir: Path) -> None:
@@ -151,7 +158,9 @@ def create_forward_instances(instance_dir: Path) -> None:
                             fname = FMHA_FORWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[has_causalmask],
+                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[
+                                    has_causalmask
+                                ],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
@@ -166,20 +175,28 @@ def create_forward_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_INSTANCE_HEADER + infer_instance)
+                            (instance_dir / fname).write_text(
+                                FMHA_INSTANCE_HEADER + infer_instance
+                            )
 
 
 def create_backward_instances(instance_dir: Path) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
-                for has_bias, has_bias_grad in [[True, False], [True, True], [False, False]]:
+                for has_bias, has_bias_grad in [
+                    [True, False],
+                    [True, True],
+                    [False, False],
+                ]:
                     for has_dropout in [True, False]:
                         for max_k in [32, 64, 128]:
                             fname = FMHA_BACKWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[has_causalmask],
+                                has_or_no_causalmask_str=BOOL_MAP_CAUSALMASK[
+                                    has_causalmask
+                                ],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_biasgrad_str=BOOL_MAP_BIASGRAD[has_bias_grad],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
@@ -196,7 +213,9 @@ def create_backward_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_INSTANCE_HEADER + infer_instance)
+                            (instance_dir / fname).write_text(
+                                FMHA_INSTANCE_HEADER + infer_instance
+                            )
 
 
 if __name__ == "__main__":

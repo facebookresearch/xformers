@@ -705,11 +705,15 @@ def test_backward(
     if op_bw == fmha.ck.BwOp:
         op_fw = fmha.ck.FwOp
         if dtype == torch.bfloat16:
-            pytest.skip("CK Fmha backward for bfloat16 currently is not very accurate for some cases!")
+            pytest.skip(
+                "CK Fmha backward for bfloat16 currently is not very accurate for some cases!"
+            )
         if grad_out_contiguous is False:
             pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
         if k % 2 != 0:
-            pytest.skip("CK Fmha currently requires the headdim size of query input be an even value!")
+            pytest.skip(
+                "CK Fmha currently requires the headdim size of query input be an even value!"
+            )
 
     qkv = None
 
