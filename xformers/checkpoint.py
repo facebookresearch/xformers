@@ -33,21 +33,23 @@ try:
     from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
         ActivationWrapper,
     )
+    from torch.utils.checkpoint import SAC_IGNORED_OPS as _ignored_ops  # type: ignore
     from torch.utils.checkpoint import (  # type: ignore
+        CheckpointPolicy,
         _CachedTorchDispatchMode,
         _CachingTorchDispatchMode,
-        _ignored_ops,
     )
 except ImportError:
     ActivationWrapper = torch.nn.Module  # type: ignore
 
     class _NotAvailable:
         def __init__(self, *args, **kwargs):
-            raise RuntimeError("Need PyTorch >= 2.2")
+            raise RuntimeError("Need PyTorch > 2.4")
 
     _CachedTorchDispatchMode = _NotAvailable  # type: ignore
     _CachingTorchDispatchMode = _NotAvailable  # type: ignore
     _ignored_ops = set()  # type: ignore
+    CheckpointPolicy = None  # type: ignore
 
 
 _additional_ignored_ops = {
@@ -86,8 +88,11 @@ def _get_default_policy(allow_list=None):
     if allow_list is None:
         allow_list = _default_allow_list
 
-    def _default_policy(mode, func, *args, **kwargs):
-        return str(func) in allow_list
+    def _default_policy(ctx, func, *args, **kwargs):
+        store = str(func) in allow_list
+        return (
+            CheckpointPolicy.MUST_SAVE if store else CheckpointPolicy.PREFER_RECOMPUTE
+        )
 
     return _default_policy
 
@@ -156,7 +161,7 @@ def selective_checkpoint_context_fn(policy_fn=None):
         caching_mode = _CachingTorchDispatchMode(deepcopy(policy_fn), temp_storage)
     else:
         caching_mode = NullTorchDispatchMode()
-    cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage)
+    cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage, True)
 
     return caching_mode, cached_mode
 
@@ -452,13 +457,16 @@ class _OptimalPolicy:
         self.counter = 0
         self.optim_output = optim_output.tolist()
 
-    def __call__(self, mode, func, *args, **kwargs) -> bool:
+    def __call__(self, ctx, func, *args, **kwargs) -> bool:
         # returning False means recompute, True means store in memory
         if func in OPS_TO_ALWAYS_SKIP:
-            return False
+            return CheckpointPolicy.PREFER_RECOMPUTE
         count = self.counter
         self.counter += 1
-        return self.optim_output[count] == 1
+        store = self.optim_output[count] == 1
+        return (
+            CheckpointPolicy.MUST_SAVE if store else CheckpointPolicy.PREFER_RECOMPUTE
+        )
 
 
 class SelectiveCheckpointWrapper(ActivationWrapper):
