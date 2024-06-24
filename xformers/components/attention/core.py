@@ -21,7 +21,6 @@ if _has_cpp_library:
 _is_blocksparse_available = _is_triton_available()
 if _is_blocksparse_available:
     from xformers.components.attention.blocksparse import BlockSparseAttention
-    from xformers.triton.softmax import softmax as triton_softmax
 
 
 logger = logging.getLogger("xformers")
@@ -121,10 +120,7 @@ def _softmax(a: torch.Tensor, causal: bool = False) -> torch.Tensor:
     if a.is_sparse:
         return torch.sparse.softmax(a, dim=a.ndim - 1)
 
-    if _is_triton_available():
-        return triton_softmax(a, mask=None, causal=causal)
-    else:
-        return torch.softmax(a, dim=a.ndim - 1)
+    return torch.softmax(a, dim=a.ndim - 1)
 
 
 if _has_cpp_library:

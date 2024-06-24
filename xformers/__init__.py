@@ -54,7 +54,7 @@ def _is_triton_available():
     if torch.cuda.get_device_capability("cuda") < (8, 0):
         return False
     try:
-        from xformers.triton.softmax import softmax as triton_softmax  # noqa
+        import triton  # noqa
 
         return True
     except (ImportError, AttributeError):

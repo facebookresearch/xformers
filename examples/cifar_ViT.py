@@ -79,7 +79,7 @@ class VisionTransformer(pl.LightningModule):
                     },
                 },
                 "feedforward_config": {
-                    "name": "FusedMLP",
+                    "name": "MLP",
                     "dropout": mlp_pdrop,
                     "activation": "gelu",
                     "hidden_layer_multiplier": hidden_layer_multiplier,

@@ -65,12 +65,6 @@ register_feedforward: Callable[
     FEEDFORWARD_REGISTRY, FEEDFORWARD_CLASS_NAMES, Feedforward, FeedforwardConfig
 )
 
-try:
-    from .fused_mlp import FusedMLP  # noqa
-
-    _fused_mlp_available = True
-except ImportError:
-    _fused_mlp_available = False
 from .mlp import MLP  # noqa
 
 __all__ = [
@@ -79,9 +73,6 @@ __all__ = [
     "build_feedforward",
     "register_feedforward",
 ]
-
-if _fused_mlp_available:
-    __all__ += ["FusedMLP"]
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components.feedforward")
