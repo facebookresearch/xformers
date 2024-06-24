@@ -9,4 +9,3 @@ Tutorials
    extend_attentions
    use_attention
    reversible
-   triton
