@@ -26,6 +26,7 @@ def _rope_padded_kernel(
     seqstartk,
     seqlenk,
     theta,
+    linear_scale,
     first_seqpos,
     seqpos,
     k_start: tl.constexpr,
@@ -182,6 +183,7 @@ def _rope_padded_kernel(
         im_x = tl.load(x_in + cols_im, mask=mask)
         # freqs = seq_pos / (theta ** (powers / dim))
         freqs = seq_pos * pow(theta, powers / (-dim))
+        freqs = freqs / linear_scale
         sines = tl.sin(freqs)
         cosines = tl.cos(freqs)
         re_out = re_x * cosines - im_x * sines

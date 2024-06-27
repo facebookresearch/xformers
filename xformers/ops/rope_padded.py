@@ -22,6 +22,7 @@ def rope_padded(
     attn_bias: BlockDiagonalCausalWithOffsetPaddedKeysMask,
     *,
     theta: float = 10000.0,
+    linear_scale: float = 1.0,
     out_q: Optional[torch.Tensor] = None,
     first_seqpos: Optional[torch.Tensor] = None,
     seqpos: Optional[torch.Tensor] = None,
@@ -76,6 +77,9 @@ def rope_padded(
                    https://github.com/huggingface/transformers/blob/
                    f143037789288ba532dada934a118e648e715738/
                    src/transformers/models/llama/modeling_llama.py#L126-L130
+        linear_scale: A scaling factor to apply to the sequence ids when computing
+                      the RoPE frequencies.  When set to K, all sequence indices
+                      are divided by K.
         internal_dtype: set to "f32" or "f64" to enforce dtype in the calculation
     """
     if torch.is_grad_enabled() and (
@@ -237,6 +241,7 @@ def rope_padded(
             seqstartk,
             seqlenk,
             theta,
+            linear_scale,
             first_seqpos,
             seqpos,
             k_start,
