@@ -81,9 +81,9 @@ jobs:
 
   clean:
     runs-on: self-hosted
+    if: ${{ always() }}
     needs: [build]
     steps:
       - name: Remove dangling Docker images
-        if: 'always()'
         run: |
           docker images -q -f dangling=true | xargs --no-run-if-empty docker rmi
