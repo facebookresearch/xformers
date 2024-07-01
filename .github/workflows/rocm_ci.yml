@@ -73,6 +73,7 @@ jobs:
         pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py 
     
     - name: Archive logs
+      if: '!cancelled()'
       uses: actions/upload-artifact@v4
       with:
         name: test results
@@ -83,5 +84,6 @@ jobs:
     needs: [build]
     steps:
       - name: Remove dangling Docker images
+        if: 'always()'
         run: |
           docker images -q -f dangling=true | xargs --no-run-if-empty docker rmi
