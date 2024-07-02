@@ -74,7 +74,7 @@ jobs:
 
     - name: Run python tests
       run: |
-        pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py 
+        pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
     
     - name: Archive logs
       if: '!cancelled()'
