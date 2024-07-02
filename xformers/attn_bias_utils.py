@@ -39,7 +39,7 @@ def create_attn_bias(
     dtype,
     requires_grad: bool,
     fmt: str,
-    op: Type[AttentionOpBase],
+    op: Optional[Type[AttentionOpBase]] = None,
     page_size: Optional[int] = None,
 ):
     if bias_type is None or isinstance(None, bias_type):
@@ -59,7 +59,7 @@ def create_attn_bias(
                 * 3
             )
             attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
-        elif issubclass(op, fmha.triton_splitk.FwOp):
+        elif op is not None and issubclass(op, fmha.triton_splitk.FwOp):
             attn_bias = (
                 torch.randn(
                     (batch_size, num_heads_groups, num_heads, q_len, kv_len),

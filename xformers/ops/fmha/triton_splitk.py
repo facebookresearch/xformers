@@ -16,6 +16,8 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    Union,
+    cast,
 )
 
 import torch
@@ -23,7 +25,6 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 from .attn_bias import (
-    AttentionBias,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
@@ -1316,12 +1317,26 @@ class FwOp(AttentionFwOpBase):
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         output_dtype = inp.get_output_dtype()
-        if isinstance(inp.attn_bias, torch.Tensor):
-            attn_bias_tensor = inp.attn_bias
-            attn_bias: Optional[AttentionBias] = None
-        else:
+        if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
-            attn_bias = inp.attn_bias
+            attn_bias = cast(
+                Optional[
+                    Union[
+                        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        BlockDiagonalGappyKeysMask,
+                        BlockDiagonalCausalWithOffsetGappyKeysMask,
+                        BlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        PagedBlockDiagonalGappyKeysMask,
+                        PagedBlockDiagonalPaddedKeysMask,
+                    ]
+                ],
+                inp.attn_bias,
+            )
+        else:
+            attn_bias_tensor = inp.attn_bias
+            attn_bias = None
+
         seq_len = None
         seq_starts_k = None
         seq_starts_q = None
@@ -1336,26 +1351,23 @@ class FwOp(AttentionFwOpBase):
         is_paged = _is_supported_paged_bias(attn_bias)
         if attn_bias is not None:
             assert is_paged or is_block_diagonal or is_gappy
-            # TODO: do we really need to do this cast? seems fishy but
-            # I just copied it from the decoder.py
-            attn_bias.k_seqinfo.to(inp.query.device)  # type: ignore
-            attn_bias.q_seqinfo.to(inp.query.device)  # type: ignore
-            seq_len = attn_bias.k_seqinfo.seqlen  # type: ignore
+            assert attn_bias.k_seqinfo.seqlen.device == inp.query.device
+            seq_len = attn_bias.k_seqinfo.seqlen
             assert seq_len.stride(0) == 1
             if is_gappy:
-                seq_starts_k = attn_bias.k_seqinfo.seqstart  # type: ignore
+                seq_starts_k = attn_bias.k_seqinfo.seqstart
                 assert seq_starts_k.stride(0) == 1
             assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
             # force a bool because triton cannot take np.bool_
-            multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)  # type: ignore
+            multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)
             IS_CAUSAL = multiple_q and _is_supported_causal_bias(attn_bias)
             variable_q = multiple_q and not IS_CAUSAL
             Kkv = v.shape[-1]
 
             if variable_q:
-                seq_starts_q = attn_bias.q_seqinfo.seqstart  # type: ignore
+                seq_starts_q = attn_bias.q_seqinfo.seqstart
                 seq_starts_q_multiplier = 1
                 assert seq_starts_q.stride(0) == 1
             else:
@@ -1408,7 +1420,9 @@ class FwOp(AttentionFwOpBase):
         Bqq, Mqq, G, H, Kq = q.shape
         assert Lk == Kq, f"Keys have head dim {Lk} but queries have head dim {Kq}"
         if variable_q:
-            M = attn_bias.q_seqinfo.max_seqlen * seq_starts_q_multiplier  # type: ignore
+            assert attn_bias is not None
+            assert seq_starts_q_multiplier is not None
+            M = attn_bias.q_seqinfo.max_seqlen * seq_starts_q_multiplier
         else:
             M = Mqq
         page_size = inp.attn_bias.page_size if is_paged else 0  # type: ignore
@@ -1419,7 +1433,7 @@ class FwOp(AttentionFwOpBase):
             kv_cache_blocks_per_row = block_tables.shape[1]
             Mk = block_tables.shape[1] * page_size
         elif attn_bias is not None:
-            Mk = min(Mk, attn_bias.k_seqinfo.max_seqlen)  # type: ignore
+            Mk = min(Mk, attn_bias.k_seqinfo.max_seqlen)
 
         if cls.SPLIT_K is not None:
             split_k = cls.SPLIT_K

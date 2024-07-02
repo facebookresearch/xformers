@@ -227,9 +227,15 @@ try:
         block_tables,
         unpadded_lse,
     ):
-        B, M, H, K = query.shape
         out = torch.empty_like(query)
-        lse_shape = [H, B * M] if unpadded_lse else [B, H, M]
+        if cu_seq_lens_q is None:
+            B, M, H, K = query.shape
+            lse_shape = [H, B * M] if unpadded_lse else [B, H, M]
+        else:
+            assert unpadded_lse is False
+            M, H, K = query.shape
+            B = cu_seq_lens_q.shape[0] - 1
+            lse_shape = [B, H, max_seq_len_q]
         softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
         rng_state = torch.empty([2], device=query.device, dtype=torch.int64)
         return out, softmax_lse, rng_state
@@ -387,14 +393,7 @@ def _convert_input_format(
 
     attn_bias = inp.attn_bias
     if isinstance(attn_bias, BlockDiagonalMask):
-        # BlockDiagonalMask or BlockDiagonalCausalMask
-        attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
-            inp.query.device, non_blocking=True
-        )
-        attn_bias.q_seqinfo.seqstart = attn_bias.q_seqinfo.seqstart.to(
-            inp.query.device, non_blocking=True
-        )
-
+        assert attn_bias.k_seqinfo.seqstart.device == inp.query.device
         cu_seqlen_k = attn_bias.k_seqinfo.seqstart
         cu_seqlen_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
@@ -408,15 +407,7 @@ def _convert_input_format(
             PagedBlockDiagonalPaddedKeysMask,
         ),
     ):
-        attn_bias.k_seqinfo.seqstart = attn_bias.k_seqinfo.seqstart.to(
-            inp.query.device, non_blocking=True
-        )
-        attn_bias.q_seqinfo.seqstart = attn_bias.q_seqinfo.seqstart.to(
-            inp.query.device, non_blocking=True
-        )
-        attn_bias.k_seqinfo.seqlen = attn_bias.k_seqinfo.seqlen.to(
-            inp.query.device, non_blocking=True
-        )
+        assert attn_bias.k_seqinfo.seqstart.device == inp.query.device
         cu_seqlen_k = attn_bias.k_seqinfo.seqstart
         cu_seqlen_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
@@ -469,7 +460,7 @@ def _convert_input_format(
         query=query,
         key=key,
         value=value,
-        attn_bias=inp.attn_bias,
+        attn_bias=attn_bias,
         p=inp.p,
         scale=inp.scale,
         output_dtype=inp.output_dtype,

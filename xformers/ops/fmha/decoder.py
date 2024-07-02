@@ -76,9 +76,7 @@ class FwOp(AttentionFwOpBase):
             raise NotImplementedError("gradient")
         attn_bias = inp.attn_bias
         assert isinstance(attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask)
-
-        attn_bias.k_seqinfo.to(inp.query.device)
-        attn_bias.q_seqinfo.to(inp.query.device)
+        assert attn_bias.k_seqinfo.seqlen.device == inp.query.device
 
         padding = attn_bias.k_seqinfo.padding
         query, key, value = inp.get_qkv_in_bmghk()

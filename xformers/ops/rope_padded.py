@@ -219,12 +219,15 @@ def rope_padded(
     # heuristics for number of warps
     num_warps = min(max(BLOCK_SIZE // 256, 1), 8)
     device = xq.device
-    # Move these to the right device, like fmha does.
-    attn_bias.k_seqinfo.to(device)
-    attn_bias.q_seqinfo.to(device)
     seqstartq = attn_bias.q_seqinfo.seqstart
     seqstartk = attn_bias.k_seqinfo.seqstart
     seqlenk = attn_bias.k_seqinfo.seqlen
+    if (
+        seqstartq.device != device
+        or seqstartk.device != device
+        or seqlenk.device != device
+    ):
+        raise ValueError("`attn_bias` must be on the same device as the other inputs")
     assert internal_dtype in ["", "f32", "f64"]
     # experiment with the order of dims here.
     with torch.cuda.device(xq.device):

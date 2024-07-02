@@ -26,8 +26,12 @@ from ..common import BaseOperator
 from .attn_bias import (
     AttentionBias,
     AttentionBiasSubTensor,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LowerTriangularMask,
+    PagedBlockDiagonalGappyKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 
 
@@ -126,6 +130,24 @@ class Inputs:
             )
         if any(x.device != self.query.device for x in qkv):
             raise ValueError("Query/Key/Value should all be on the same device")
+        if isinstance(
+            self.attn_bias,
+            (
+                BlockDiagonalMask,
+                BlockDiagonalPaddedKeysMask,
+                PagedBlockDiagonalPaddedKeysMask,
+                BlockDiagonalGappyKeysMask,
+                PagedBlockDiagonalGappyKeysMask,
+            ),
+        ):
+            bias_device = self.attn_bias.q_seqinfo.seqstart.device
+            if bias_device != self.query.device:
+                raise ValueError(
+                    f"Attention bias and Query/Key/Value should be on the same device\n"
+                    f"  query.device: {self.query.device}\n"
+                    f"  attn_bias   : {bias_device}\n"
+                )
+
         quantized_dtypes = self.key.dtype == self.value.dtype == torch.int32
         non_quantized_dtypes = all(x.dtype == self.query.dtype for x in qkv)
         if not (quantized_dtypes or non_quantized_dtypes):
