@@ -49,9 +49,6 @@ jobs:
         export ROCM_PATH=/opt/rocm
         echo ROCM_PATH         = $ROCM_PATH
 
-        export MAX_JOBS=64
-        echo MAX_JOBS          = $MAX_JOBS
-
         hipcc --version
         rocm-smi
         rocminfo | grep "gfx"
@@ -70,14 +67,15 @@ jobs:
     - name: Build xformers
       run: |
         export PATH=/opt/conda/envs/xformers/bin:$PATH
-        export MAX_JOBS=64
-        echo PATH = $PATH
-        python -VV
+        export MAX_JOBS=144
+        
         python -m pip install ./_xformers --verbose
         python -m xformers.info
 
     - name: Run python tests
       run: |
+        export PATH=/opt/conda/envs/xformers/bin:$PATH
+        
         python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
     
     - name: Archive logs
