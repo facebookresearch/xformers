@@ -7,7 +7,7 @@ import logging
 import math
 import random
 from functools import partial
-from typing import List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 import pytest
 import torch
@@ -267,185 +267,6 @@ parametrize_opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametriz
 )
 
 
-def ref_attention_splitk_bmhk(
-    q, k, v, attn_bias, scale=None, split_k=None, dtype=None
-) -> torch.Tensor:
-    assert q.ndim == 4
-
-    def T(t):
-        return t.permute((0, 2, 1, 3)).reshape(
-            [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
-        )
-
-    if isinstance(attn_bias, xformers.ops.AttentionBias):
-        attn_bias = attn_bias.materialize(
-            (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
-            device=q.device,
-            dtype=torch.float32,
-        ).reshape([q.shape[0] * q.shape[2], q.shape[1], k.shape[1]])
-    out = ref_attention_splitk(
-        T(q), T(k), T(v), attn_bias, scale=scale, split_k=split_k, dtype=dtype
-    )
-    out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
-    return out.permute((0, 2, 1, 3))
-
-
-def ref_attention_splitk(
-    q, k, v, attn_bias, scale=None, split_k=2, dtype=None
-) -> torch.Tensor:
-    if q.ndim == 5:
-
-        def attn_bias_group(group: int):
-            if isinstance(attn_bias, torch.Tensor):
-                return attn_bias[:, group]
-            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
-                    attn_bias._bias[:, group]
-                )
-            return attn_bias
-
-        return torch.stack(
-            [
-                ref_attention_splitk_bmhk(
-                    q[:, :, g],
-                    k[:, :, g],
-                    v[:, :, g],
-                    attn_bias=attn_bias_group(g),
-                    split_k=split_k,
-                    dtype=dtype,
-                )
-                for g in range(q.shape[2])
-            ],
-            dim=2,
-        )
-
-    if q.ndim == 4:
-        return ref_attention_splitk_bmhk(
-            q, k, v, attn_bias=attn_bias, split_k=split_k, dtype=dtype
-        )
-    assert q.ndim == 3
-    if dtype is None:
-        dtype = torch.float32
-    q = q.to(dtype=dtype)
-    k = k.to(dtype=dtype)
-    v = v.to(dtype=dtype)
-
-    if scale is None:
-        scale = q.shape[-1] ** -0.5
-    assert not q.isnan().any()
-    q = q * scale
-    assert not q.isnan().any()
-
-    if attn_bias is not None:
-        if isinstance(attn_bias, xformers.ops.AttentionBias):
-            # Always create in B,H,Mq,Mk format
-            attn_bias_tensor = attn_bias.materialize(
-                (q.shape[0], 1, q.shape[1], k.shape[1]),
-                device=q.device,
-                dtype=torch.float32,
-            )
-        else:
-            attn_bias_tensor = attn_bias
-        if attn_bias_tensor.ndim == 4:
-            assert q.shape[0] == attn_bias_tensor.shape[0] * attn_bias_tensor.shape[1]
-            attn_bias_tensor = attn_bias_tensor.reshape(
-                [-1, *attn_bias_tensor.shape[2:]]
-            )
-
-    split_size = k.size(-2) // split_k
-    split_config = {"dim": -2, "split_size_or_sections": split_size}
-    k_split = torch.split(k, **split_config)
-    v_split = torch.split(v, **split_config)
-    attn_bias_split = torch.split(
-        attn_bias_tensor, dim=-1, split_size_or_sections=split_size
-    )
-
-    def compute_attention_split(q_whole, k_slice, v_slice, attn_bias_slice):
-        p_slice = q_whole @ k_slice.transpose(-2, -1)
-        p_slice += attn_bias_slice
-        row_max = torch.max(p_slice, dim=-1, keepdim=True).values
-        p_slice_scaled = p_slice - row_max
-        p_slice_scaled[p_slice_scaled.isnan()] = float("-inf")
-        s = torch.exp(p_slice_scaled)
-        row_sumexp = torch.sum(s, dim=-1, keepdim=True)
-        attn_slice = s @ v_slice
-        return {
-            "attn_slice": attn_slice,
-            "row_max": row_max,
-            "row_sumexp": row_sumexp,
-        }
-
-    splits = list(zip(k_split, v_split, attn_bias_split))
-
-    slices = list(map(lambda s: compute_attention_split(q, s[0], s[1], s[2]), splits))
-    out = torch.zeros_like(q)
-
-    # reduce out over split-k slices
-
-    global_max = torch.zeros_like(slices[0]["row_max"]).fill_(float("-inf"))
-    global_sumexp = torch.zeros_like(slices[0]["row_sumexp"])
-
-    for s in slices:
-        local_out = s["attn_slice"]
-        local_max = s["row_max"]
-        local_sumexp = s["row_sumexp"]
-
-        log_alpha = -torch.abs(local_max - global_max)
-        alpha = torch.exp(log_alpha)
-        alpha.nan_to_num_(1.0)
-
-        pick_new = local_max < global_max
-        new_coef = torch.where(pick_new, alpha, 1.0)
-        curr_coef = torch.where(pick_new, 1.0, alpha)
-
-        out = out * curr_coef + local_out * new_coef
-        global_sumexp = global_sumexp * curr_coef + local_sumexp * new_coef
-        global_max = torch.max(local_max, global_max)
-    out /= global_sumexp
-    return out
-
-
-# this interface assumes the tensor is in BMHK, but q and k/v might have different number of heads
-def ref_attention_mqa(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
-    assert q.ndim == 4
-
-    B, M, Hq, K = q.shape
-    _, N, Hkv, Kv = v.shape
-    nhead_ratio_qk = Hq // Hkv
-
-    def attn_bias_head(head: int):
-        if isinstance(attn_bias, torch.Tensor):
-            assert attn_bias.ndim == 4
-            _, H, _, _ = attn_bias.shape
-            assert H == Hq
-            bias_bghmn = attn_bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
-            return bias_bghmn[:, :, head]
-        if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
-            assert attn_bias._bias.ndim == 4
-            _, H, _, _ = attn_bias._bias.shape
-            assert H == Hq
-            bias_bghmn = attn_bias._bias.reshape(B, Hkv, nhead_ratio_qk, M, N)
-            return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
-                bias_bghmn[:, :, head]
-            )
-        return attn_bias
-
-    q_bmghk = q.reshape((B, M, Hkv, nhead_ratio_qk, K))
-
-    return torch.stack(
-        [
-            ref_attention_bmhk(
-                q_bmghk[:, :, :, h],
-                k,
-                v,
-                attn_bias=attn_bias_head(h),
-            )
-            for h in range(q_bmghk.shape[3])
-        ],
-        dim=3,
-    ).reshape((B, M, Hq, Kv))
-
-
 def _rand_partition(r: random.Random, total: int, n: int) -> List[int]:
     # returns list of n nonnegative integers summing to total
     idx = {0, total}
@@ -468,7 +289,7 @@ def get_bias_grad(attn_bias, clear: bool = False) -> Optional[torch.Tensor]:
 
 
 def create_tensors(
-    op: Type[AttentionOpBase],
+    op: Optional[Type[AttentionOpBase]],
     device,
     dtype,
     attn_bias_type,
@@ -482,7 +303,7 @@ def create_tensors(
     attn_bias_requires_grad: bool = False,
     fmt: str = "BMK",
     g: int = 1,
-):
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Any]:
     torch.manual_seed(B * q_len + kv_len * k + kv)
 
     mask_is_bottom_right = attn_bias_type is not None and issubclass(
@@ -508,7 +329,7 @@ def create_tensors(
         ),
     ):
         page_size_choices = [256, 512]
-        if issubclass(op, fmha.triton_splitk.FwOp):
+        if op is not None and issubclass(op, fmha.triton_splitk.FwOp):
             # TODO: enable small pages for flash attention when that's implemented
             page_size_choices.extend([64, 128])
         page_size = random.choice(page_size_choices)
@@ -573,12 +394,13 @@ def create_tensors(
             ]
 
     inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
-    reasons = op.not_supported_reasons(inputs)
-    if reasons:
-        err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
-        # Ensure we free memory to avoid OOMs
-        del query, key, value, attn_bias, inputs
-        pytest.skip(err_msg)
+    if op is not None:
+        reasons = op.not_supported_reasons(inputs)
+        if reasons:
+            err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
+            # Ensure we free memory to avoid OOMs
+            del query, key, value, attn_bias, inputs
+            pytest.skip(err_msg)
     return query, key, value, attn_bias
 
 
@@ -690,92 +512,6 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     )
 
     ref = ref_attention_for_test(query, key, value, attn_bias)
-    assert out.shape == ref.shape, out.shape
-    assert_allclose(
-        out.float(),
-        ref,
-        atol=op.ERROR_ATOL[dtype],
-        rtol=op.ERROR_RTOL.get(dtype, 1e-5),
-    )
-
-
-@rocm_only
-@pytest.mark.parametrize("hdim_k,hdim_v", [(64, 64), (128, 128)])
-@pytest.mark.parametrize("nhead_q,nhead_kv", [(8, 1), (8, 2), (12, 4), (4, 4)])
-@pytest.mark.parametrize("seqlen_q,seqlen_kv", [(100, 128), (128, 100), (200, 1000)])
-@pytest.mark.parametrize("batches", [100, 64, 1])
-@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
-@pytest.mark.parametrize(
-    "attn_bias_type", [type(None), torch.Tensor, fmha.attn_bias.LowerTriangularMask]
-)
-@pytest.mark.parametrize("op", [fmha.ck.FwOp])
-def test_mqa_forward(
-    op,
-    attn_bias_type,
-    dtype,
-    batches: int,
-    seqlen_kv: int,
-    seqlen_q: int,
-    nhead_kv: int,
-    nhead_q: int,
-    hdim_v: int,
-    hdim_k: int,
-):
-    B = batches
-    M = seqlen_q
-    N = seqlen_kv
-    Hq = nhead_q
-    Hkv = nhead_kv
-    K = hdim_k
-    Kv = hdim_v
-    nhead_ratio_qk = Hq // Hkv
-
-    device = torch.device("cuda")
-
-    torch.manual_seed(B * M + N * K + Hq * Hkv + Kv)
-
-    scale = 3
-    query = torch.randn((B, M, Hq, K), device=device, dtype=dtype).mul_(scale)
-    key = torch.randn((B, N, Hkv, K), device=device, dtype=dtype).mul_(scale)
-    value = torch.randn((B, N, Hkv, Kv), device=device, dtype=dtype).mul_(scale)
-
-    attn_bias = None
-    if attn_bias_type is not None:
-        attn_bias = create_attn_bias(
-            attn_bias_type,
-            batch_size=B,
-            num_heads=Hq,
-            num_heads_groups=nhead_ratio_qk,
-            q_len=M,
-            kv_len=N,
-            dtype=dtype,
-            device=device,
-            requires_grad=False,
-            fmt="BMHK",
-            op=op,
-        )
-
-    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
-    reasons = op.not_supported_reasons(inputs)
-    if reasons:
-        err_msg = f"{op.NAME}: unsupported ({'/'.join(reasons)})"
-        # Ensure we free memory to avoid OOMs
-        del query, key, value, attn_bias, inputs
-        assert False, err_msg
-
-    out = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
-    )
-    assert not out.isnan().any(), ("Output has NaNs", attn_bias)
-    out2 = xformers.ops.memory_efficient_attention_forward(
-        query, key, value, attn_bias, op=op
-    )
-    assert torch.allclose(out, out2, atol=0.0, rtol=0.0), (
-        "Non-deterministic behavior",
-        attn_bias,
-    )
-
-    ref = ref_attention_mqa(query, key, value, attn_bias)
     assert out.shape == ref.shape, out.shape
     assert_allclose(
         out.float(),
@@ -970,11 +706,15 @@ def test_backward(
     if op_bw == fmha.ck.BwOp:
         op_fw = fmha.ck.FwOp
         if dtype == torch.bfloat16:
-            pytest.skip("CK Fmha backward for bfloat16 currently is not very accurate for some cases!")
+            pytest.skip(
+                "CK Fmha backward for bfloat16 currently is not very accurate for some cases!"
+            )
         if grad_out_contiguous is False:
             pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
         if k % 2 != 0:
-            pytest.skip("CK Fmha currently requires the headdim size of query input be an even value!")
+            pytest.skip(
+                "CK Fmha currently requires the headdim size of query input be an even value!"
+            )
 
     qkv = None
 
@@ -1906,11 +1646,11 @@ def test_attn_bias_to_copy() -> None:
         assert attn_bias_fp16.device.type == "cpu", f"{attn_bias_fp16.device}"
         assert attn_bias_fp16.dtype == torch.float16, f"{attn_bias_fp16.dtype}"
 
-    attn_bias = fmha.attn_bias.LowerTriangularMask()
+    attn_bias = fmha.attn_bias.LowerTriangularMask().to("cpu")
     _test_to_copy(attn_bias)
 
     tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
-    attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias)
+    attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias).to("cpu")
     _test_to_copy(attn_bias)
 
 
@@ -1920,66 +1660,6 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
     if kv_heads == 1:
         return "mq"
     return f"gqa{kv_heads}"
-
-
-@pytest.mark.parametrize("dtype", ["f32"])
-@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-@pytest.mark.parametrize("n_heads", [16])
-@pytest.mark.parametrize("padding, bsz", [(32, 8), (4096, 1)])
-@pytest.mark.parametrize("split_k", [1, 2, 4])
-@pytest.mark.parametrize("device", ["cpu"])
-def test_splitk_reference(
-    kv_heads: int,
-    n_heads: int,
-    padding: int,
-    bsz: int,
-    dtype: str,
-    device: str,
-    split_k: int,
-):
-    dtype_ = {"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dtype]
-    torch.manual_seed(1)
-    d = 256
-    num_queries = 1
-    if kv_heads is not None and kv_heads > 1:
-        k_shape: Tuple[int, ...] = (1, bsz * padding, kv_heads, n_heads, d)
-        q_shape: Tuple[int, ...] = (
-            1,
-            bsz * num_queries,
-            kv_heads,
-            n_heads,
-            d,
-        )
-    else:
-        k_shape = (1, bsz * padding, n_heads, d)
-        q_shape = (1, bsz * num_queries, n_heads, d)
-
-    k = torch.rand(k_shape, dtype=dtype_, device=device)
-    k_seqlen = torch.randint(1, padding + 1, (bsz,)).tolist()
-    v = torch.rand_like(k)
-    q = torch.rand(q_shape, dtype=dtype_, device=device)
-    causal_diagonal = torch.tensor(  # TODO: make unnecessary
-        [i - 1 for i in k_seqlen], dtype=torch.int32, device=device
-    )
-
-    if kv_heads is not None:
-        k = k[..., :1, :].expand(k_shape)
-        v = v[..., :1, :].expand(k_shape)
-
-    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
-        q_seqlen=[1] * bsz,
-        kv_seqlen=k_seqlen,
-        causal_diagonal=causal_diagonal,
-        kv_padding=padding,
-    )
-    ref_out = ref_attention(q, k, v, attn_bias)
-    splitk_out = ref_attention_splitk(q, k, v, attn_bias, None, split_k=split_k)
-    assert_allclose(
-        ref_out,
-        splitk_out,
-        atol=fmha.ck.FwOp.ERROR_ATOL[dtype_],
-        rtol=fmha.ck.FwOp.ERROR_RTOL[dtype_],
-    )
 
 
 @sm70_or_better_only
@@ -3735,26 +3415,45 @@ def _merge_attentions_ref(attn_split, lse_split):
 
 @sm80_or_better_only
 @skip_if_rocm  # rocm doesn't support backward yet
-@pytest.mark.parametrize("bias_t", [None, fmha.attn_bias.LowerTriangularMask])
+@pytest.mark.parametrize(
+    "bias_t",
+    [None, fmha.attn_bias.LowerTriangularMask, fmha.attn_bias.BlockDiagonalMask],
+)
 @pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
-@pytest.mark.parametrize("op", [None, (fmha.flash.FwOp, fmha.flash.BwOp)])
+@pytest.mark.parametrize(
+    "op",
+    [None, (fmha.flash.FwOp, fmha.flash.BwOp), (fmha.cutlass.FwOp, fmha.flash.BwOp)],
+)
 def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     torch.manual_seed(0)
-    dtype = torch.float16
+    torch._dynamo.reset_code_caches()  # avoids hitting recompilation limit
     B, M, H, K = 1, 256, 2, 64
-    q, k, v = [
-        3 * torch.randn([B, M, H, K], device="cuda", dtype=dtype) for _ in range(3)
-    ]
+    q, k, v, bias = create_tensors(
+        op if op is None else op[0],
+        "cuda",
+        torch.float16,
+        bias_t,
+        B,
+        M,
+        M,
+        H,
+        K,
+        K,
+        fmt="BMHK",
+    )
     grad = torch.randn_like(q)
-    bias = None
-    if not create_bias_inside_compiled and bias_t is not None:
-        bias = bias_t()
+    if create_bias_inside_compiled:
+        bias = None
+        if bias_t not in [None, fmha.attn_bias.LowerTriangularMask]:
+            pytest.skip("Can't create this mask inside compile")
+    if bias is not None:
+        bias.to(q.device)
     q.requires_grad_(True)
     k.requires_grad_(True)
     v.requires_grad_(True)
 
     def fmha_fn(q, k, v, bias):
-        if bias is None and bias_t is not None:
+        if create_bias_inside_compiled and bias_t is not None:
             bias = bias_t()
         return fmha.memory_efficient_attention(q, k, v, attn_bias=bias, op=op)
 
@@ -3773,10 +3472,13 @@ def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
         out,
         out_ref,
         "out",
-        atol=fmha.flash.FwOp.ERROR_ATOL[dtype],
-        rtol=fmha.flash.FwOp.ERROR_RTOL[dtype],
+        atol=fmha.flash.FwOp.ERROR_ATOL[q.dtype],
+        rtol=fmha.flash.FwOp.ERROR_RTOL[q.dtype],
     )
-    atol, rtol = fmha.flash.BwOp.ERROR_ATOL[dtype], fmha.flash.BwOp.ERROR_RTOL[dtype]
+    atol, rtol = (
+        fmha.flash.BwOp.ERROR_ATOL[q.dtype],
+        fmha.flash.BwOp.ERROR_RTOL[q.dtype],
+    )
     assert_allclose(q.grad, dq_ref, "dq", atol=atol, rtol=rtol)
     assert_allclose(k.grad, dk_ref, "dk", atol=atol, rtol=rtol)
     assert_allclose(v.grad, dv_ref, "dv", atol=atol, rtol=rtol)
