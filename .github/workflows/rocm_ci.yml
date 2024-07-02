@@ -69,12 +69,16 @@ jobs:
 
     - name: Build xformers
       run: |
-        pip install ./_xformers --verbose
+        export PATH=/opt/conda/envs/xformers/bin:$PATH
+        export MAX_JOBS=64
+        echo PATH = $PATH
+        python -VV
+        python -m pip install ./_xformers --verbose
         python -m xformers.info
 
     - name: Run python tests
       run: |
-        pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
+        python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
     
     - name: Archive logs
       if: '!cancelled()'
