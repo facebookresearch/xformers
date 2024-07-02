@@ -59,6 +59,7 @@ jobs:
     - name: Setup build env
       run: |
         conda create -n xformers python=3.11
+        conda init
         conda activate xformers
         python -VV
         
