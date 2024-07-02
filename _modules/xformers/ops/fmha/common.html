@@ -249,8 +249,12 @@
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">AttentionBiasSubTensor</span><span class="p">,</span>
+    <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
+    <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span>
+    <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
 <span class="p">)</span>
 
 
@@ -349,6 +353,24 @@
             <span class="p">)</span>
         <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">qkv</span><span class="p">):</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Query/Key/Value should all be on the same device&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
+            <span class="p">(</span>
+                <span class="n">BlockDiagonalMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
+                <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
+                <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
+                <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span>
+            <span class="p">),</span>
+        <span class="p">):</span>
+            <span class="n">bias_device</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">device</span>
+            <span class="k">if</span> <span class="n">bias_device</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Attention bias and Query/Key/Value should be on the same device</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;  query.device: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                    <span class="sa">f</span><span class="s2">&quot;  attn_bias   : </span><span class="si">{</span><span class="n">bias_device</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+                <span class="p">)</span>
+
         <span class="n">quantized_dtypes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">int32</span>
         <span class="n">non_quantized_dtypes</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">qkv</span><span class="p">)</span>
         <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">quantized_dtypes</span> <span class="ow">or</span> <span class="n">non_quantized_dtypes</span><span class="p">):</span>
