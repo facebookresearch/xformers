@@ -19,7 +19,7 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
+  TORCH_CUDA_ARCH_LIST: "6.0+PTX 6.1 7.0 7.5 8.0+PTX"
   MAX_JOBS: 3  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"

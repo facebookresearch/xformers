@@ -1441,7 +1441,7 @@ struct AttentionBackwardKernel {
       uint8_t lane_id) {
     cutlass::Array<cutlass::uint1b_t, MatmulDOIVJ::Mma::FragmentC::kElements>
         dropout_keep_mask_doivj;
-    dropout_keep_mask_doivj.fill(1);
+    dropout_keep_mask_doivj.fill(cutlass::uint1b_t{1});
     const float dropout_scale =
         kApplyDropout ? 1.0 / (1.0 - p.dropout_prob) : 1.0f;
 
