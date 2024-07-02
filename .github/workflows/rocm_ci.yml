@@ -69,7 +69,7 @@ jobs:
 
     - name: Build xformers
       run: |
-        MAX_JOBS=$MAX_JOBS python setup.py install
+        MAX_JOBS=$MAX_JOBS python ./_xformers/setup.py install
         python -m xformers.info
 
     - name: Run python tests
