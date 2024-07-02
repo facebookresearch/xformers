@@ -59,8 +59,7 @@ jobs:
     - name: Setup build env
       run: |
         conda create -n xformers python=3.11
-        conda init
-        conda activate xformers
+        export PATH=/opt/conda/envs/xformers/bin:$PATH
         python -VV
         
         python -m pip install -U torch --index-url=https://download.pytorch.org/whl/nightly/rocm6.1 
