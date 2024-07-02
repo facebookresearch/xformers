@@ -69,13 +69,12 @@ jobs:
 
     - name: Build xformers
       run: |
-        cd _xformers
-        MAX_JOBS=$MAX_JOBS python setup.py install
+        pip install ./_xformers --verbose
         python -m xformers.info
 
     - name: Run python tests
       run: |
-        pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./tests/test_mem_eff_attention.py -k "not flshatt"
+        pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
     
     - name: Archive logs
       if: '!cancelled()'
