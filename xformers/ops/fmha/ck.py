@@ -11,7 +11,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
-from ..common import get_xformers_operator, register_operator
+from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
@@ -155,7 +155,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on Composable Kernel."""
 
-    OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
@@ -357,7 +357,7 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     __doc__ = FwOp.__doc__
 
-    OPERATOR = get_xformers_operator("efficient_attention_backward_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_backward_ck")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = 128

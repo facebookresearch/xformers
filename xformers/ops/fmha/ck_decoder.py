@@ -7,7 +7,7 @@ from typing import Any, Iterable, List, Optional, Set, Tuple
 
 import torch
 
-from ..common import get_xformers_operator, register_operator
+from ..common import get_operator, register_operator
 from .attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
 from .common import AttentionFwOpBase, Context, Inputs
 
@@ -19,7 +19,7 @@ class FwOp(AttentionFwOpBase):
     Tested to work on MI250x.
     """
 
-    OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_forward_decoder_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16, torch.float}
     SUPPORTED_MAX_K: int = 256
