@@ -301,6 +301,9 @@ def get_extensions():
         source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
 
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
+    cutlass_util_dir = os.path.join(
+        this_dir, "third_party", "cutlass", "tools", "util", "include"
+    )
     cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
@@ -337,7 +340,12 @@ def get_extensions():
         cuda_version = get_cuda_version(CUDA_HOME)
         extension = CUDAExtension
         sources += source_cuda
-        include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
+        include_dirs += [
+            sputnik_dir,
+            cutlass_dir,
+            cutlass_util_dir,
+            cutlass_examples_dir,
+        ]
         nvcc_flags = [
             "-DHAS_PYTORCH",
             "--use_fast_math",
