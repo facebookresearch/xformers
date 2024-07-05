@@ -2863,7 +2863,8 @@ def test_merge_attentions_nobias(
     Merging the same attention twice shouldn't change anything.
     This also tests the shape of the lse output of each permitted op.
     """
-    B, M, Mq, K = 13, 5, 3, 128
+    B, Mq, K = 13, 3, 128
+    M = [5, 100000][random.choice([0, 1])]
     if op is None or torch.bfloat16 in op.SUPPORTED_DTYPES:
         dtype = torch.bfloat16
     else:

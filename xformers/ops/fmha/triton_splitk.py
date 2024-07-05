@@ -1313,6 +1313,13 @@ class FwOp(AttentionFwOpBase):
         return split_k
 
     @classmethod
+    def get_kernel(cls):
+        if cls.AUTOTUNE:
+            return _fwd_kernel_splitK_autotune[cls.NUM_GROUPS]
+        else:
+            return _get_splitk_kernel(cls.NUM_GROUPS)
+
+    @classmethod
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
@@ -1415,6 +1422,7 @@ class FwOp(AttentionFwOpBase):
         else:
             Lk = k.shape[-1]
             PACKED_PER_VAL = 1
+            assert cls.NUM_GROUPS == 1, f"{cls.NUM_GROUPS=}"
 
         _, Mk, G, H, Kkv = k.shape
         Bqq, Mqq, G, H, Kq = q.shape
@@ -1495,13 +1503,10 @@ class FwOp(AttentionFwOpBase):
         split_size = (Mk + split_k - 1) // split_k
         use_seq_len = seq_len is not None
 
-        num_groups = cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
+        kernel = cls.get_kernel()
         if cls.AUTOTUNE:
-            kernel = _fwd_kernel_splitK_autotune[num_groups]
             extra_args = {}
         else:
-            kernel = _get_splitk_kernel(num_groups)
-
             # TODO: remove this when autotuning on AMD is working
             num_warps = cls.NUM_WARPS
             num_stages = cls.NUM_STAGES
@@ -1553,7 +1558,7 @@ class FwOp(AttentionFwOpBase):
             BLOCK_DMODEL=Lk,
             USE_SEQ_LEN=use_seq_len,
             PACKED_PER_VAL=PACKED_PER_VAL,
-            N_GROUPS=num_groups,
+            N_GROUPS=cls.NUM_GROUPS,
             IS_CAUSAL=IS_CAUSAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
