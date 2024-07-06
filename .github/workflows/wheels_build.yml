@@ -32,6 +32,8 @@ env:
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
   XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
+  # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
 jobs:
   build:
