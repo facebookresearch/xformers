@@ -1687,7 +1687,7 @@ def test_decoder(
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
     # kv_heads > 1: BMGHK
-    if dtype == "bf16" and compute_capability < (8, 0):
+    if dtype == "bf16" and torch.version.cuda and compute_capability < (8, 0):
         raise pytest.skip("BF16 is only supported on SM80+")
     import triton
 
