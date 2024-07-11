@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.27] - TBD
+## [0.0.28] - TBD
+### Added
+### Improved
+### Removed
+
+## [0.0.27] - 2024-07-10
+Pre-built binary wheels require PyTorch 2.3.1
 ### Added
 - fMHA: `PagedBlockDiagonalGappyKeysMask`
 - fMHA: heterogeneous queries in `triton_splitk`
@@ -20,9 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profiler: fix bug with modules that take a single tuple as argument
 - Profiler: Added manual trigger for a profiling step, by creating a `trigger` file in the profiling directory
 ### Removed
-- Removed support for PyTorch version older than 2.2.0
+- Removed support for PyTorch version older than 2.2
 
 ## [0.0.26] - 2024-04-29
+Pre-built binary wheels require PyTorch 2.3.0
 ### Added
 - [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
 - [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient
