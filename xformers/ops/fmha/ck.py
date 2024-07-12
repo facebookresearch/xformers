@@ -101,6 +101,7 @@ Example: use `attn_bias = torch.zeros([1, 1, 5, 8])[:,:,:,:5]` instead of `torch
                 "you should call `.contiguous()` on the bias"
             )
 
+
 class _CustomMaskType(int, Enum):
     """
     (Matches CustomMaskType in C++.)
