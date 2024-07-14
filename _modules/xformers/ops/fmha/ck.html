@@ -325,21 +325,6 @@
             <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;CK kernel throws &quot;Memory access fault by GPU node-2&quot; when B * T &gt;= 2**20, might be some index overflow.</span>
-<span class="sd">    To reproduce, remove this function and run benchmark_mem_eff_attention with ParlAI model shape (256, 4096, 16, 64).</span>
-<span class="sd">    This needs further debugging, for now let&#39;s not support such shapes.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">b_t_limit</span> <span class="o">=</span> <span class="mi">1024</span><span class="o">**</span><span class="mi">2</span>
-    <span class="n">q_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
-    <span class="n">k_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
-    <span class="n">v_too_large</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">b_t_limit</span>
-    <span class="k">if</span> <span class="n">q_too_large</span> <span class="ow">or</span> <span class="n">k_too_large</span> <span class="ow">or</span> <span class="n">v_too_large</span><span class="p">:</span>
-        <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-            <span class="s2">&quot;Input is too large: product of first two dimensions of q/k/v must be &lt; 2**20&quot;</span>
-        <span class="p">)</span>
-
-
 <span class="k">class</span> <span class="nc">_CustomMaskType</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Matches CustomMaskType in C++.)</span>
@@ -548,7 +533,6 @@
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">value</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
         <span class="n">_check_bias_alignment</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
-        <span class="n">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
@@ -639,7 +623,6 @@
                     <span class="sa">f</span><span class="s2">&quot;(shape: </span><span class="si">{</span><span class="nb">tuple</span><span class="p">(</span><span class="n">attn_bias_tensor</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;/ expected: </span><span class="si">{</span><span class="n">expected_bias_shape</span><span class="si">}</span><span class="s2">)&quot;</span>
                 <span class="p">)</span>
-        <span class="n">_check_large_shapes</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="n">d</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="n">reasons</span>
 
