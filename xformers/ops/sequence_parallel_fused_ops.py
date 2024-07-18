@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union, overload
+from typing import Any, Callable, Dict, List, Mapping, Optional, Union, overload
 
 import torch
 import torch.distributed as dist
@@ -97,12 +97,10 @@ class _FusedSequenceParallel:
     def __init__(
         self,
         device: torch.device,
-        dtype: torch.dtype,
         group: dist.ProcessGroup,
         num_stripes: int,
     ):
         self.my_device = device
-        self.dtype = dtype
         self.my_rank = group.rank()
         self.world_size = group.size()
         self.num_stripes = num_stripes
@@ -156,18 +154,22 @@ class _FusedSequenceParallel:
 
         self.next_stream_idx = 0
 
-    def _ensure_staging_is_large_enough(self, num_elements: int, random_init: bool):
+    def _ensure_staging_is_large_enough(
+        self, num_elements: int, random_init: bool, dtype: torch.dtype
+    ):
+        total_num_bytes = num_elements * dtype.itemsize
+
         # Lazily size up the staging area as needed. (If it's the first call,
         # this will always trigger, since staging starts empty). Once at steady
         # state, staging will be of the right (max) size and never grow again.
-        if self.staging.numel() < self.world_size * num_elements:
+        if self.staging.numel() < self.world_size * total_num_bytes:
             # When running with _memcpy=False (i.e., for benchmarks) we must
             # ensure that the staging buffer doesn't contain all zeroes as that
             # makes the matmuls go faster (better L2 compression or something).
             self.staging = torch.empty(
-                (self.num_stripes, self.world_size, num_elements),
+                (self.num_stripes, self.world_size, total_num_bytes),
                 device=self.my_device,
-                dtype=self.dtype,
+                dtype=torch.uint8,
             )
             if random_init:
                 self.staging.normal_()
@@ -223,13 +225,14 @@ class _FusedSequenceParallel:
     ):
         """Perform a fused all-gather followed by a linear layer"""
 
+        dtype = scattered_inputs[0].dtype
         assert all(si.device == self.my_device for si in scattered_inputs)
-        assert all(si.dtype == self.dtype for si in scattered_inputs)
+        assert all(si.dtype == dtype for si in scattered_inputs)
 
         scattered_input_numels = [si.numel() for si in scattered_inputs]
         total_scattered_input_numel = sum(scattered_input_numels)
         self._ensure_staging_is_large_enough(
-            total_scattered_input_numel, random_init=_memcpy is False
+            total_scattered_input_numel, random_init=_memcpy is False, dtype=dtype
         )
 
         stripe = self.next_stripe % self.num_stripes
@@ -242,7 +245,7 @@ class _FusedSequenceParallel:
         stagings = [
             s.view((self.world_size,) + si.shape)
             for s, si in zip(
-                self.staging[stripe, :, :total_scattered_input_numel].split(
+                self.staging.view(dtype)[stripe, :, :total_scattered_input_numel].split(
                     scattered_input_numels, dim=-1
                 ),
                 scattered_inputs,
@@ -254,7 +257,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(si.shape)
                 for s, si in zip(
-                    bs[stripe, :total_scattered_input_numel].split(
+                    bs.view(dtype)[stripe, :total_scattered_input_numel].split(
                         scattered_input_numels, dim=-1
                     ),
                     scattered_inputs,
@@ -388,15 +391,16 @@ class _FusedSequenceParallel:
     ):
         """Perform a fused linear layer followed by a reduce-scatter"""
 
+        dtype = gathered_outputs[0].dtype
         assert all(go.device == self.my_device for go in gathered_outputs)
-        assert all(go.dtype == self.dtype for go in gathered_outputs)
+        assert all(go.dtype == dtype for go in gathered_outputs)
         assert all(so.device == self.my_device for so in scattered_outputs)
-        assert all(so.dtype == self.dtype for so in scattered_outputs)
+        assert all(so.dtype == dtype for so in scattered_outputs)
 
         scattered_output_numels = [so.numel() for so in scattered_outputs]
         total_scattered_output_numel = sum(scattered_output_numels)
         self._ensure_staging_is_large_enough(
-            total_scattered_output_numel, random_init=_memcpy is False
+            total_scattered_output_numel, random_init=_memcpy is False, dtype=dtype
         )
 
         stripe = self.next_stripe % self.num_stripes
@@ -409,9 +413,9 @@ class _FusedSequenceParallel:
         stagings = [
             s.view((self.world_size,) + so.shape)
             for s, so in zip(
-                self.staging[stripe, :, :total_scattered_output_numel].split(
-                    scattered_output_numels, dim=-1
-                ),
+                self.staging.view(dtype)[
+                    stripe, :, :total_scattered_output_numel
+                ].split(scattered_output_numels, dim=-1),
                 scattered_outputs,
             )
         ]
@@ -421,7 +425,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(so.shape)
                 for s, so in zip(
-                    bs[stripe, :total_scattered_output_numel].split(
+                    bs.view(dtype)[stripe, :total_scattered_output_numel].split(
                         scattered_output_numels, dim=-1
                     ),
                     scattered_outputs,
@@ -550,7 +554,7 @@ class _FusedSequenceParallel:
 # We'd store this as an attribute on the PG object itself, but some PGs are
 # pybind-bound classes and thus don't support it, so we simulate this as an
 # external cache.
-CACHE: Dict[Tuple[int, torch.dtype], Optional[_FusedSequenceParallel]] = {}
+CACHE: Dict[int, Optional[_FusedSequenceParallel]] = {}
 
 
 def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> bool:
@@ -567,11 +571,11 @@ def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> b
 
 
 def _lazy_init(
-    device: torch.device, dtype: torch.dtype, group: dist.ProcessGroup, num_stripes: int
+    device: torch.device, group: dist.ProcessGroup, num_stripes: int
 ) -> Optional[_FusedSequenceParallel]:
     world_size = group.size()
     try:
-        obj = CACHE[(id(group), dtype)]
+        obj = CACHE[id(group)]
     except KeyError:
         if int(os.environ.get("DISABLE_FUSED_SEQUENCE_PARALLEL", "0")):
             obj = None
@@ -580,8 +584,8 @@ def _lazy_init(
         elif not _can_ranks_communicate_all_to_all_over_nvlink(group):
             obj = None
         else:
-            obj = _FusedSequenceParallel(device, dtype, group, num_stripes)
-        CACHE[(id(group), dtype)] = obj
+            obj = _FusedSequenceParallel(device, group, num_stripes)
+        CACHE[id(group)] = obj
     return obj
 
 
@@ -782,9 +786,7 @@ def fused_allgather_and_anything(
 
     gathered_input_shapes = [(world_size,) + si.shape for si in scattered_inputs]
 
-    obj = _lazy_init(
-        scattered_inputs[0].device, scattered_inputs[0].dtype, group, num_stripes
-    )
+    obj = _lazy_init(scattered_inputs[0].device, group, num_stripes)
 
     if world_size == 1:
         my_matmul(scattered_inputs, 0, _default_stream_factory)
@@ -807,7 +809,6 @@ def fused_allgather_and_anything(
     # Fast path
     else:
         assert scattered_inputs[0].device == obj.my_device
-        assert scattered_inputs[0].dtype == obj.dtype
         assert obj.num_stripes == num_stripes
         obj.allgather_and_linear(
             scattered_inputs,
@@ -997,9 +998,7 @@ def fused_anything_and_reducescatter(
 
     gathered_output_shapes = [(world_size,) + so.shape for so in scattered_outputs]
 
-    obj = _lazy_init(
-        scattered_outputs[0].device, scattered_outputs[0].dtype, group, num_stripes
-    )
+    obj = _lazy_init(scattered_outputs[0].device, group, num_stripes)
 
     if world_size == 1:
         my_matmul(scattered_outputs, 0, _default_stream_factory)
@@ -1022,7 +1021,6 @@ def fused_anything_and_reducescatter(
     # Fast path
     else:
         assert scattered_outputs[0].device == obj.my_device
-        assert scattered_outputs[0].dtype == obj.dtype
         assert obj.num_stripes == num_stripes
         gathered_outputs = [
             scattered_outputs[0].new_empty(gos) for gos in gathered_output_shapes
