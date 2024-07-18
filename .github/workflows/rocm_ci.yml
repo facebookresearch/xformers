@@ -64,12 +64,18 @@ jobs:
         
         python -m pip install ninja scipy pytest pytest-html
 
+    - name: Pre-build clean
+      run: |
+        cd _xformers
+        git clean -ffdx
+        cd ..
+
     - name: Build xformers
       run: |
         export PATH=/opt/conda/envs/xformers/bin:$PATH
         export MAX_JOBS=144
         
-        python -m pip install ./_xformers --verbose
+        python -m pip install -e ./_xformers --verbose
         python -m xformers.info
 
     - name: Run python tests
@@ -84,6 +90,13 @@ jobs:
       with:
         name: test results
         path: test_mem_eff_attention.html
+
+    - name: Post-build clean
+      if: '!cancelled()'
+      run: |
+        cd _xformers
+        git clean -ffdx
+        cd ..
 
   clean:
     runs-on: self-hosted
