@@ -122,10 +122,6 @@ efficient_attention_backward_ck(
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
 
-  if (K % 2 != 0)
-    throw std::runtime_error(
-        "Currently CK Fmha requires the headdim of query/key be an even value!");
-
   auto opts = query.options();
 
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
@@ -166,7 +162,8 @@ efficient_attention_backward_ck(
 
   if (query.scalar_type() == at::ScalarType::BFloat16 ||
       query.scalar_type() == at::ScalarType::Half) {
-    grad_q_f32 = at::empty_like(grad_q);
+    grad_q_f32 = at::empty_strided(
+        grad_q.sizes(), grad_q.strides(), opts.dtype(at::kFloat));
     grad_q_f32.fill_(0);
   } else {
     grad_q.fill_(0);
@@ -533,6 +530,14 @@ efficient_attention_backward_ck(
     grad_k = tmp_grad_k_view.sum(3);
     grad_v = tmp_grad_v_view.sum(3);
   }
+
+  /*
+    if (inDataType == at::ScalarType::Half)
+      grad_q = grad_q_f32.to(torch::kFloat16);
+
+    if (inDataType == at::ScalarType::BFloat16)
+      grad_q = grad_q_f32.to(torch::kBFloat16);
+  */
 
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 }

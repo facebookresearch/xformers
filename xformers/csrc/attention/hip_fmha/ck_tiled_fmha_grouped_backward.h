@@ -51,7 +51,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
       FmhaTraits>;
 
   static constexpr bool NeedConvertGradQ = !std::is_same<
-      ScalarType,
+      typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
       typename FmhaBwdTypeConfig<ScalarType>::QGradDataType>::value;
 
   static void Run(GroupedBackwardParams& param, hipStream_t stream) {

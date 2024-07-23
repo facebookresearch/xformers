@@ -26,7 +26,7 @@ struct FmhaBwdTypeConfig<ck_tile::fp16_t> {
   using DDataType = float;
   using ODataType = ck_tile::fp16_t;
   using OGradDataType = ck_tile::fp16_t;
-  using QGradDataType = float;
+  using QGradDataType = ck_tile::fp16_t;
   using KGradDataType = ck_tile::fp16_t;
   using VGradDataType = ck_tile::fp16_t;
   using BiasGradDataType = ck_tile::fp16_t;
@@ -45,7 +45,7 @@ struct FmhaBwdTypeConfig<ck_tile::bf16_t> {
   using DDataType = float;
   using ODataType = ck_tile::bf16_t;
   using OGradDataType = ck_tile::bf16_t;
-  using QGradDataType = float;
+  using QGradDataType = ck_tile::bf16_t;
   using KGradDataType = ck_tile::bf16_t;
   using VGradDataType = ck_tile::bf16_t;
   using BiasGradDataType = ck_tile::bf16_t;

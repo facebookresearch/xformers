@@ -39,6 +39,9 @@
     } else if (HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128) {                 \
       constexpr ck_tile::index_t CONST_NAME = 128;                     \
       __VA_ARGS__();                                                   \
+    } else if (HEAD_DIM1 <= 256 && HEAD_DIM2 <= 256) {                 \
+      constexpr ck_tile::index_t CONST_NAME = 256;                     \
+      __VA_ARGS__();                                                   \
     } else {                                                           \
       throw std::runtime_error("Head-dim sizes not supported!");       \
     }                                                                  \
