@@ -8,6 +8,7 @@
 
 #include <ck_tile/core.hpp>
 #include <ck_tile/ops/fmha.hpp>
+#include <ck_tile/ops/fmha/block/block_dropout.hpp>
 
 template <typename DataType>
 struct FmhaBwdTypeConfig;
@@ -25,7 +26,7 @@ struct FmhaBwdTypeConfig<ck_tile::fp16_t> {
   using DDataType = float;
   using ODataType = ck_tile::fp16_t;
   using OGradDataType = ck_tile::fp16_t;
-  using QGradDataType = ck_tile::fp16_t;
+  using QGradDataType = float;
   using KGradDataType = ck_tile::fp16_t;
   using VGradDataType = ck_tile::fp16_t;
   using BiasGradDataType = ck_tile::fp16_t;
@@ -44,7 +45,7 @@ struct FmhaBwdTypeConfig<ck_tile::bf16_t> {
   using DDataType = float;
   using ODataType = ck_tile::bf16_t;
   using OGradDataType = ck_tile::bf16_t;
-  using QGradDataType = ck_tile::bf16_t;
+  using QGradDataType = float;
   using KGradDataType = ck_tile::bf16_t;
   using VGradDataType = ck_tile::bf16_t;
   using BiasGradDataType = ck_tile::bf16_t;
@@ -55,15 +56,15 @@ struct FmhaBwdBlockTile;
 
 template <>
 struct FmhaBwdBlockTile<32> {
-  using type = ck_tile::sequence<128, 128, 32, 32, 32, 32, 32, 32, 32>;
-  using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
-  using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
-  using gemm4_warps = ck_tile::sequence<4, 1, 1>; // default for gemm4
+  using tile_lengths = ck_tile::sequence<64, 64, 32, 64, 32, 64, 64, 32, 32>;
+  using gemm02_warps = ck_tile::sequence<1, 2, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck_tile::sequence<2, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck_tile::sequence<2, 1, 1>; // default for gemm4
 };
 
 template <>
 struct FmhaBwdBlockTile<64> {
-  using type = ck_tile::sequence<64, 128, 32, 32, 32, 32, 32, 64, 64>;
+  using tile_lengths = ck_tile::sequence<64, 128, 64, 64, 64, 64, 64, 64, 64>;
   using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
   using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
   using gemm4_warps = ck_tile::sequence<2, 2, 1>; // default for gemm4
@@ -71,78 +72,89 @@ struct FmhaBwdBlockTile<64> {
 
 template <>
 struct FmhaBwdBlockTile<128> {
-  using type = ck_tile::sequence<64, 128, 32, 32, 32, 32, 32, 128, 128>;
+  using tile_lengths =
+      ck_tile::sequence<32, 128, 128, 32, 128, 32, 32, 128, 128>;
   using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
   using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
-  using gemm4_warps = ck_tile::sequence<2, 2, 1>; // default for gemm4
+  using gemm4_warps = ck_tile::sequence<1, 4, 1>; // default for gemm4
 };
 
-using FmhaBwdWarpTile = ck_tile::sequence<32, 32, 16>;
+template <>
+struct FmhaBwdBlockTile<256> {
+  using tile_lengths =
+      ck_tile::sequence<16, 64, 256, 16, 256, 16, 32, 256, 256>;
+  using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck_tile::sequence<1, 4, 1>; // default for gemm4
+};
+
+using FmhaBwdWarpTile1 = ck_tile::sequence<32, 32, 16>;
+using FmhaBwdWarpTile2 = ck_tile::sequence<16, 16, 32>;
+using FmhaBwdWarpTile3 = ck_tile::sequence<16, 16, 16>;
 
 template <ck_tile::index_t MaxK>
 struct FmhaBwdShape;
 
 template <>
 struct FmhaBwdShape<32> : ck_tile::TileFmhaBwdShape<
-                              typename FmhaBwdBlockTile<32>::type,
+                              typename FmhaBwdBlockTile<32>::tile_lengths,
                               typename FmhaBwdBlockTile<32>::gemm02_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<32>::gemm13_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<32>::gemm02_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<32>::gemm13_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<32>::gemm4_warps,
-                              FmhaBwdWarpTile> {};
+                              FmhaBwdWarpTile1> {};
 
 template <>
 struct FmhaBwdShape<64> : ck_tile::TileFmhaBwdShape<
-                              typename FmhaBwdBlockTile<64>::type,
+                              typename FmhaBwdBlockTile<64>::tile_lengths,
                               typename FmhaBwdBlockTile<64>::gemm02_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<64>::gemm13_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<64>::gemm02_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<64>::gemm13_warps,
-                              FmhaBwdWarpTile,
+                              FmhaBwdWarpTile1,
                               typename FmhaBwdBlockTile<64>::gemm4_warps,
-                              FmhaBwdWarpTile> {};
+                              FmhaBwdWarpTile1> {};
 
 template <>
 struct FmhaBwdShape<128> : ck_tile::TileFmhaBwdShape<
-                               typename FmhaBwdBlockTile<128>::type,
+                               typename FmhaBwdBlockTile<128>::tile_lengths,
                                typename FmhaBwdBlockTile<128>::gemm02_warps,
-                               FmhaBwdWarpTile,
+                               FmhaBwdWarpTile1,
                                typename FmhaBwdBlockTile<128>::gemm13_warps,
-                               FmhaBwdWarpTile,
+                               FmhaBwdWarpTile1,
                                typename FmhaBwdBlockTile<128>::gemm02_warps,
-                               FmhaBwdWarpTile,
+                               FmhaBwdWarpTile1,
                                typename FmhaBwdBlockTile<128>::gemm13_warps,
-                               FmhaBwdWarpTile,
+                               FmhaBwdWarpTile1,
                                typename FmhaBwdBlockTile<128>::gemm4_warps,
-                               FmhaBwdWarpTile> {};
+                               FmhaBwdWarpTile1> {};
+
+template <>
+struct FmhaBwdShape<256> : ck_tile::TileFmhaBwdShape<
+                               typename FmhaBwdBlockTile<256>::tile_lengths,
+                               typename FmhaBwdBlockTile<256>::gemm02_warps,
+                               FmhaBwdWarpTile2,
+                               typename FmhaBwdBlockTile<256>::gemm13_warps,
+                               FmhaBwdWarpTile3,
+                               typename FmhaBwdBlockTile<256>::gemm02_warps,
+                               FmhaBwdWarpTile2,
+                               typename FmhaBwdBlockTile<256>::gemm13_warps,
+                               FmhaBwdWarpTile3,
+                               typename FmhaBwdBlockTile<256>::gemm4_warps,
+                               FmhaBwdWarpTile2> {};
 
 template <ck_tile::index_t MaxK>
-struct FmhaBwdPipelineEnumSelector;
-
-template <>
-struct FmhaBwdPipelineEnumSelector<32> {
+struct FmhaBwdPipelineEnumSelector {
   static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
-      ck_tile::BlockFmhaBwdPipelineEnum::QSKSVROGradS;
-};
-
-template <>
-struct FmhaBwdPipelineEnumSelector<64> {
-  static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
-      ck_tile::BlockFmhaBwdPipelineEnum::KSKTSVR;
-};
-
-template <>
-struct FmhaBwdPipelineEnumSelector<128> {
-  static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
-      ck_tile::BlockFmhaBwdPipelineEnum::KSVR;
+      ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR;
 };
 
 template <ck_tile::BlockFmhaBwdPipelineEnum value, typename problem>
@@ -150,19 +162,23 @@ struct FmhaBwdPipelineMaker;
 
 template <typename problem>
 struct FmhaBwdPipelineMaker<
-    ck_tile::BlockFmhaBwdPipelineEnum::QSKSVROGradS,
+    ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR,
     problem> {
-  using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineQSKSVROGradS<problem>;
+  using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineKRKTRVR<problem>;
 };
 
-template <typename problem>
-struct FmhaBwdPipelineMaker<
-    ck_tile::BlockFmhaBwdPipelineEnum::KSKTSVR,
-    problem> {
-  using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineKSKTSVR<problem>;
+template <bool kHasDropout, ck_tile::index_t MaxK>
+struct FmhaBwdBlockDropoutMaker;
+
+template <ck_tile::index_t MaxK>
+struct FmhaBwdBlockDropoutMaker<false, MaxK> {
+  using dropout = ck_tile::BlockDropout<false, true, false>;
 };
 
-template <typename problem>
-struct FmhaBwdPipelineMaker<ck_tile::BlockFmhaBwdPipelineEnum::KSVR, problem> {
-  using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineKSVR<problem>;
+template <ck_tile::index_t MaxK>
+struct FmhaBwdBlockDropoutMaker<true, MaxK> {
+  using FmhaBwdShapeType = FmhaBwdShape<MaxK>;
+  static constexpr bool IsWG32 =
+      (FmhaBwdShapeType::Gemm0WarpTile::at(ck_tile::number<0>{}) == 32);
+  using dropout = ck_tile::BlockDropout<true, IsWG32, false>;
 };

@@ -5,6 +5,7 @@
 
 #include <ck_tile/core.hpp>
 #include <ck_tile/ops/fmha.hpp>
+#include <ck_tile/ops/fmha/block/block_dropout.hpp>
 #include <ck_tile/ops/gemm/block/block_gemm_areg_bsmem_creg_v2.hpp>
 #include <ck_tile/ops/gemm/pipeline/block_gemm_pipeline_problem.hpp>
 
@@ -33,6 +34,8 @@ struct FmhaRandUniformKernel {
   };
 
   using BlockGemm = decltype(GetBlockGemm());
+
+  using MyBlockDropout = ck_tile::BlockDropout<true, true, false>;
 
   static constexpr bool kPadSeqLenQ = true;
   static constexpr bool kPadSeqLenK = true;
@@ -170,7 +173,7 @@ struct FmhaRandUniformKernel {
   }
 
   __device__ static constexpr ck_tile::index_t GetSmemSize() {
-    return ck_tile::BlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>()
+    return MyBlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>()
         .get_element_space_size();
   }
 
@@ -182,7 +185,7 @@ struct FmhaRandUniformKernel {
       RandValDramBlockWindowTmp& randval_dram_block_window_tmp) const {
     using namespace ck_tile;
 
-    auto randval_dram_window = BlockDropout::MakeRandvalDramWindow<BlockGemm>(
+    auto randval_dram_window = MyBlockDropout::MakeRandvalDramWindow<BlockGemm>(
         randval_dram_block_window_tmp, 0);
 
     const auto num_total_loop =
@@ -201,17 +204,17 @@ struct FmhaRandUniformKernel {
       // randval tile in LDS
       auto randval_lds = make_tensor_view<address_space_enum::lds>(
           reinterpret_cast<uint8_t*>(randval_smem_ptr),
-          BlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>());
+          MyBlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>());
 
       auto randval_lds_window = make_tile_window(
           randval_lds,
-          BlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>()
+          MyBlockDropout::MakeRandValLdsBlockDescriptor<BlockGemm>()
               .get_lengths(),
           {0, 0});
 
       // register distribute
       auto randval_dist_generated = make_static_distributed_tensor<uint8_t>(
-          BlockDropout::MakeRandValTileDistribution<BlockGemm>());
+          MyBlockDropout::MakeRandValTileDistribution<BlockGemm>());
 
       static_assert(randval_dist_generated.kThreadElementSpaceSize == 16);
 
@@ -219,7 +222,7 @@ struct FmhaRandUniformKernel {
           randval_lds_window.get_bottom_tensor_view(),
           randval_lds_window.get_window_lengths(),
           randval_lds_window.get_window_origin(),
-          BlockDropout::MakeRandValLdsShuffleTileDistribution<BlockGemm>());
+          MyBlockDropout::MakeRandValLdsShuffleTileDistribution<BlockGemm>());
 
       const int start_m0_idx =
           randval_dram_window.get_window_origin().at(number<0>{});

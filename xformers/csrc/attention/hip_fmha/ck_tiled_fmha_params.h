@@ -150,6 +150,8 @@ struct BatchedBackwardParams {
   void* grad_v_ptr;
   void* grad_bias_ptr;
 
+  void* grad_q_f32_ptr;
+
   float dropout_prob;
   int64_t philox_seed;
   int64_t philox_offset;
@@ -210,6 +212,8 @@ struct GroupedBackwardParams {
   void* grad_k_ptr;
   void* grad_v_ptr;
   void* grad_bias_ptr;
+
+  void* grad_q_f32_ptr;
 
   float dropout_prob;
   int64_t philox_seed;
