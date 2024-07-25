@@ -92,10 +92,10 @@ at::Tensor matmul_with_sparse_mask(
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
       a.scalar_type(), "matmul_with_sparse_mask_kernel", [&] {
         matmul_with_sparse_mask_kernel<scalar_t><<<grid, block, 0, stream>>>(
-            res.packed_accessor<scalar_t, 1>(),
-            a.packed_accessor<scalar_t, 3>(),
-            bt.packed_accessor<scalar_t, 3>(),
-            idxs.packed_accessor<int64_t, 2>());
+            res.packed_accessor64<scalar_t, 1>(),
+            a.packed_accessor64<scalar_t, 3>(),
+            bt.packed_accessor64<scalar_t, 3>(),
+            idxs.packed_accessor64<int64_t, 2>());
       });
 
   AT_CUDA_CHECK(cudaGetLastError());

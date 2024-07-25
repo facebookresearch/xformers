@@ -616,7 +616,7 @@ template <typename scalar_t>
 at::PackedTensorAccessor<scalar_t, 3> _packed_tensor_accessor_or_dummy(
     const at::Tensor& attn_bias) {
   if (attn_bias.defined()) {
-    return attn_bias.packed_accessor<scalar_t, 3>();
+    return attn_bias.packed_accessor64<scalar_t, 3>();
   } else {
     const std::array<int64_t, 3> zeros{{0}};
     return at::PackedTensorAccessor<scalar_t, 3>(
@@ -673,11 +673,11 @@ void launch_attention(
         WARP_SIZE,
         BUFFER_SIZE,
         compute_logsumexp><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
+        res.packed_accessor64<scalar_t, 3>(),
+        logsumexp.packed_accessor64<scalar_t, 2>(),
+        query.packed_accessor64<scalar_t, 3>(),
+        key.packed_accessor64<scalar_t, 3>(),
+        value.packed_accessor64<scalar_t, 3>(),
         attn_bias_packed,
         p,
         rng_engine_inputs);
@@ -693,11 +693,11 @@ void launch_attention(
         WARP_SIZE,
         BUFFER_SIZE,
         compute_logsumexp><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
+        res.packed_accessor64<scalar_t, 3>(),
+        logsumexp.packed_accessor64<scalar_t, 2>(),
+        query.packed_accessor64<scalar_t, 3>(),
+        key.packed_accessor64<scalar_t, 3>(),
+        value.packed_accessor64<scalar_t, 3>(),
         attn_bias_packed,
         p,
         rng_engine_inputs);
@@ -714,11 +714,11 @@ void launch_attention(
         WARP_SIZE,
         BUFFER_SIZE,
         compute_logsumexp><<<grid, block, 0, stream>>>(
-        res.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
+        res.packed_accessor64<scalar_t, 3>(),
+        logsumexp.packed_accessor64<scalar_t, 2>(),
+        query.packed_accessor64<scalar_t, 3>(),
+        key.packed_accessor64<scalar_t, 3>(),
+        value.packed_accessor64<scalar_t, 3>(),
         attn_bias_packed,
         p,
         rng_engine_inputs);
@@ -1120,15 +1120,15 @@ void launch_attention_backward(
         TILE_SIZEQ,
         TILE_SIZEK,
         false><<<grid, block, 0, stream>>>(
-        grad_q.packed_accessor<scalar_t, 3>(),
-        grad_k.packed_accessor<scalar_t, 3>(),
-        grad_v.packed_accessor<scalar_t, 3>(),
-        grad_out.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
-        output.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
+        grad_q.packed_accessor64<scalar_t, 3>(),
+        grad_k.packed_accessor64<scalar_t, 3>(),
+        grad_v.packed_accessor64<scalar_t, 3>(),
+        grad_out.packed_accessor64<scalar_t, 3>(),
+        query.packed_accessor64<scalar_t, 3>(),
+        key.packed_accessor64<scalar_t, 3>(),
+        value.packed_accessor64<scalar_t, 3>(),
+        output.packed_accessor64<scalar_t, 3>(),
+        logsumexp.packed_accessor64<scalar_t, 2>(),
         attn_bias_packed,
         p,
         rng_engine_inputs);
@@ -1141,15 +1141,15 @@ void launch_attention_backward(
         TILE_SIZEQ,
         TILE_SIZEK,
         true><<<grid, block, 0, stream>>>(
-        grad_q.packed_accessor<scalar_t, 3>(),
-        grad_k.packed_accessor<scalar_t, 3>(),
-        grad_v.packed_accessor<scalar_t, 3>(),
-        grad_out.packed_accessor<scalar_t, 3>(),
-        query.packed_accessor<scalar_t, 3>(),
-        key.packed_accessor<scalar_t, 3>(),
-        value.packed_accessor<scalar_t, 3>(),
-        output.packed_accessor<scalar_t, 3>(),
-        logsumexp.packed_accessor<scalar_t, 2>(),
+        grad_q.packed_accessor64<scalar_t, 3>(),
+        grad_k.packed_accessor64<scalar_t, 3>(),
+        grad_v.packed_accessor64<scalar_t, 3>(),
+        grad_out.packed_accessor64<scalar_t, 3>(),
+        query.packed_accessor64<scalar_t, 3>(),
+        key.packed_accessor64<scalar_t, 3>(),
+        value.packed_accessor64<scalar_t, 3>(),
+        output.packed_accessor64<scalar_t, 3>(),
+        logsumexp.packed_accessor64<scalar_t, 2>(),
         attn_bias_packed,
         p,
         rng_engine_inputs);
@@ -1455,7 +1455,7 @@ at::Tensor _dropout_mask(at::Tensor output, double p) {
   if (grid.x * grid.y * grid.z > 0) {
     dropout_kernel<scalar_t, scalar_t, kBlockSizeK, kBlockSizeQ, WARP_SIZE>
         <<<grid, block, 0, stream>>>(
-            output.packed_accessor<scalar_t, 3>(), p, rng_engine_inputs);
+            output.packed_accessor64<scalar_t, 3>(), p, rng_engine_inputs);
   }
   return output;
 }
