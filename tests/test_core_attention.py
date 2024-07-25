@@ -89,7 +89,7 @@ def test_amp_attention_dense_no_mask(device):
 
     a = torch.rand(b, s, d, device=device)
 
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, att_mask=None)
 
     expected_device = torch.float16 if device == "cuda" else torch.float32
@@ -104,7 +104,7 @@ def test_amp_attention_dense(device):
     a = torch.rand(b, s, d, device=device)
     m = torch.rand(s, s, device=device) > prob
 
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)
 
     expected_device = torch.float16 if device == "cuda" else torch.float32
@@ -120,7 +120,7 @@ def test_amp_attention_sparse(device):
     m = torch.rand(s, s, device=device) > prob
     m = m.to_sparse()
 
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)
 
     expected_device = torch.float32
@@ -136,7 +136,7 @@ def test_amp_attention_sparsecs(device):
     m = torch.rand(s, s, device=device) > prob
     m = SparseCS(m, device)
 
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)
 
     expected_device = torch.float32
@@ -165,7 +165,7 @@ def test_switch_blocksparse(device, data_type):
     m_att_mask = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
     # Check that a switch to blocksparse is only triggered by causal flag
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r_custom = scaled_dot_product_attention(a, a, a, m_custom)
         r_sparse = scaled_dot_product_attention(a, a, a, m_sparse)
         r_att_mask = scaled_dot_product_attention(a, a, a, m_att_mask)
@@ -194,7 +194,7 @@ def test_switch_blocksparse_dims(device):
     m = AttentionMask.make_causal(s, s, device, dtype=a.dtype)
 
     # Check that passing qkv with shape (B, nh, S, hs) is properly handled
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)
 
     expected_device = torch.float32
@@ -217,7 +217,7 @@ def test_switch_blocksparse_dropout(device, training, drop_prob):
     dropout = nn.Dropout(drop_prob)
     dropout.train(training).cuda()
 
-    with torch.cuda.amp.autocast():
+    with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)
         r_drop = scaled_dot_product_attention(a, a, a, m, dropout)
 

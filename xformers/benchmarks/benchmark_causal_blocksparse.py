@@ -63,7 +63,7 @@ def bench_blocksparse_compare(backward: bool):
                     )
 
                     def blocksparse_attention():
-                        with torch.cuda.amp.autocast(enabled=use_amp):
+                        with torch.amp.autocast("cuda", enabled=use_amp):
                             y = scaled_dot_product_attention(
                                 q=q, k=k, v=v, att_mask=m_att_mask, block_size=BS
                             )
@@ -72,7 +72,7 @@ def bench_blocksparse_compare(backward: bool):
                             return y
 
                     def sdp_attention():
-                        with torch.cuda.amp.autocast(enabled=use_amp):
+                        with torch.amp.autocast("cuda", enabled=use_amp):
                             y = scaled_dot_product_attention(
                                 q=q, k=k, v=v, att_mask=m_custom, block_size=BS
                             )

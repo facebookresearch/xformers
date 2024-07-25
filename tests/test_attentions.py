@@ -164,7 +164,7 @@ def test_order_invariance(
 
         # Test AMP, if available
         if device.type == "cuda":
-            with torch.cuda.amp.autocast(enabled=True):
+            with torch.amp.autocast("cuda", enabled=True):
                 _ = multi_head(inputs, inputs_shuffled, inputs)
 
 
