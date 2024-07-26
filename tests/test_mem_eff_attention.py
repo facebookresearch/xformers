@@ -1649,9 +1649,15 @@ def test_attn_bias_to_copy() -> None:
     attn_bias = fmha.attn_bias.LowerTriangularMask().to("cpu")
     _test_to_copy(attn_bias)
 
+    with torch.inference_mode():
+        _test_to_copy(attn_bias)
+
     tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
     attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias).to("cpu")
     _test_to_copy(attn_bias)
+
+    with torch.inference_mode():
+        _test_to_copy(attn_bias)
 
 
 def _kv_heads_label(kv_heads: Optional[int]) -> str:

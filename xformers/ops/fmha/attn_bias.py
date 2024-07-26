@@ -1568,8 +1568,9 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
             torch.ops.aten.clone,
             torch.ops.aten.detach,
             torch.ops.aten._to_copy,
+            torch.ops.aten.to,
         ]:
-            return cls(_subtensor=func(args[0]._subtensor, **kwargs))
+            return cls(_subtensor=func(args[0]._subtensor, *args[1:], **kwargs))
         return NotImplemented
 
     def __tensor_flatten__(self):
@@ -1669,6 +1670,7 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
             torch.ops.aten.clone,
             torch.ops.aten.detach,
             torch.ops.aten._to_copy,
+            torch.ops.aten.to,
         ]:
             output = func(
                 *[a._subtensor if isinstance(a, cls) else a for a in args],
