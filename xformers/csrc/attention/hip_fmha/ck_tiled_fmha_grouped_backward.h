@@ -57,37 +57,35 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
   static void Run(GroupedBackwardParams& param, hipStream_t stream) {
     {
       constexpr ck_tile::index_t kBlockSize = 64;
-      bool pad_seqlen_q = !(param.M % kBlockSize == 0);
       bool pad_headdim_v = !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddim == 0);
 
-      BOOL_SWITCH_2(
-          pad_seqlen_q, kPadSeqLenQ, pad_headdim_v, kPadHeadDimV, [&] {
-            constexpr ck_tile::index_t occupancy = 2;
+      constexpr bool kPadSeqLenQ = true;
 
-            using FmhaOGradDotOTraits_ = ck_tile::TileFmhaBwdOGradDotOTraits<
-                kPadSeqLenQ,
-                kPadHeadDimV,
-                occupancy>;
+      BOOL_SWITCH(pad_headdim_v, kPadHeadDimV, [&] {
+        constexpr ck_tile::index_t occupancy = 2;
 
-            using FmhaBwdOGradDotOPipelineProblem =
-                ck_tile::BlockFmhaBwdOGradDotOPipelineProblem<
-                    typename FmhaBwdTypeConfig<ScalarType>::ODataType,
-                    typename FmhaBwdTypeConfig<ScalarType>::OGradDataType,
-                    typename FmhaBwdTypeConfig<ScalarType>::DDataType,
-                    kBlockSize,
-                    FmhaBwdShape<MaxK>::kVHeaddim,
-                    true, // kIsGroupMode
-                    FmhaOGradDotOTraits_>;
+        using FmhaOGradDotOTraits_ = ck_tile::
+            TileFmhaBwdOGradDotOTraits<kPadSeqLenQ, kPadHeadDimV, occupancy>;
 
-            using FmhaBwdOGradDotOPipeline_ =
-                typename ck_tile::BlockFmhaBwdOGradDotO<
-                    FmhaBwdOGradDotOPipelineProblem>;
+        using FmhaBwdOGradDotOPipelineProblem =
+            ck_tile::BlockFmhaBwdOGradDotOPipelineProblem<
+                typename FmhaBwdTypeConfig<ScalarType>::ODataType,
+                typename FmhaBwdTypeConfig<ScalarType>::OGradDataType,
+                typename FmhaBwdTypeConfig<ScalarType>::DDataType,
+                kBlockSize,
+                FmhaBwdShape<MaxK>::kVHeaddim,
+                true, // kIsGroupMode
+                FmhaOGradDotOTraits_>;
 
-            using FmhaBwdOGradDotOKernel_ =
-                ck_tile::FmhaBwdOGradDotOKernel<FmhaBwdOGradDotOPipeline_>;
+        using FmhaBwdOGradDotOPipeline_ =
+            typename ck_tile::BlockFmhaBwdOGradDotO<
+                FmhaBwdOGradDotOPipelineProblem>;
 
-            RunWithBwdOGradDotOKernel<FmhaBwdOGradDotOKernel_>(param, stream);
-          });
+        using FmhaBwdOGradDotOKernel_ =
+            ck_tile::FmhaBwdOGradDotOKernel<FmhaBwdOGradDotOPipeline_>;
+
+        RunWithBwdOGradDotOKernel<FmhaBwdOGradDotOKernel_>(param, stream);
+      });
     };
 
     {
