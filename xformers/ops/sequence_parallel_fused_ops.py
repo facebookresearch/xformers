@@ -4,7 +4,17 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Any, Callable, Dict, List, Mapping, Optional, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+    overload,
+)
 
 import torch
 import torch.distributed as dist
@@ -684,13 +694,15 @@ def fused_allgather_and_linear(
     assert (scale_scattered_input is None) == (scale_weight is None)
     if scale_weight is not None:
         assert isinstance(weight, list) == isinstance(scale_weight, list)
-        scales_weights = (
+        scales_weights: Sequence[Optional[torch.Tensor]] = (
             scale_weight if isinstance(scale_weight, list) else [scale_weight]
         )
         assert len(weights) == len(scales_weights)
+        assert _is_fp8_dtype(scattered_input.dtype)
+        assert all(_is_fp8_dtype(w.dtype) for w in weights)
         assert out_dtype is not None, "output_dtype is required with FP8"
     else:
-        scales_weights = [torch.empty(1)] * len(weights)
+        scales_weights = [None] * len(weights)
     assert all(w.ndim == 2 for w in weights)
     assert scattered_input.ndim >= 2
     assert all(scattered_input.shape[-1] == w.shape[-1] for w in weights)
@@ -727,15 +739,14 @@ def fused_allgather_and_linear(
     ) -> None:
         for w, scale_weight, go in zip(weights, scales_weights, gathered_outputs):
             with torch.cuda.stream(stream_factory()):
-                if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty((), dtype=torch.float32, device=w.device)
+                if scale_scattered_input is not None and scale_weight is not None:
                     torch._scaled_mm(
                         inputs[0],
                         w.t(),
                         out_dtype=go[src_rank].dtype,
                         scale_a=scale_scattered_input,
                         scale_b=scale_weight,
-                        out=(go[src_rank], output_amax),
+                        out=go[src_rank],
                     )
                 else:
                     torch.matmul(inputs[0], w.t(), out=go[src_rank])
@@ -890,13 +901,15 @@ def fused_linear_and_reducescatter(
     assert (scale_gathered_input is None) == (scale_weight is None)
     if scale_weight is not None:
         assert isinstance(weight, list) == isinstance(scale_weight, list)
-        scales_weights = (
+        scales_weights: Sequence[Optional[torch.Tensor]] = (
             scale_weight if isinstance(scale_weight, list) else [scale_weight]
         )
         assert len(weights) == len(scales_weights)
+        assert _is_fp8_dtype(gathered_input.dtype)
+        assert all(_is_fp8_dtype(w.dtype) for w in weights)
         assert out_dtype is not None, "output_dtype is required with FP8"
     else:
-        scales_weights = [torch.empty(1)] * len(weights)
+        scales_weights = [None] * len(weights)
     assert all(w.ndim == 2 for w in weights)
     assert gathered_input.ndim >= 2
     assert all(gathered_input.shape[-1] == w.shape[-1] for w in weights)
@@ -939,15 +952,14 @@ def fused_linear_and_reducescatter(
     ) -> None:
         for w, scale_weight, o in zip(weights, scales_weights, outputs):
             with torch.cuda.stream(stream_factory()):
-                if _is_fp8_dtype(w.dtype):
-                    output_amax = torch.empty((), dtype=torch.float32, device=o.device)
+                if scale_gathered_input is not None and scale_weight is not None:
                     torch._scaled_mm(
                         gathered_input[dst_rank],
                         w.t(),
                         out_dtype=o.dtype,
                         scale_a=scale_gathered_input,
                         scale_b=scale_weight,
-                        out=(o, output_amax),
+                        out=o,
                     )
                 else:
                     torch.matmul(gathered_input[dst_rank], w.t(), out=o)
