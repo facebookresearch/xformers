@@ -607,7 +607,10 @@ class FwOp(AttentionFwOpBase):
         implementation.
     """
 
-    OPERATOR = get_operator("xformers_flash", "flash_fwd")
+    if torch.version.hip:
+        OPERATOR = None
+    else:
+        OPERATOR = get_operator("xformers_flash", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
@@ -809,7 +812,10 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     __doc__ = FwOp.__doc__
 
-    OPERATOR = get_operator("xformers_flash", "flash_bwd")
+    if torch.version.hip:
+        OPERATOR = None
+    else:
+        OPERATOR = get_operator("xformers_flash", "flash_bwd")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
