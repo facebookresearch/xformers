@@ -435,6 +435,8 @@ def get_extensions():
                 "-fgpu-flush-denormals-to-zero",
                 "-Werror",
                 "-Woverloaded-virtual",
+                "-mllvm",
+                "-enable-post-misched=0"
             ]
             + generator_flag
             + cc_flag,
