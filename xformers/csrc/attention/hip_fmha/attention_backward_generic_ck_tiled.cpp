@@ -506,8 +506,7 @@ efficient_attention_backward_ck(
     p.grad_v_ptr = is_mqa_gqa ? tmp_grad_v.data_ptr() : grad_v.data_ptr();
     p.grad_bias_ptr = bias_requires_grad ? grad_bias.data_ptr() : nullptr;
 
-    if (query.scalar_type() == at::ScalarType::BFloat16 ||
-        query.scalar_type() == at::ScalarType::Half)
+    if (use_grad_q_f32)
       p.grad_q_f32_ptr = grad_q_f32.data_ptr();
     else
       p.grad_q_f32_ptr = nullptr;
