@@ -164,8 +164,7 @@ efficient_attention_backward_ck(
        query.scalar_type() == at::ScalarType::Half);
 
   if (use_grad_q_f32) {
-    grad_q_f32 = at::empty_strided(
-        grad_q.sizes(), grad_q.strides(), opts.dtype(at::kFloat));
+    grad_q_f32 = at::empty(grad_q.sizes(), opts.dtype(at::kFloat));
     grad_q_f32.fill_(0);
   } else {
     grad_q.fill_(0);
