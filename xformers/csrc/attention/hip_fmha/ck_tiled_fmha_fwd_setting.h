@@ -118,19 +118,3 @@ struct FmhaFwdShape<256> : ck_tile::TileFmhaShape<
                                typename FmhaFwdBlockTile<256>::gemm1_warps,
                                FmhaFwdWarpTile,
                                IsVLayoutRowMajor> {};
-
-template <bool kHasDropout, ck_tile::index_t MaxK>
-struct FmhaFwdBlockDropoutMaker;
-
-template <ck_tile::index_t MaxK>
-struct FmhaFwdBlockDropoutMaker<false, MaxK> {
-  using dropout = ck_tile::BlockDropout<false, true, false>;
-};
-
-template <ck_tile::index_t MaxK>
-struct FmhaFwdBlockDropoutMaker<true, MaxK> {
-  using FmhaFwdShapeType = FmhaFwdShape<MaxK>;
-  static constexpr bool IsWG32 =
-      (FmhaFwdShapeType::Gemm0WarpTile::at(ck_tile::number<0>{}) == 32);
-  using dropout = ck_tile::BlockDropout<true, IsWG32, false>;
-};

@@ -23,9 +23,6 @@ template <
     bool kHasDropout,
     ck_tile::index_t MaxK>
 struct grouped_infer_causalmask_bias_dropout_dispatch {
-  using FmhaBlockDropout =
-      typename FmhaFwdBlockDropoutMaker<kHasDropout, MaxK>::dropout;
-
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -42,7 +39,6 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
       FmhaFwdShape<MaxK>,
       true, // kIsGroupMode
       FmhaMask,
-      FmhaBlockDropout,
       FmhaTraits>;
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
@@ -80,6 +76,7 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   false, // kStoreLSE
+                  kHasDropout,
                   false, // kDoFp8StaticQuant place-holder
                   occupancy>;
 
@@ -126,6 +123,7 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
             kBiasEnum,
             false, // kHasBiasGrad place-holder
             false, // kStoreLSE
+            kHasDropout,
             false, // kDoFp8StaticQuant place-holder
             occupancy>;
 
@@ -204,6 +202,7 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
           param.custom_mask_type,
           param.dropout_prob,
+          false, // is_store_randval
           {param.philox_seed, param.philox_offset});
     }();
 

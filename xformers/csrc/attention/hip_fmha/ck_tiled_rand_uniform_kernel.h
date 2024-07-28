@@ -35,7 +35,7 @@ struct FmhaRandUniformKernel {
 
   using BlockGemm = decltype(GetBlockGemm());
 
-  using MyBlockDropout = ck_tile::BlockDropout<true, true, false>;
+  using MyBlockDropout = ck_tile::BlockDropout;
 
   static constexpr bool kPadSeqLenQ = true;
   static constexpr bool kPadSeqLenK = true;
