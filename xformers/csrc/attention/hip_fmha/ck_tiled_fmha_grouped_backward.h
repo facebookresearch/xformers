@@ -318,7 +318,9 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.seqstart_k_dev_ptr,
           param.K, // headdim of q/k
           param.q_strides[1],
+          param.grad_q_f32_strides[1],
           param.q_strides[2],
+          param.grad_q_f32_strides[2],
           0);
     }();
 

@@ -332,8 +332,11 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
           param.N, // seqlen_k
           param.K, // headdim of q/k
           param.q_strides[1],
+          param.grad_q_f32_strides[1],
           param.q_strides[2],
+          param.grad_q_f32_strides[2],
           param.q_strides[0],
+          param.grad_q_f32_strides[0],
           0);
     }();
 
