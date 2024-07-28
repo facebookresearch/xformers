@@ -172,7 +172,7 @@ struct FmhaBwdBlockDropoutMaker;
 
 template <ck_tile::index_t MaxK>
 struct FmhaBwdBlockDropoutMaker<false, MaxK> {
-  using dropout = ck_tile::BlockDropout<false, true, false>;
+  using dropout = ck_tile::BlockDropoutBwd<false, true, false>;
 };
 
 template <ck_tile::index_t MaxK>
@@ -180,5 +180,5 @@ struct FmhaBwdBlockDropoutMaker<true, MaxK> {
   using FmhaBwdShapeType = FmhaBwdShape<MaxK>;
   static constexpr bool IsWG32 =
       (FmhaBwdShapeType::Gemm0WarpTile::at(ck_tile::number<0>{}) == 32);
-  using dropout = ck_tile::BlockDropout<true, IsWG32, false>;
+  using dropout = ck_tile::BlockDropoutBwd<true, IsWG32, false>;
 };

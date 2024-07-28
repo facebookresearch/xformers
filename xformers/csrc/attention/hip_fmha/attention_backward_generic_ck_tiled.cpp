@@ -159,9 +159,11 @@ efficient_attention_backward_ck(
   }
 
   at::Tensor grad_q_f32;
+  const bool use_grad_q_f32 =
+      (query.scalar_type() == at::ScalarType::BFloat16 ||
+       query.scalar_type() == at::ScalarType::Half);
 
-  if (query.scalar_type() == at::ScalarType::BFloat16 ||
-      query.scalar_type() == at::ScalarType::Half) {
+  if (use_grad_q_f32) {
     grad_q_f32 = at::empty_strided(
         grad_q.sizes(), grad_q.strides(), opts.dtype(at::kFloat));
     grad_q_f32.fill_(0);
@@ -233,8 +235,7 @@ efficient_attention_backward_ck(
     p.grad_k_ptr = is_mqa_gqa ? tmp_grad_k.data_ptr() : grad_k.data_ptr();
     p.grad_v_ptr = is_mqa_gqa ? tmp_grad_v.data_ptr() : grad_v.data_ptr();
 
-    if (query.scalar_type() == at::ScalarType::BFloat16 ||
-        query.scalar_type() == at::ScalarType::Half)
+    if (use_grad_q_f32)
       p.grad_q_f32_ptr = grad_q_f32.data_ptr();
     else
       p.grad_q_f32_ptr = nullptr;
@@ -269,6 +270,14 @@ efficient_attention_backward_ck(
         static_cast<int>(logsumexp.stride(0)),
         static_cast<int>(logsumexp.stride(1)),
         static_cast<int>(logsumexp.stride(2))};
+
+    if (use_grad_q_f32) {
+      p.grad_q_f32_strides = {
+          static_cast<int>(grad_q_f32.stride(0)),
+          static_cast<int>(grad_q_f32.stride(1)),
+          static_cast<int>(grad_q_f32.stride(2)),
+          static_cast<int>(grad_q_f32.stride(3))};
+    }
 
     if (is_mqa_gqa) {
       p.grad_k_strides = {
@@ -379,6 +388,13 @@ efficient_attention_backward_ck(
         static_cast<int>(logsumexp.stride(0)),
         static_cast<int>(logsumexp.stride(1)),
         static_cast<int>(logsumexp.stride(2))};
+
+    if (use_grad_q_f32) {
+      p.grad_q_f32_strides = {
+          static_cast<int>(grad_q_f32.stride(1)),
+          static_cast<int>(grad_q_f32.stride(2)),
+          static_cast<int>(grad_q_f32.stride(3))};
+    }
 
     if (is_mqa_gqa) {
       p.grad_k_strides = {

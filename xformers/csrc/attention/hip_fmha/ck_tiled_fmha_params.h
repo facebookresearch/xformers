@@ -132,6 +132,9 @@ struct BatchedBackwardParams {
   std::array<int, 4> grad_k_strides;
   std::array<int, 4> grad_v_strides;
 
+  // assume grad_q has same strides as q, but grad_q_f32 can be different
+  std::array<int, 4> grad_q_f32_strides;
+
   // BHM mode strides, completely contiguous
   std::array<int, 3> lsed_strides;
 
@@ -194,6 +197,9 @@ struct GroupedBackwardParams {
 
   std::array<int, 3> grad_k_strides;
   std::array<int, 3> grad_v_strides;
+
+  // assume grad_q has same strides as q, but grad_q_f32 can be different
+  std::array<int, 3> grad_q_f32_strides;
 
   // BHM mode strides, completely contiguous
   std::array<int, 3> lsed_strides;

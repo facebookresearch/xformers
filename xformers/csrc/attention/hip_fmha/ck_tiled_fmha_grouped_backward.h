@@ -262,24 +262,28 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.Hq,
           param.Hq / param.Hkv,
           param.scale,
-          param.q_strides[0], // q, k, v, bias, do, dk, dv, dbias seq-dim
-                              // stride
+          param.q_strides[0], // q, k, v, bias, do, dq_f32, dk, dv, dbias
+                              // seq-dim stride
           param.k_strides[0],
           param.v_strides[0],
           param.attn_bias_strides[1],
           0, // stride_randval
           param.grad_out_strides[0],
+          NeedConvertGradQ ? param.grad_q_f32_strides[0]
+                           : param.grad_q_f32_strides[0],
           param.grad_k_strides[0],
           param.grad_v_strides[0],
           param.attn_bias_strides[1], // assume grad_bias has same strides as
-                                      // bias
-          param.q_strides[1], // q, k, v, bias, do, lse/dot, dbias
+                                      // bias.
+          param.q_strides[1], // q, k, v, bias, do, lse/dot, dq_f32, dbias
                               // nhead-dim strides
           param.k_strides[1],
           param.v_strides[1],
           param.attn_bias_strides[0],
           0, // nhead_stride_randval
           param.grad_out_strides[1],
+          NeedConvertGradQ ? param.grad_q_f32_strides[1]
+                           : param.grad_q_f32_strides[1],
           param.lsed_strides[1], // assume lse/dot is in BHM contiguous layout
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
