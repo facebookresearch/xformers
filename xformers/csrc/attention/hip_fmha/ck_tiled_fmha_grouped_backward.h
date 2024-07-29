@@ -281,8 +281,8 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.attn_bias_strides[0],
           0, // nhead_stride_randval
           param.grad_out_strides[1],
-          NeedConvertGradQ ? param.grad_q_f32_strides[1] : param.q_strides[1],
           param.lsed_strides[1], // assume lse/dot is in BHM contiguous layout
+          NeedConvertGradQ ? param.grad_q_f32_strides[1] : param.q_strides[1],
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
           param.lsed_strides[0], // batch_stride_lse
