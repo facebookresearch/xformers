@@ -23,6 +23,11 @@ def rope_padded(
     *,
     theta: float = 10000.0,
     linear_scale: float = 1.0,
+    use_dynamic_scaling: bool = False,
+    dynamic_old_context_len: float = 8192.0,
+    dynamic_scale_factor: float = 16.0,
+    dynamic_low_freq_factor: float = 1.0,
+    dynamic_high_freq_factor: float = 32.0,
     out_q: Optional[torch.Tensor] = None,
     first_seqpos: Optional[torch.Tensor] = None,
     seqpos: Optional[torch.Tensor] = None,
@@ -80,6 +85,11 @@ def rope_padded(
         linear_scale: A scaling factor to apply to the sequence ids when computing
                       the RoPE frequencies.  When set to K, all sequence indices
                       are divided by K.
+        use_dynamic_scaling: If true, dynamic scaling in use, using the following
+        dynamic_old_context_len
+        dynamic_scale_factor
+        dynamic_low_freq_factor
+        dynamic_high_freq_factor
         internal_dtype: set to "f32" or "f64" to enforce dtype in the calculation
     """
     if torch.is_grad_enabled() and (
@@ -245,6 +255,11 @@ def rope_padded(
             seqlenk,
             theta,
             linear_scale,
+            use_dynamic_scaling,
+            dynamic_old_context_len if use_dynamic_scaling else 0,
+            dynamic_scale_factor if use_dynamic_scaling else 0,
+            dynamic_low_freq_factor if use_dynamic_scaling else 0,
+            dynamic_high_freq_factor if use_dynamic_scaling else 0,
             first_seqpos,
             seqpos,
             k_start,
