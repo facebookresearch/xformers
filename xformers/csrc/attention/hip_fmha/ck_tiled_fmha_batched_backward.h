@@ -133,7 +133,8 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
               FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
 
           constexpr auto FmhaBwdPipelineEnum_ =
-              FmhaBwdPipelineEnumSelector<MaxK>::value;
+              FmhaBwdPipelineEnumSelector<MaxK, kPadHeadDim, kPadHeadDim>::
+                  value;
 
           using FmhaBwdPipeline_ = typename FmhaBwdPipelineMaker<
               FmhaBwdPipelineEnum_,

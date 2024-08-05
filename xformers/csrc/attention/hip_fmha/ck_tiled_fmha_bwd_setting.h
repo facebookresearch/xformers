@@ -151,10 +151,16 @@ struct FmhaBwdShape<256> : ck_tile::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<256>::gemm4_warps,
                                FmhaBwdWarpTile2> {};
 
-template <ck_tile::index_t MaxK>
+template <ck_tile::index_t MaxK, bool kPadHeadDimQK, bool kPadHeadDimV>
 struct FmhaBwdPipelineEnumSelector {
   static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
       ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR;
+};
+
+template <ck_tile::index_t MaxK>
+struct FmhaBwdPipelineEnumSelector<MaxK, false, false> {
+  static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
+      ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR_IGLP;
 };
 
 template <ck_tile::BlockFmhaBwdPipelineEnum value, typename problem>
@@ -165,6 +171,13 @@ struct FmhaBwdPipelineMaker<
     ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR,
     problem> {
   using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineKRKTRVR<problem>;
+};
+
+template <typename problem>
+struct FmhaBwdPipelineMaker<
+    ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR_IGLP,
+    problem> {
+  using pipeline = ck_tile::BlockFmhaBwdDQDKDVPipelineKRKTRVRIGLP<problem>;
 };
 
 template <bool kHasDropout, ck_tile::index_t MaxK>
