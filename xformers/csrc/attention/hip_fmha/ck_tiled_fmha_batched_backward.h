@@ -277,8 +277,8 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
           param.grad_v_strides[1],
           param.attn_bias_strides[2], // assume grad_bias has same strides as
                                       // bias
-          param.q_strides[2], // q, k, v, bias, do, lse/dot, dq_f32, dbias
-                              // nhead-dim strides
+          param.q_strides[2], // q, k, v, bias, do, lse/dot, dq_f32, dk, dv,
+                              // dbias nhead-dim strides
           param.k_strides[2],
           param.v_strides[2],
           param.attn_bias_strides[1],
@@ -286,6 +286,8 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
           param.grad_out_strides[2],
           param.lsed_strides[1],
           NeedConvertGradQ ? param.grad_q_f32_strides[2] : param.q_strides[2],
+          param.grad_k_strides[2],
+          param.grad_v_strides[2],
           param.attn_bias_strides[1], // assume grad_bias has same strides as
                                       // bias
           param.q_strides[0], // q, k, v, bias, do, lse/dot, dk, dv, dbias,
