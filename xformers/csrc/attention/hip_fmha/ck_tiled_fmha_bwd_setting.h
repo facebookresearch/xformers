@@ -73,7 +73,7 @@ struct FmhaBwdBlockTile<64> {
 template <>
 struct FmhaBwdBlockTile<128> {
   using tile_lengths =
-      ck_tile::sequence<32, 128, 128, 32, 128, 32, 32, 128, 128>;
+      ck_tile::sequence<16, 128, 128, 16, 128, 16, 32, 128, 128>;
   using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
   using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
   using gemm4_warps = ck_tile::sequence<1, 4, 1>; // default for gemm4
@@ -127,15 +127,15 @@ template <>
 struct FmhaBwdShape<128> : ck_tile::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<128>::tile_lengths,
                                typename FmhaBwdBlockTile<128>::gemm02_warps,
-                               FmhaBwdWarpTile1,
+                               FmhaBwdWarpTile2,
                                typename FmhaBwdBlockTile<128>::gemm13_warps,
-                               FmhaBwdWarpTile1,
+                               FmhaBwdWarpTile3,
                                typename FmhaBwdBlockTile<128>::gemm02_warps,
-                               FmhaBwdWarpTile1,
+                               FmhaBwdWarpTile2,
                                typename FmhaBwdBlockTile<128>::gemm13_warps,
-                               FmhaBwdWarpTile1,
+                               FmhaBwdWarpTile3,
                                typename FmhaBwdBlockTile<128>::gemm4_warps,
-                               FmhaBwdWarpTile1> {};
+                               FmhaBwdWarpTile2> {};
 
 template <>
 struct FmhaBwdShape<256> : ck_tile::TileFmhaBwdShape<
