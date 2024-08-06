@@ -489,7 +489,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
 
 def _is_paged_attention_supported(attn_bias_type) -> bool:
     if issubclass(attn_bias_type, PagedBlockDiagonalPaddedKeysMask):
-        return FLASH_VERSION > "2.5.6"
+        return FLASH_VERSION > "2.5.6" and not _USE_PT_FLASH_ATTN
 
     return True
 
