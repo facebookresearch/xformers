@@ -161,48 +161,46 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
       });
     };
 
-    /*
-        if constexpr (NeedConvertGradQ) {
-          constexpr ck_tile::index_t kBlockSize = 256;
+    if constexpr (NeedConvertGradQ) {
+      constexpr ck_tile::index_t kBlockSize = 128;
 
-          const bool pad_seqlen_q = true;
-          const bool pad_headdim_q =
-              !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
+      const bool pad_seqlen_q = true;
+      const bool pad_headdim_q =
+          !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
 
-          BOOL_SWITCH_2(
-              pad_seqlen_q, kPadSeqLenQ, pad_headdim_q, kPadHeadDimQ, [&] {
-                constexpr ck_tile::index_t occupancy = 2;
+      BOOL_SWITCH_2(
+          pad_seqlen_q, kPadSeqLenQ, pad_headdim_q, kPadHeadDimQ, [&] {
+            constexpr ck_tile::index_t occupancy = 2;
 
-                using FmhaBwdConvertQGradTraits_ =
-                    ck_tile::TileFmhaBwdConvertQGradTraits<
-                        kPadSeqLenQ,
-                        kPadHeadDimQ,
-                        occupancy>;
+            using FmhaBwdConvertQGradTraits_ =
+                ck_tile::TileFmhaBwdConvertQGradTraits<
+                    kPadSeqLenQ,
+                    kPadHeadDimQ,
+                    occupancy>;
 
-                using FmhaBwdConvertQGradPipelineProblem =
-                    ck_tile::BlockFmhaBwdConvertQGradPipelineProblem<
-                        typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
-                        typename FmhaBwdTypeConfig<ScalarType>::QGradDataType,
-                        kBlockSize,
-                        64, // kM0
-                        1, // kN0, no use
-                        FmhaBwdShape<MaxK>::kQKHeaddim,
-                        true, // kIsGroupMode
-                        false, // kIsDeterministic
-                        FmhaBwdConvertQGradTraits_>;
+            using FmhaBwdConvertQGradPipelineProblem =
+                ck_tile::BlockFmhaBwdConvertQGradPipelineProblem<
+                    typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::QGradDataType,
+                    kBlockSize,
+                    64, // kM0
+                    1, // kN0, no use
+                    FmhaBwdShape<MaxK>::kQKHeaddim,
+                    true, // kIsGroupMode
+                    false, // kIsDeterministic
+                    FmhaBwdConvertQGradTraits_>;
 
-                using FmhaBwdConvertQGradPipeline =
-                    typename ck_tile::BlockFmhaBwdConvertQGrad<
-                        FmhaBwdConvertQGradPipelineProblem>;
+            using FmhaBwdConvertQGradPipeline =
+                typename ck_tile::BlockFmhaBwdConvertQGrad<
+                    FmhaBwdConvertQGradPipelineProblem>;
 
-                using FmhaBwdConvertQGradKernel_ =
-                    ck_tile::FmhaBwdConvertQGradKernel<FmhaBwdConvertQGradPipeline>;
+            using FmhaBwdConvertQGradKernel_ =
+                ck_tile::FmhaBwdConvertQGradKernel<FmhaBwdConvertQGradPipeline>;
 
-                RunWithBwdConvertQGradKernel<FmhaBwdConvertQGradKernel_>(
-                    param, stream);
-              });
-        };
-    */
+            RunWithBwdConvertQGradKernel<FmhaBwdConvertQGradKernel_>(
+                param, stream);
+          });
+    };
   }
 
   template <typename FmhaBwdOGradDotOKernel>
@@ -320,10 +318,10 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.seqstart_q_dev_ptr,
           param.seqstart_k_dev_ptr,
           param.K, // headdim of q/k
+          param.q_strides[0],
+          param.grad_q_f32_strides[0],
           param.q_strides[1],
           param.grad_q_f32_strides[1],
-          param.q_strides[2],
-          param.grad_q_f32_strides[2],
           0);
     }();
 
