@@ -34,7 +34,7 @@ xFormers is:
 conda install xformers -c xformers
 ```
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.3.1](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.4.0](https://pytorch.org/get-started/locally/)
 
 ```bash
 # cuda 11.8 version
