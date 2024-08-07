@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.28] - TBD
 ### Added
 ### Improved
+- Profiler: Fix computation of FLOPS for the attention when using xFormers
+- Profiler: Fix MFU/HFU calculation when multiple dtypes are used
 ### Removed
 
 ## [0.0.27.post2] - 2024-07-26
