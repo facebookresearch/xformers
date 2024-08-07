@@ -28,9 +28,6 @@ struct BatchedInferParams {
   std::array<int, 4> out_strides;
   std::array<int, 4> attn_bias_strides; // 4d tensor_view [B, H, M, N]
 
-  // BHM mode strides, completely contiguous
-  std::array<int, 3> lse_strides;
-
   const void* q_ptr;
   const void* k_ptr;
   const void* v_ptr;
@@ -48,6 +45,9 @@ struct BatchedForwardParams : public BatchedInferParams {
   float dropout_prob;
   int64_t philox_seed;
   int64_t philox_offset;
+
+  // BHM mode strides, completely contiguous
+  std::array<int, 3> lse_strides;
 
   // completely contiguous
   void* logsumexp_ptr;
@@ -80,9 +80,6 @@ struct GroupedInferParams {
   // 4d tensor view [B, H, M, N]
   std::array<int, 4> attn_bias_strides;
 
-  // BHM mode strides, completely contiguous
-  std::array<int, 3> lse_strides;
-
   const void* q_ptr;
   const void* k_ptr;
   const void* v_ptr;
@@ -101,6 +98,10 @@ struct GroupedForwardParams : public GroupedInferParams {
   float dropout_prob;
   int64_t philox_seed;
   int64_t philox_offset;
+
+  // HM mode strides, completely contiguous, unpadded layout where M is
+  // concatten total seqlen_q for all batches
+  std::array<int, 2> lse_strides;
 
   // completely contiguous
   void* logsumexp_ptr;
@@ -201,8 +202,9 @@ struct GroupedBackwardParams {
   // assume grad_q has same strides as q, but grad_q_f32 can be different
   std::array<int, 3> grad_q_f32_strides;
 
-  // BHM mode strides, completely contiguous
-  std::array<int, 3> lsed_strides;
+  // HM mode strides, completely contiguous, unpadded layout where M is
+  // concatten total seqlen_q for all batches
+  std::array<int, 2> lsed_strides;
 
   const void* q_ptr;
   const void* k_ptr;

@@ -219,8 +219,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.out_strides[0], // stride_o
           param.grad_out_strides[1], // nhead_stride_do
           param.out_strides[1], // nhead_stride_o
-          param.lsed_strides[1],
-          param.lsed_strides[0]); // batch_stride_d
+          param.lsed_strides[0]); // nhead_stride_d
     }();
 
     dim3 kGridSize = FmhaBwdOGradDotOKernel::GridSize(
@@ -280,13 +279,12 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           param.attn_bias_strides[0],
           0, // nhead_stride_randval
           param.grad_out_strides[1],
-          param.lsed_strides[1], // assume lse/dot is in BHM contiguous layout
+          param.lsed_strides[0], // assume lse/dot is in HM contiguous layout
           NeedConvertGradQ ? param.grad_q_f32_strides[1] : param.q_strides[1],
           param.grad_k_strides[1],
           param.grad_v_strides[1],
           param.attn_bias_strides[0], // assume grad_bias has same strides as
                                       // bias
-          param.lsed_strides[0], // batch_stride_lse
           0, // split_stride_dq_acc
           (param.window_size > 0) ? param.window_size - 1
                                   : -1, // window_left_size
