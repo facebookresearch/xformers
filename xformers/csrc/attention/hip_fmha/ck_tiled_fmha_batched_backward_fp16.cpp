@@ -89,6 +89,19 @@ extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_ti
     BatchedBackwardParams& param, hipStream_t stream);
 extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, true, false, false, false, 128>(
     BatchedBackwardParams& param, hipStream_t stream);
+
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, false, true, true, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, false, true, false, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, false, false, false, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, true, true, true, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, true, true, false, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
+extern template void run_batched_backward_causalmask_bias_dropout_dispatch<ck_tile::fp16_t, true, false, false, false, 256>(
+    BatchedBackwardParams& param, hipStream_t stream);
 // clang-format on
 
 void batched_backward_fp16(BatchedBackwardParams& param, hipStream_t stream) {

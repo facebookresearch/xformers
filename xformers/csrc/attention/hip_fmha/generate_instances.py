@@ -175,7 +175,7 @@ def create_backward_instances(instance_dir: Path) -> None:
             for has_causalmask in [True, False]:
                 for has_bias, has_bias_grad in [[True, False], [True, True], [False, False]]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128]:
+                        for max_k in [32, 64, 128, 256]:
                             fname = FMHA_BACKWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
