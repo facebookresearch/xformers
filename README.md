@@ -26,6 +26,15 @@ xFormers is:
 - **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like PyTorch.
 - **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
 
+## Supported Platforms
+
+xFormers is optimized for and tested on systems with NVIDIA GPUs, including:
+
+- Linux with x86-64 architecture
+- Windows with x86-64 architecture
+
+Apple M1/M2 chips (arm64 architecture) are currently not supported.
+
 ## Installing xFormers
 
 * **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 2.3.1 installed with conda](https://pytorch.org/get-started/locally/)
