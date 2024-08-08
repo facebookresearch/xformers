@@ -7,21 +7,15 @@
 import logging
 import math
 from contextlib import nullcontext
-from functools import lru_cache
 from typing import Optional, Union
 
 import torch
 
-from xformers import _has_cpp_library, _is_triton_available
+from xformers import _has_cpp_library
 from xformers.components.attention.attention_mask import AttentionMask
 
 if _has_cpp_library:
     from ._sputnik_sparse import SparseCS
-
-_is_blocksparse_available = _is_triton_available()
-if _is_blocksparse_available:
-    from xformers.components.attention.blocksparse import BlockSparseAttention
-
 
 logger = logging.getLogger("xformers")
 
@@ -227,96 +221,18 @@ def scaled_query_key_softmax(
     return att
 
 
-if _is_blocksparse_available:
-    # 128 is default maxsize
-    @lru_cache(maxsize=128)
-    def _retrieve_blocksparse(
-        num_heads: int, seq_len: int, block_size: int
-    ) -> BlockSparseAttention:
-        # Checks if blocksparse object exists in cache
-
-        blocks = seq_len // block_size
-        layout_fill = torch.ones((num_heads, blocks, blocks), dtype=torch.long)
-        return BlockSparseAttention(
-            layout=layout_fill, block_size=block_size, causal=True
-        )
-
-
-def blocksparse_attention(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
-    dropout: Optional[torch.nn.Module] = None,
-    block_size: int = 128,
-) -> torch.Tensor:
-
-    orig_dim = q.dim()
-    seq_len = q.shape[-2]
-    # Layout head dimension: 1 or batch size (q.shape[0])
-    layout_heads = 1
-
-    # TODO perhaps add functionality to pad qkv if sequence length is not divisible by block size?
-    assert seq_len % block_size == 0, "Sequence length must be divisible by block size"
-
-    if orig_dim == 3:
-        # Reshape from (N, S, hs) to (B, nh, S, hs) where N = B x nh, hs = D / nh
-        # Assuming num_heads = 1, (N, S, hs) to (B, 1, S, hs)
-        if layout_heads == 1:
-            q = q.unsqueeze(1)
-            k = k.unsqueeze(1)
-            v = v.unsqueeze(1)
-        else:
-            q = q.unsqueeze(0)
-            k = k.unsqueeze(0)
-            v = v.unsqueeze(0)
-
-    blocksparse_attention = _retrieve_blocksparse(layout_heads, seq_len, block_size)
-    # Dropout is a no-op in evaluation mode
-    if isinstance(dropout, torch.nn.Dropout):
-        blocksparse_attention.attn_drop = dropout
-    else:
-        blocksparse_attention.attn_drop = torch.nn.Dropout(0.0)
-    att = blocksparse_attention(q, k, v)
-
-    # Reshape attention (B, nh, S, hs) back to (N, S, hs)
-    if orig_dim == 3:
-        return att.flatten(0, 1)
-    return att
-
-
 def scaled_dot_product_attention(
     q: torch.Tensor,
     k: torch.Tensor,
     v: torch.Tensor,
     att_mask: Optional[Union[AttentionMask, "SparseCS", torch.Tensor]],
     dropout: Optional[torch.nn.Module] = None,
-    block_size: int = 128,
 ) -> torch.Tensor:
     autocast_disabled = (
         _has_cpp_library
         and isinstance(att_mask, SparseCS)
         or (att_mask is not None and att_mask.is_sparse)
     )
-    seq_len = q.shape[-2]
-
-    # switch if:
-    #   causal is required but mask is not sparse
-    #   fp16 or under amp context
-    #   sequence length is divisible by block size
-    #   same seq len for K and Q
-    switch_to_blocksparse = (
-        _is_blocksparse_available
-        and (att_mask is not None and not att_mask.is_sparse)
-        and (isinstance(att_mask, AttentionMask) and att_mask.is_causal)
-        and (q.dtype == torch.float16 or torch.is_autocast_enabled())
-        and not seq_len % block_size
-        and q.shape[-2] == k.shape[-2]
-    )
-
-    if switch_to_blocksparse:
-        logger.info("Switching causal attention to Triton blocksparse...")
-        return blocksparse_attention(q, k, v, dropout, block_size)
-
     with torch.amp.autocast("cuda", enabled=False) if autocast_disabled else nullcontext():  # type: ignore
         if autocast_disabled:
             q, k, v = q.float(), k.float(), v.float()

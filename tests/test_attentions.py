@@ -69,13 +69,6 @@ def _get_multihead(
 
         test_config["out_proj"] = noop
 
-    # Add some blocksparse layout to test the corresponding attention
-    block_size = 16
-    test_config["layout"] = torch.eye(
-        SEQ // block_size, SEQ // block_size, dtype=torch.long
-    )
-    test_config["block_size"] = block_size
-
     attention = build_attention(test_config)
 
     # build a multi head dispatch to test this attention mechanism
