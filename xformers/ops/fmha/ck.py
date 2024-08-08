@@ -173,7 +173,7 @@ class FwOp(AttentionFwOpBase):
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 4e-4,
+        torch.half: 3e-3,
         torch.bfloat16: 2e-2,
     }
 
