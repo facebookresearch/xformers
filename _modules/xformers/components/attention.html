@@ -341,15 +341,6 @@
     <span class="s2">&quot;register_attention&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 
-<span class="c1"># Optionally expose the BlockSparse attention</span>
-<span class="k">try</span><span class="p">:</span>
-    <span class="kn">from</span> <span class="nn">.blocksparse</span> <span class="kn">import</span> <span class="n">BlockSparseAttention</span>  <span class="c1"># noqa</span>
-
-    <span class="n">__all__</span> <span class="o">+=</span> <span class="p">[</span><span class="s2">&quot;BlockSparseAttention&quot;</span><span class="p">]</span>
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="k">pass</span>
-
-
 <span class="c1"># automatically import any Python files in the directory</span>
 <span class="n">import_all_modules</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="vm">__file__</span><span class="p">)</span><span class="o">.</span><span class="n">parent</span><span class="p">),</span> <span class="s2">&quot;xformers.components.attention&quot;</span><span class="p">)</span>
 </pre></div>
