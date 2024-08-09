@@ -547,42 +547,6 @@ AttentionOp = Tuple[
 ]
 
 
-@dataclass
-class AttentionOpDispatch:
-    """Dispatcher to automatically select
-    the best operator to run memory-efficient attention.
-
-    :Deprecated:
-
-        This class is deprecated and will be removed in a later version
-    """
-
-    op: AttentionOp
-
-    @classmethod
-    def from_arguments(
-        cls,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
-        p: float = 0.0,
-        scale: Optional[float] = None,
-    ) -> "AttentionOpDispatch":
-        """Here for backward compatibility"""
-        from .dispatch import _dispatch_bw, _dispatch_fw
-
-        inp = Inputs(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        )
-        return AttentionOpDispatch(op=(_dispatch_fw(inp, True), _dispatch_bw(inp)))
-
-
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:
     if tensor.ndim == 4:
         return tensor
