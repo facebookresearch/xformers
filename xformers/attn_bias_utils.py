@@ -50,16 +50,7 @@ def create_attn_bias(
         if fmt == "BMK":
             batch_size *= num_heads
             num_heads = 1
-        # `small_k` only supports an expanded 1d bias
-        if op in [fmha.small_k.FwOp, fmha.small_k.BwOp]:
-            attn_bias = (
-                torch.randn(
-                    (batch_size, num_heads, 1, kv_len), device=device, dtype=dtype
-                )
-                * 3
-            )
-            attn_bias = attn_bias.expand(batch_size, num_heads, q_len, kv_len)
-        elif op is not None and issubclass(op, fmha.triton_splitk.FwOp):
+        if op is not None and issubclass(op, fmha.triton_splitk.FwOp):
             attn_bias = (
                 torch.randn(
                     (batch_size, num_heads_groups, num_heads, q_len, kv_len),

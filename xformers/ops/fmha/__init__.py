@@ -9,7 +9,7 @@ import torch
 
 from . import attn_bias
 from . import attn_bias as _attn_bias
-from . import ck, ck_decoder, ck_splitk, cutlass, flash, small_k, triton_splitk
+from . import ck, ck_decoder, ck_splitk, cutlass, flash, triton_splitk
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -27,7 +27,6 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
-MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
 MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
@@ -818,14 +817,12 @@ class _MergeAttentions(torch.autograd.Function):
 ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
-    small_k.FwOp,
     triton_splitk.FwOp,
 ]
 
 ALL_BW_OPS: List[Type[AttentionBwOpBase]] = [
     cutlass.BwOp if torch.version.cuda else ck.BwOp,
     flash.BwOp,
-    small_k.BwOp,
 ]
 
 __all__ = [
@@ -837,7 +834,6 @@ __all__ = [
     "MemoryEfficientAttentionCutlassFwdFlashBwOp",
     "MemoryEfficientAttentionCutlassOp",
     "MemoryEfficientAttentionFlashAttentionOp",
-    "MemoryEfficientAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
     "MemoryEfficientAttentionCkDecoderOp",

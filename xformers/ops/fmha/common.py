@@ -288,8 +288,6 @@ class AttentionOpBase(BaseOperator):
     - :attr:`xformers.ops.fmha.flash.BwOp`
     - :attr:`xformers.ops.fmha.triton.FwOp`
     - :attr:`xformers.ops.fmha.triton.BwOp`
-    - :attr:`xformers.ops.fmha.small_k.FwOp`
-    - :attr:`xformers.ops.fmha.small_k.BwOp`
     """
 
     OPERATOR: Any

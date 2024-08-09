@@ -10,7 +10,7 @@ from typing import List, Sequence, Type, TypeVar
 
 import torch
 
-from . import attn_bias, ck, cutlass, flash, small_k, triton_splitk
+from . import attn_bias, ck, cutlass, flash, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
@@ -63,7 +63,6 @@ def _dispatch_fw_priority_list(
             [
                 flash.FwOp,
                 cutlass.FwOp,
-                small_k.FwOp,
             ]
         )
     else:
@@ -124,10 +123,6 @@ def _dispatch_bw(inp: Inputs, is_unpadded_lse: bool = False) -> Type[AttentionBw
         priority_list_ops: List[Type[AttentionBwOpBase]] = [
             flash.BwOp,
             cutlass.BwOp,
-            # CUDA illegal memory issues, race conditions etc..
-            # triton.BwOp,
-            # Deprecated
-            small_k.BwOp,
         ]
     else:
         priority_list_ops = [
