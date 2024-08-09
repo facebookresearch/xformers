@@ -50,6 +50,9 @@ jobs:
       run:
         shell: bash
     steps:
+      - if: runner.os == 'Windows'
+        name: Support longpaths
+        run: git config --system core.longpaths true
       - id: cuda_info
         shell: python
         run: |
