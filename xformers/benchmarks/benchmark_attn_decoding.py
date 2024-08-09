@@ -161,10 +161,6 @@ class AttentionDecodingBase:
             print(f"Runtime error: {e}")
 
 
-class AttentionDecodingDecoder(AttentionDecodingBase):
-    OP = xops.fmha.decoder.FwOp
-
-
 class AttentionDecodingCUTLASS(AttentionDecodingBase):
     OP = xops.fmha.cutlass.FwOp
 
@@ -289,7 +285,6 @@ BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
 }
 
 if torch.version.cuda:
-    BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
 if torch.version.hip:

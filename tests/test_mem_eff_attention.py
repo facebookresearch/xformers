@@ -1672,7 +1672,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
 @pytest.mark.parametrize(
     "op",
     [
-        fmha.decoder.FwOp if torch.version.cuda else fmha.ck_decoder.FwOp,
+        fmha.ck_decoder.FwOp,
     ],
 )
 @pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
@@ -1690,6 +1690,8 @@ def test_decoder(
     num_queries: int = 1,
     d: int = 128,
 ) -> None:
+    if not op.is_available():
+        raise pytest.skip("not available")
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
     # kv_heads > 1: BMGHK

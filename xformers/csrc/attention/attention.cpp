@@ -28,9 +28,6 @@ TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_cutlass(Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int? max_seqlen_q, int? max_seqlen_k, float dropout_p, int custom_mask_type, bool compute_log_sumexp=False, *, float? scale=None, Tensor? seqlen_k=None, int? window_size=None) -> (Tensor output, Tensor logsumexp, Tensor philox_seed, Tensor philox_offset, SymInt max_seqlen_batch_q, SymInt max_seqlen_batch_k)"));
   m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_decoder(Tensor query, Tensor "
-      "key, Tensor value, Tensor seq_positions, float scale) -> Tensor"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_backward_small_k(Tensor grad_out, Tensor query, Tensor key, "
       "Tensor value, Tensor logsumexp, Tensor output, Tensor? attn_bias, float p, int rng_seed, "
       "int rng_offset) -> (Tensor, Tensor, Tensor)"));

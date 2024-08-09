@@ -9,7 +9,7 @@ import torch
 
 from . import attn_bias
 from . import attn_bias as _attn_bias
-from . import ck, ck_decoder, ck_splitk, cutlass, decoder, flash, small_k, triton_splitk
+from . import ck, ck_decoder, ck_splitk, cutlass, flash, small_k, triton_splitk
 from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -26,7 +26,6 @@ from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
-MemoryEfficientAttentionDecoderOp = (decoder.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionOp = (small_k.FwOp, small_k.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)

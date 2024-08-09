@@ -10,7 +10,7 @@ from typing import List, Sequence, Type, TypeVar
 
 import torch
 
-from . import attn_bias, ck, cutlass, decoder, flash, small_k, triton_splitk
+from . import attn_bias, ck, cutlass, flash, small_k, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
@@ -76,14 +76,6 @@ def _dispatch_fw_priority_list(
         mqa_or_gqa = (
             inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1
         )
-        if not mqa_or_gqa:
-            # With multiquery, cutlass is sometimes faster than decoder
-            # but it's not currently clear when.
-            if torch.version.cuda:
-                priority_list_ops.appendleft(decoder.FwOp)
-            # priority_list_ops.appendleft(
-            #     decoder.FwOp if torch.version.cuda else ck_decoder.FwOp
-            # )
         # Split-KV is useful with MQA
         # for short Q-seqlen / long K-seqlen
         if mqa_or_gqa and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
