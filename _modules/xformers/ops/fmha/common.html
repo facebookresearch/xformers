@@ -511,8 +511,6 @@
 <span class="sd">    - :attr:`xformers.ops.fmha.flash.BwOp`</span>
 <span class="sd">    - :attr:`xformers.ops.fmha.triton.FwOp`</span>
 <span class="sd">    - :attr:`xformers.ops.fmha.triton.BwOp`</span>
-<span class="sd">    - :attr:`xformers.ops.fmha.small_k.FwOp`</span>
-<span class="sd">    - :attr:`xformers.ops.fmha.small_k.BwOp`</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">OPERATOR</span><span class="p">:</span> <span class="n">Any</span>
@@ -770,42 +768,6 @@
 <span class="n">AttentionOp</span> <span class="o">=</span> <span class="n">Tuple</span><span class="p">[</span>
     <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span>
 <span class="p">]</span>
-
-
-<span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">AttentionOpDispatch</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Dispatcher to automatically select</span>
-<span class="sd">    the best operator to run memory-efficient attention.</span>
-
-<span class="sd">    :Deprecated:</span>
-
-<span class="sd">        This class is deprecated and will be removed in a later version</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">op</span><span class="p">:</span> <span class="n">AttentionOp</span>
-
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_arguments</span><span class="p">(</span>
-        <span class="bp">cls</span><span class="p">,</span>
-        <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">p</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">,</span>
-        <span class="n">scale</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;AttentionOpDispatch&quot;</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Here for backward compatibility&quot;&quot;&quot;</span>
-        <span class="kn">from</span> <span class="nn">.dispatch</span> <span class="kn">import</span> <span class="n">_dispatch_bw</span><span class="p">,</span> <span class="n">_dispatch_fw</span>
-
-        <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
-            <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
-            <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
-            <span class="n">value</span><span class="o">=</span><span class="n">value</span><span class="p">,</span>
-            <span class="n">attn_bias</span><span class="o">=</span><span class="n">attn_bias</span><span class="p">,</span>
-            <span class="n">p</span><span class="o">=</span><span class="n">p</span><span class="p">,</span>
-            <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">AttentionOpDispatch</span><span class="p">(</span><span class="n">op</span><span class="o">=</span><span class="p">(</span><span class="n">_dispatch_fw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">)))</span>
 
 
 <span class="k">def</span> <span class="nf">bmk2bmhk</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>

@@ -242,8 +242,6 @@
 <li><p><a class="reference internal" href="#xformers.ops.fmha.flash.BwOp" title="xformers.ops.fmha.flash.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.flash.BwOp</span></code></a></p></li>
 <li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.FwOp</span></code></p></li>
 <li><p><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.triton.BwOp</span></code></p></li>
-<li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.FwOp" title="xformers.ops.fmha.small_k.FwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.FwOp</span></code></a></p></li>
-<li><p><a class="reference internal" href="#xformers.ops.fmha.small_k.BwOp" title="xformers.ops.fmha.small_k.BwOp"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.small_k.BwOp</span></code></a></p></li>
 </ul>
 <dl class="py method">
 <dt class="sig sig-object py" id="xformers.ops.AttentionOpBase.not_supported_reasons">
@@ -389,30 +387,6 @@ and GPUs as old as P100 (Sm60)</p>
 <dt class="sig sig-object py" id="xformers.ops.fmha.flash.BwOp">
 <em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.flash.</span></span><span class="sig-name descname"><span class="pre">BwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/flash.html#BwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.flash.BwOp" title="Permalink to this definition">¶</a></dt>
 <dd><p>Operator that computes memory-efficient attention using         <a class="reference external" href="https://github.com/HazyResearch/flash-attention">Flash-Attention</a>         implementation.</p>
-</dd></dl>
-
-<span class="target" id="module-xformers.ops.fmha.small_k"></span><dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.small_k.FwOp">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.small_k.</span></span><span class="sig-name descname"><span class="pre">FwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/small_k.html#FwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.small_k.FwOp" title="Permalink to this definition">¶</a></dt>
-<dd><p>An operator optimized for very small values of K (<code class="docutils literal notranslate"><span class="pre">K</span> <span class="pre">&lt;=</span> <span class="pre">32</span></code>)         and f32 pre-Ampere as it does not use TensorCores.
-Only supports contiguous inputs in BMK format, so an extra reshape         or contiguous call might be done.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Deprecated</dt>
-<dd class="field-odd"><p>This operator is deprecated and should not be used in new code</p>
-</dd>
-</dl>
-</dd></dl>
-
-<dl class="py class">
-<dt class="sig sig-object py" id="xformers.ops.fmha.small_k.BwOp">
-<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-prename descclassname"><span class="pre">xformers.ops.fmha.small_k.</span></span><span class="sig-name descname"><span class="pre">BwOp</span></span><a class="reference internal" href="../_modules/xformers/ops/fmha/small_k.html#BwOp"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#xformers.ops.fmha.small_k.BwOp" title="Permalink to this definition">¶</a></dt>
-<dd><p>An operator optimized for very small values of K (<code class="docutils literal notranslate"><span class="pre">K</span> <span class="pre">&lt;=</span> <span class="pre">32</span></code>)         and f32 pre-Ampere as it does not use TensorCores.
-Only supports contiguous inputs in BMK format, so an extra reshape         or contiguous call might be done.</p>
-<dl class="field-list simple">
-<dt class="field-odd">Deprecated</dt>
-<dd class="field-odd"><p>This operator is deprecated and should not be used in new code</p>
-</dd>
-</dl>
 </dd></dl>
 
 <span class="target" id="module-xformers.ops.fmha.ck"></span><dl class="py class">

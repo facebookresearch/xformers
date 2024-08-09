@@ -230,14 +230,13 @@
 
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span> <span class="k">as</span> <span class="n">_attn_bias</span>
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ck_decoder</span><span class="p">,</span> <span class="n">ck_splitk</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">decoder</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">small_k</span><span class="p">,</span> <span class="n">triton_splitk</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ck_decoder</span><span class="p">,</span> <span class="n">ck_splitk</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">triton_splitk</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
     <span class="n">AttentionOp</span><span class="p">,</span>
     <span class="n">AttentionOpBase</span><span class="p">,</span>
-    <span class="n">AttentionOpDispatch</span><span class="p">,</span>
     <span class="n">Context</span><span class="p">,</span>
     <span class="n">Gradients</span><span class="p">,</span>
     <span class="n">Inputs</span><span class="p">,</span>
@@ -247,9 +246,7 @@
 
 <span class="n">MemoryEfficientAttentionCutlassOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCutlassFwdFlashBwOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
-<span class="n">MemoryEfficientAttentionDecoderOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">decoder</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionFlashAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
-<span class="n">MemoryEfficientAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">small_k</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">small_k</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCkOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCkDecoderOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck_decoder</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionSplitKCkOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck_splitk</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
@@ -1040,26 +1037,22 @@
 <span class="n">ALL_FW_OPS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
     <span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span> <span class="k">else</span> <span class="n">ck</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
-    <span class="n">small_k</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">triton_splitk</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
 <span class="p">]</span>
 
 <span class="n">ALL_BW_OPS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
     <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span> <span class="k">else</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
     <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
-    <span class="n">small_k</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
 <span class="p">]</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;AttentionBias&quot;</span><span class="p">,</span>
     <span class="s2">&quot;AttentionOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;AttentionOpBase&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;AttentionOpDispatch&quot;</span><span class="p">,</span>
     <span class="s2">&quot;LowerTriangularMask&quot;</span><span class="p">,</span>
     <span class="s2">&quot;MemoryEfficientAttentionCutlassFwdFlashBwOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;MemoryEfficientAttentionCutlassOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;MemoryEfficientAttentionFlashAttentionOp&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;MemoryEfficientAttentionOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;memory_efficient_attention&quot;</span><span class="p">,</span>
     <span class="s2">&quot;MemoryEfficientAttentionCkOp&quot;</span><span class="p">,</span>
     <span class="s2">&quot;MemoryEfficientAttentionCkDecoderOp&quot;</span><span class="p">,</span>
