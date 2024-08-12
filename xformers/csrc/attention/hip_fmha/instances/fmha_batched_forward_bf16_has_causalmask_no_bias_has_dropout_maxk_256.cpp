@@ -11,7 +11,6 @@
 #include <ck_tile/core/numeric/bfloat16.hpp>
 #include "ck_tiled_fmha_batched_forward.h"
 
-
 template void run_batched_forward_causalmask_bias_dropout_dispatch<
     ck_tile::bf16_t,
     true,

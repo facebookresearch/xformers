@@ -11,7 +11,6 @@
 #include <ck_tile/core/numeric/half.hpp>
 #include "ck_tiled_fmha_batched_backward.h"
 
-
 template void run_batched_backward_causalmask_bias_dropout_dispatch<
     ck_tile::fp16_t,
     true,
