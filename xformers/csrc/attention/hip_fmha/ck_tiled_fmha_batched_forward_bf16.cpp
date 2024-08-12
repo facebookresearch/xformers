@@ -11,7 +11,7 @@
 #include "ck_tiled_fmha_batched_forward.h"
 #include "ck_tiled_headdim_switch.h"
 
-#include "instances/fmha_batched_forward_bf16_instances_ref.hpp"
+#include "instances/fmha_batched_forward_bf16_instances_ref.h"
 
 void batched_forward_bf16(BatchedForwardParams& param, hipStream_t stream) {
   const bool has_dropout = (param.dropout_prob > 0.0f);

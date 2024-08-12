@@ -11,7 +11,7 @@
 #include "ck_tiled_fmha_batched_backward.h"
 #include "ck_tiled_headdim_switch.h"
 
-#include "instances/fmha_batched_backward_fp16_instances_ref.hpp"
+#include "instances/fmha_batched_backward_fp16_instances_ref.h"
 
 void batched_backward_fp16(BatchedBackwardParams& param, hipStream_t stream) {
   const bool has_dropout = (param.dropout_prob > 0.0f);

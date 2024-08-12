@@ -10,7 +10,7 @@
 #include "ck_tiled_bool_switch.h"
 #include "ck_tiled_fmha_batched_infer.h"
 
-#include "instances/fmha_batched_infer_bf16_instances_ref.hpp"
+#include "instances/fmha_batched_infer_bf16_instances_ref.h"
 
 void batched_infer_bf16(BatchedForwardParams& param, hipStream_t stream) {
   const bool has_dropout = (param.dropout_prob > 0.0f);
