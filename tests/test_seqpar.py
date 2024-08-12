@@ -73,6 +73,7 @@ def inner_seqpar(
     step: str,
     dims: Tuple[int, ...],
     dtype: torch.dtype,
+    compile: bool,
     seed: int,
 ):
     my_rank = torch.distributed.get_rank()
@@ -86,6 +87,7 @@ def inner_seqpar(
         os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
 
     torch.random.manual_seed(seed)
+    torch._dynamo.reset_code_caches()  # avoids hitting recompilation limit
 
     batch_dims = dims[:-2]
     outer_dim = dims[-2]
@@ -156,9 +158,9 @@ def inner_seqpar(
         my_gradient1 = my_chunk(gradient1, dim=-1)
         my_gradient2 = my_chunk(gradient2, dim=-1)
 
-        my_output1_xf, my_output2_xf = xformers_leading(
-            my_input_xf, my_weight1_xf, my_weight2_xf, fuse=fused, group=subgroup
-        )
+        my_output1_xf, my_output2_xf = torch.compile(
+            xformers_leading, fullgraph=True, disable=not compile
+        )(my_input_xf, my_weight1_xf, my_weight2_xf, fuse=fused, group=subgroup)
         torch.autograd.backward(
             [my_output1_xf, my_output2_xf], [my_gradient1, my_gradient2]
         )
@@ -173,6 +175,12 @@ def inner_seqpar(
         torch.testing.assert_close(my_input_grad_ref, my_input_grad_xf)
         torch.testing.assert_close(my_weight1_grad_ref, my_weight1_grad_xf)
         torch.testing.assert_close(my_weight2_grad_ref, my_weight2_grad_xf)
+
+        torch.library.opcheck(
+            torch.ops.xformers_python.sequence_parallel_leading_matmul_fwd,
+            (my_input_xf.flatten(0, -2), [my_weight1_xf.t(), my_weight2_xf.t()]),
+            {"fuse": fused, "process_group_name": subgroup.group_name},
+        )
 
     elif step == "trailing":
         input_ = torch.testing.make_tensor(
@@ -213,9 +221,9 @@ def inner_seqpar(
         my_weight_xf = my_chunk(weight, dim=1).detach().requires_grad_()
         my_gradient = my_chunk(gradient, dim=0)
 
-        my_output_xf = xformers_trailing(
-            my_input_xf, my_weight_xf, fuse=fused, group=subgroup
-        )
+        my_output_xf = torch.compile(
+            xformers_trailing, fullgraph=True, disable=not compile
+        )(my_input_xf, my_weight_xf, fuse=fused, group=subgroup)
         torch.autograd.backward([my_output_xf], [my_gradient])
 
         my_weight_grad_xf = my_weight_xf.grad
@@ -225,6 +233,12 @@ def inner_seqpar(
         torch.testing.assert_close(my_output_ref, my_output_xf)
         torch.testing.assert_close(my_input_grad_ref, my_input_grad_xf)
         torch.testing.assert_close(my_weight_grad_ref, my_weight_grad_xf)
+
+        torch.library.opcheck(
+            torch.ops.xformers_python.sequence_parallel_trailing_matmul_fwd,
+            (my_input_xf.flatten(0, -2), my_weight_xf.t()),
+            {"fuse": fused, "process_group_name": subgroup.group_name},
+        )
 
 
 @cuda_sm70_only
@@ -259,12 +273,20 @@ def inner_seqpar(
         pytest.param(torch.float32, id="fp32"),
     ],
 )
+@pytest.mark.parametrize(
+    "compile", [pytest.param(False, id="eager"), pytest.param(True, id="compile")]
+)
 def test_seqpar(
     kind: str,
     step: str,
     dims: Tuple[int, ...],
     dtype: torch.dtype,
+    compile: bool,
 ):
+    if compile and dtype is torch.bfloat16 and compute_capability < (8, 0):
+        # https://fb.workplace.com/groups/1075192433118967/posts/1480158559289017
+        pytest.skip("Dynamo misbehaves on V100 or earlier when handling bf16")
+
     world_size = 1 if kind == "singleton" else 2
     seed = random.getrandbits(32)
     launch_subprocesses(
@@ -274,5 +296,6 @@ def test_seqpar(
         step=step,
         dims=dims,
         dtype=dtype,
+        compile=compile,
         seed=seed,
     )
