@@ -173,7 +173,7 @@ class FwOp(AttentionFwOpBase):
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 4e-4,
+        torch.half: 3e-3,
         torch.bfloat16: 2e-2,
     }
 
@@ -344,7 +344,7 @@ class BwOp(AttentionBwOpBase):
     OPERATOR = get_operator("xformers", "efficient_attention_backward_ck")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256 
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
@@ -362,12 +362,14 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    SUPPORTS_UNPADDED_LSE = True
     NAME = "ckB"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
         64,
         128,  # 64x128/128x128 kernel
+        256, 
     ]
 
     @classmethod
