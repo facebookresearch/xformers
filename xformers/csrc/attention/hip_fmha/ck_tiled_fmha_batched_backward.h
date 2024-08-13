@@ -96,7 +96,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
       const bool has_local_attention = (param.window_size > 0) ? true : false;
 
       BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-        constexpr ck_tile::index_t occupancy = 1;
+        constexpr ck_tile::index_t occupancy = -1;
         constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
 
         using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
