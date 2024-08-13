@@ -126,6 +126,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
               kBiasEnum,
               kHasBiasGrad,
               false, // kStoreLSE
+              false, // place-holder for kHasDropout, not used actually
               false, // kDoFp8StaticQuant place-holder
               occupancy>;
 
