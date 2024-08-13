@@ -52,7 +52,7 @@ __host__ __device__
         const char* assertion,
         const char* file,
         unsigned int line,
-        const char* function) throw() __attribute__((__noreturn__));
+        const char* function) noexcept __attribute__((__noreturn__));
 }
 #endif // NDEBUG
 

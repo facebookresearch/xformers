@@ -192,7 +192,7 @@ try:
                     cu_seq_lens_q,
                     cu_seq_lens_k,
                     seqused_k,
-                    block_tables,  # block_table
+                    block_tables,
                     None,  # alibi_slopes
                     max_seq_len_q,
                     max_seq_len_k,
