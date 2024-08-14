@@ -235,6 +235,7 @@
 
 <span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+    <span class="n">VARLEN_BIASES</span><span class="p">,</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
@@ -263,7 +264,7 @@
 <span class="kn">from</span> <span class="nn">.torch_attention_compat</span> <span class="kn">import</span> <span class="n">is_pt_flash_compatible</span>
 
 <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="s2">&quot;0.0.0&quot;</span>
-<span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
 <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">False</span>
 
 <span class="k">try</span><span class="p">:</span>
@@ -273,6 +274,7 @@
 
         <span class="k">if</span> <span class="n">_build_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">_build_metadata</span><span class="o">.</span><span class="n">flash_version</span>
+        <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span> <span class="nn">flash_attn</span>
@@ -281,8 +283,8 @@
             <span class="p">)</span>
 
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
-            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>
-            <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">7</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
+            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
             <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
             <span class="k">if</span> <span class="p">(</span>
                 <span class="n">flash_ver_parsed</span> <span class="o">&lt;</span> <span class="n">FLASH_VER_MIN</span> <span class="ow">or</span> <span class="n">flash_ver_parsed</span> <span class="o">&gt;</span> <span class="n">FLASH_VER_LAST</span>
@@ -292,14 +294,11 @@
                     <span class="sa">f</span><span class="s2">&quot;&lt;=</span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">FLASH_VER_LAST</span><span class="p">])</span><span class="si">}</span><span class="s2"> &quot;</span>
                     <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">.&quot;</span>
                 <span class="p">)</span>
-
-            <span class="c1"># TODO: remove this when unpadded LSE get upstreamed to FA.</span>
-            <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="s2">&quot;arg19&quot;</span> <span class="ow">in</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="o">.</span><span class="vm">__doc__</span>
-            <span class="p">)</span>
+            <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
         <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
             <span class="k">assert</span> <span class="n">is_pt_flash_compatible</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">_get_flash_version</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+            <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
             <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="c1"># create library so that flash-attn goes through the PyTorch Dispatcher</span>
@@ -310,7 +309,7 @@
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, &quot;</span>
         <span class="s2">&quot;bool is_causal, int window_left, &quot;</span>
-        <span class="s2">&quot;int window_right, bool return_softmax, Tensor? block_tables, bool unpadded_lse) -&gt; (Tensor, Tensor, Tensor)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;int window_right, bool return_softmax, Tensor? block_tables) -&gt; (Tensor, Tensor, Tensor)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
@@ -320,7 +319,7 @@
         <span class="s2">&quot;Tensor cu_seqlens_q, Tensor cu_seqlens_k, &quot;</span>
         <span class="s2">&quot;int max_seqlen_q, int max_seqlen_k, &quot;</span>
         <span class="s2">&quot;float p, float softmax_scale, bool is_causal, &quot;</span>
-        <span class="s2">&quot;int window_left, int window_right, Tensor rng_state, bool unpadded_lse) -&gt; (Tensor dq, Tensor dk, Tensor dv)&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;int window_left, int window_right, Tensor rng_state) -&gt; (Tensor dq, Tensor dk, Tensor dv)&quot;</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">impl</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
@@ -340,8 +339,8 @@
         <span class="n">window_right</span><span class="p">,</span>
         <span class="n">return_softmax</span><span class="p">,</span>
         <span class="n">block_tables</span><span class="p">,</span>
-        <span class="n">unpadded_lse</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="n">softcap</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span><span class="p">:</span>
             <span class="p">(</span>
                 <span class="n">attention</span><span class="p">,</span>
@@ -392,12 +391,11 @@
                     <span class="n">is_causal</span><span class="p">,</span>
                     <span class="n">window_left</span><span class="p">,</span>  <span class="c1"># window_size_left</span>
                     <span class="n">window_right</span><span class="p">,</span>  <span class="c1"># window_size_right</span>
+                    <span class="n">softcap</span><span class="p">,</span>
                     <span class="n">return_softmax</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># rng</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># TODO: remove this when unpadded LSE get upstreamed to FA.</span>
-                <span class="n">unpadded_lse_arg</span> <span class="o">=</span> <span class="p">[</span><span class="n">unpadded_lse</span><span class="p">]</span> <span class="k">if</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span> <span class="k">else</span> <span class="p">[]</span>
                 <span class="p">(</span>
                     <span class="n">out</span><span class="p">,</span>
                     <span class="n">q_padded</span><span class="p">,</span>
@@ -415,6 +413,7 @@
                     <span class="n">cu_seq_lens_q</span><span class="p">,</span>
                     <span class="n">cu_seq_lens_k</span><span class="p">,</span>
                     <span class="n">seqused_k</span><span class="p">,</span>
+                    <span class="kc">None</span><span class="p">,</span>  <span class="c1"># leftpad_k_</span>
                     <span class="n">block_tables</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
                     <span class="n">max_seq_len_q</span><span class="p">,</span>
@@ -425,9 +424,9 @@
                     <span class="n">is_causal</span><span class="p">,</span>
                     <span class="n">window_left</span><span class="p">,</span>
                     <span class="n">window_right</span><span class="p">,</span>
+                    <span class="n">softcap</span><span class="p">,</span>
                     <span class="n">return_softmax</span><span class="p">,</span>
-                    <span class="kc">None</span><span class="p">,</span>
-                    <span class="o">*</span><span class="n">unpadded_lse_arg</span><span class="p">,</span>
+                    <span class="kc">None</span><span class="p">,</span>  <span class="c1"># gen</span>
                 <span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
 
@@ -448,17 +447,18 @@
         <span class="n">window_right</span><span class="p">,</span>
         <span class="n">return_softmax</span><span class="p">,</span>
         <span class="n">block_tables</span><span class="p">,</span>
-        <span class="n">unpadded_lse</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
         <span class="k">if</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span>
-            <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">H</span><span class="p">,</span> <span class="n">B</span> <span class="o">*</span> <span class="n">M</span><span class="p">]</span> <span class="k">if</span> <span class="n">unpadded_lse</span> <span class="k">else</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">]</span>
+            <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">assert</span> <span class="n">unpadded_lse</span> <span class="ow">is</span> <span class="kc">False</span>
             <span class="n">M</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span>
             <span class="n">B</span> <span class="o">=</span> <span class="n">cu_seq_lens_q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
-            <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">max_seq_len_q</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span>
+                <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">max_seq_len_q</span><span class="p">]</span>
         <span class="n">softmax_lse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">lse_shape</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="mi">2</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
@@ -482,9 +482,10 @@
         <span class="n">window_left</span><span class="p">,</span>
         <span class="n">window_right</span><span class="p">,</span>
         <span class="n">rng_state</span><span class="p">,</span>
-        <span class="n">unpadded_lse</span><span class="p">,</span>
     <span class="p">):</span>
+        <span class="n">softcap</span> <span class="o">=</span> <span class="mf">0.0</span>
         <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">softcap</span> <span class="o">==</span> <span class="mf">0.0</span>
             <span class="k">if</span> <span class="n">rng_state</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="n">philox_seed</span> <span class="o">=</span> <span class="n">rng_state</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
                 <span class="n">philox_offset</span> <span class="o">=</span> <span class="n">rng_state</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
@@ -529,13 +530,12 @@
                     <span class="n">is_causal</span><span class="p">,</span>
                     <span class="n">window_left</span><span class="p">,</span>
                     <span class="n">window_right</span><span class="p">,</span>
+                    <span class="n">softcap</span><span class="p">,</span>
                     <span class="kc">False</span><span class="p">,</span>  <span class="c1"># deterministic</span>
                     <span class="kc">None</span><span class="p">,</span>
                     <span class="n">rng_state</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="c1"># TODO: remove this when unpadded LSE get upstreamed to FA.</span>
-                <span class="n">unpadded_lse_arg</span> <span class="o">=</span> <span class="p">[</span><span class="n">unpadded_lse</span><span class="p">]</span> <span class="k">if</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span> <span class="k">else</span> <span class="p">[]</span>
                 <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_bwd</span><span class="p">(</span>
                     <span class="n">grad</span><span class="p">,</span>
                     <span class="n">query</span><span class="p">,</span>
@@ -557,10 +557,10 @@
                     <span class="n">is_causal</span><span class="p">,</span>
                     <span class="n">window_left</span><span class="p">,</span>
                     <span class="n">window_right</span><span class="p">,</span>
+                    <span class="n">softcap</span><span class="p">,</span>
                     <span class="kc">False</span><span class="p">,</span>  <span class="c1"># deterministic</span>
                     <span class="kc">None</span><span class="p">,</span>
                     <span class="n">rng_state</span><span class="p">,</span>
-                    <span class="o">*</span><span class="n">unpadded_lse_arg</span><span class="p">,</span>
                 <span class="p">)</span>
         <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span>
 
@@ -781,29 +781,24 @@
     <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">original_query_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
-    <span class="n">unpadded_lse</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span><span class="p">:</span>
-        <span class="c1"># (B, H, M)</span>
+    <span class="c1"># Easy case: no varlen</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">original_query_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
+            <span class="c1"># [B, GH, M] =&gt; [B, G, H, M]</span>
+            <span class="k">return</span> <span class="n">lse</span><span class="o">.</span><span class="n">unflatten</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">])</span>
         <span class="k">return</span> <span class="n">lse</span>
-    <span class="k">if</span> <span class="n">unpadded_lse</span> <span class="ow">and</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span><span class="p">:</span>
+
+    <span class="c1"># Already packed: just bring back the batch dimension</span>
+    <span class="k">if</span> <span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">original_query_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
             <span class="c1"># (1, G, H, total_q)</span>
             <span class="k">return</span> <span class="n">lse</span><span class="o">.</span><span class="n">unflatten</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">])</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
         <span class="c1"># (1, H, total_q)</span>
         <span class="k">return</span> <span class="n">lse</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-        <span class="p">(</span>
-            <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-            <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-            <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-        <span class="p">),</span>
-    <span class="p">):</span>
-        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">original_query_shape</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
-            <span class="c1"># [B, GH, M] =&gt; [B, G, H, M]</span>
-            <span class="k">return</span> <span class="n">lse</span><span class="o">.</span><span class="n">unflatten</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="mi">4</span><span class="p">])</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span><span class="p">:</span>
+        <span class="c1"># (B, H, M)</span>
         <span class="k">return</span> <span class="n">lse</span>
 
     <span class="c1"># reshape from (B, G*H, max_seqlen) to (1, G*H, B*max_seqlen)</span>
@@ -854,11 +849,8 @@
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_PARTIAL</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;flshattF@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">-pt&quot;</span>
-        <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span>
-        <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;flshattF@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
-    <span class="p">)</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="n">VARLEN_LSE_PACKED</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;fa2F@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">-pt&quot;</span> <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;fa2F@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
     <span class="nd">@classmethod</span>
@@ -872,15 +864,8 @@
 
         <span class="k">if</span> <span class="p">(</span>
             <span class="n">d</span><span class="o">.</span><span class="n">is_partial</span>
-            <span class="ow">and</span> <span class="ow">not</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span>
-            <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-                <span class="p">(</span>
-                    <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                    <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                    <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                <span class="p">),</span>
-            <span class="p">)</span>
+            <span class="ow">and</span> <span class="ow">not</span> <span class="n">VARLEN_LSE_PACKED</span>
+            <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">)</span>
         <span class="p">):</span>
             <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span>
             <span class="k">if</span> <span class="n">q_seqinfo</span><span class="o">.</span><span class="n">min_seqlen</span> <span class="o">!=</span> <span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span><span class="p">:</span>
@@ -908,43 +893,8 @@
             <span class="n">max_seqlen_k</span><span class="p">,</span>
             <span class="n">seqused_k</span><span class="p">,</span>
         <span class="p">)</span> <span class="o">=</span> <span class="n">_convert_input_format</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">supports_mqa</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-        <span class="c1"># partial attention never pads LSE</span>
-        <span class="n">unpadded_lse</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">needs_gradient</span>
-            <span class="ow">and</span> <span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">UNPADDED_LSE</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
-                <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-                <span class="p">(</span>
-                    <span class="n">BlockDiagonalMask</span><span class="p">,</span>
-                    <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                    <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                    <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                <span class="p">),</span>
-            <span class="p">)</span>
-        <span class="p">)</span>
+
         <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">is_hetergenous</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="nb">isinstance</span><span class="p">(</span>
-                    <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-                    <span class="p">(</span>
-                        <span class="n">BlockDiagonalMask</span><span class="p">,</span>
-                        <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                        <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                        <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                    <span class="p">),</span>
-                <span class="p">)</span>
-                <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">min_seqlen</span>
-                <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">max_seqlen</span>
-            <span class="p">)</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">unpadded_lse</span>
-                <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span>
-                <span class="ow">and</span> <span class="n">is_hetergenous</span>
-                <span class="ow">and</span> <span class="ow">not</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span>
-            <span class="p">):</span>
-                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                    <span class="s2">&quot;Partial attention with heterogeneous queries is not supported.&quot;</span>
-                <span class="p">)</span>
             <span class="n">win_left</span><span class="p">,</span> <span class="n">win_right</span> <span class="o">=</span> <span class="n">_window_size</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span>
             <span class="n">block_tables</span> <span class="o">=</span> <span class="p">(</span>
                 <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">block_tables</span>
@@ -967,7 +917,6 @@
                 <span class="n">window_right</span><span class="o">=</span><span class="n">win_right</span><span class="p">,</span>
                 <span class="n">return_softmax</span><span class="o">=</span><span class="n">return_softmax</span><span class="p">,</span>
                 <span class="n">block_tables</span><span class="o">=</span><span class="n">block_tables</span><span class="p">,</span>
-                <span class="n">unpadded_lse</span><span class="o">=</span><span class="n">unpadded_lse</span><span class="p">,</span>
             <span class="p">)</span>
             <span class="n">out</span> <span class="o">=</span> <span class="n">out</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">out_shape</span><span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -976,7 +925,7 @@
             <span class="n">softmax_lse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
                 <span class="p">(</span>
                     <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-                    <span class="k">if</span> <span class="n">unpadded_lse</span>
+                    <span class="k">if</span> <span class="n">VARLEN_LSE_PACKED</span> <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">)</span>
                     <span class="k">else</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
                 <span class="p">),</span>
                 <span class="n">device</span><span class="o">=</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
@@ -986,7 +935,7 @@
             <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="kc">None</span>
         <span class="n">ctx</span> <span class="o">=</span> <span class="n">Context</span><span class="p">(</span>
             <span class="n">out</span><span class="o">=</span><span class="n">out</span><span class="p">,</span>
-            <span class="n">lse</span><span class="o">=</span><span class="n">_post_process_lse</span><span class="p">(</span><span class="n">softmax_lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">,</span> <span class="n">unpadded_lse</span><span class="p">),</span>
+            <span class="n">lse</span><span class="o">=</span><span class="n">_post_process_lse</span><span class="p">(</span><span class="n">softmax_lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">original_query_shape</span><span class="p">),</span>
         <span class="p">)</span>
         <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
             <span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="o">=</span> <span class="n">BwOp</span>
@@ -1045,12 +994,8 @@
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
     <span class="n">IS_DETERMINISTIC</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">False</span>  <span class="c1"># NOTE: Don&#39;t forget to update fmha doc when changing this!</span>
-    <span class="n">SUPPORTS_UNPADDED_LSE</span> <span class="o">=</span> <span class="n">FLASH_SUPPORTS_UNPADDED_LSE</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="sa">f</span><span class="s2">&quot;flshattB@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">-pt&quot;</span>
-        <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span>
-        <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;flshattB@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
-    <span class="p">)</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="n">VARLEN_LSE_PACKED</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;fa2B@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">-pt&quot;</span> <span class="k">if</span> <span class="n">_USE_PT_FLASH_ATTN</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;fa2B@</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
     <span class="n">MAX_HEADDIM_DROPOUT_SM8x</span> <span class="o">=</span> <span class="mi">224</span>
@@ -1089,11 +1034,13 @@
         <span class="c1"># assert ctx.lse.is_contiguous()</span>
         <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
         <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span>
-        <span class="n">unpadded_lse</span> <span class="o">=</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>  <span class="c1"># LSE ~ [H, total_q_len]</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">unpadded_lse</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">)</span> <span class="ow">and</span> <span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx_lse</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># NOTE: cutlass pads the last dimension, we need to slice it</span>
             <span class="k">assert</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="n">max_seqlen_q</span>
-            <span class="k">if</span> <span class="n">max_seqlen_q</span> <span class="o">!=</span> <span class="n">ctx_lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]:</span>
-                <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx_lse</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">max_seqlen_q</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
+            <span class="n">ctx_lse</span> <span class="o">=</span> <span class="n">ctx_lse</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:</span><span class="n">max_seqlen_q</span><span class="p">]</span><span class="o">.</span><span class="n">contiguous</span><span class="p">()</span>
         <span class="n">kernel_out_shape</span> <span class="o">=</span> <span class="p">[</span>
             <span class="o">*</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span>
@@ -1121,7 +1068,6 @@
                     <span class="n">window_left</span><span class="o">=</span><span class="n">win_left</span><span class="p">,</span>
                     <span class="n">window_right</span><span class="o">=</span><span class="n">win_right</span><span class="p">,</span>
                     <span class="n">rng_state</span><span class="o">=</span><span class="n">ctx</span><span class="o">.</span><span class="n">rng_state</span> <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span> <span class="o">&gt;</span> <span class="mf">0.0</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
-                    <span class="n">unpadded_lse</span><span class="o">=</span><span class="n">unpadded_lse</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
@@ -1169,11 +1115,6 @@
             <span class="n">seqstart_k</span><span class="o">=</span><span class="n">cu_seq_lens_k</span><span class="p">,</span>
             <span class="n">seqstart_q</span><span class="o">=</span><span class="n">cu_seq_lens_q</span><span class="p">,</span>
         <span class="p">)</span></div>
-
-
-<span class="k">class</span> <span class="nc">FlashFwUnpaddedLSE</span><span class="p">(</span><span class="n">FwOp</span><span class="p">):</span>
-    <span class="n">UNPADDED_LSE</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">NAME</span> <span class="o">+</span> <span class="s2">&quot;_unpadded_lse&quot;</span>
 </pre></div>
 
               </article>

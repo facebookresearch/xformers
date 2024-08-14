@@ -422,6 +422,7 @@
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassF-pt&quot;</span> <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span> <span class="k">else</span> <span class="s2">&quot;cutlassF&quot;</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
@@ -611,6 +612,7 @@
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassB-pt&quot;</span> <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span> <span class="k">else</span> <span class="s2">&quot;cutlassB&quot;</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>

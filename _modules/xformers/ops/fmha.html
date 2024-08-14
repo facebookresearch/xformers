@@ -228,10 +228,8 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span> <span class="k">as</span> <span class="n">_attn_bias</span>
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ck_decoder</span><span class="p">,</span> <span class="n">ck_splitk</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">triton_splitk</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
+<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ck_decoder</span><span class="p">,</span> <span class="n">ck_splitk</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">triton_splitk</span>
+<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">VARLEN_BIASES</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">,</span> <span class="n">LowerTriangularMask</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
@@ -318,14 +316,29 @@
                     <span class="sa">f</span><span class="s2">&quot;can only run with op_bw=</span><span class="si">{</span><span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">. Please set op_bw=None.&quot;</span>
                 <span class="p">)</span>
             <span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_ctx</span><span class="o">.</span><span class="n">op_bw</span>
+        <span class="k">if</span> <span class="p">(</span>
+            <span class="n">op_bw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+            <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">)</span>
+            <span class="ow">and</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">2</span>
+            <span class="ow">and</span> <span class="n">op_bw</span><span class="o">.</span><span class="n">VARLEN_LSE_PACKED</span> <span class="o">!=</span> <span class="n">op_fw</span><span class="o">.</span><span class="n">VARLEN_LSE_PACKED</span>
+        <span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Specified op_bw=</span><span class="si">{</span><span class="n">op_bw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> is not compatible with the &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;op_fw=</span><span class="si">{</span><span class="n">op_fw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">, because they use different format of logsumexp. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;NOTE: This is new with xFormers 0.0.28&quot;</span>
+            <span class="p">)</span>
         <span class="k">if</span> <span class="n">op_bw</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="p">(</span>
             <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">requires_grad</span> <span class="ow">or</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">requires_grad</span>
         <span class="p">):</span>
-            <span class="n">is_valid_unpadded_lse</span> <span class="o">=</span> <span class="n">_valid_unpadded_lse_shape</span><span class="p">(</span><span class="n">op_ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">)</span>
+            <span class="n">varlen_lse_packed</span> <span class="o">=</span> <span class="n">_detect_lse_packed_or_raise</span><span class="p">(</span><span class="n">op_ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">varlen_lse_packed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">op_fw</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="p">(</span>
+                    <span class="n">op_fw</span><span class="o">.</span><span class="n">VARLEN_LSE_PACKED</span> <span class="o">==</span> <span class="n">varlen_lse_packed</span>
+                <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">op_fw</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2">: wrong value for `VARLEN_LSE_PACKED` ?&quot;</span>
             <span class="c1"># NOTE: We need to check tensor strides to decide which operator we run in the BW pass.</span>
             <span class="c1"># Unfortunately, PyTorch only allows to call this function during the FW pass, so</span>
             <span class="c1"># we decide the operator to use now.</span>
-            <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">is_valid_unpadded_lse</span><span class="p">)</span>
+            <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">varlen_lse_packed</span><span class="o">=</span><span class="n">varlen_lse_packed</span><span class="p">)</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">op_fw</span> <span class="o">=</span> <span class="n">op_fw</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">op_bw</span> <span class="o">=</span> <span class="n">op_bw</span>
         <span class="n">ctx</span><span class="o">.</span><span class="n">p</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">p</span>
@@ -651,47 +664,43 @@
     <span class="k">return</span> <span class="p">(</span><span class="n">out</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">output_shape</span><span class="p">),</span> <span class="n">out</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
 
 
-<span class="k">def</span> <span class="nf">_valid_padded_lse_shape</span><span class="p">(</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
-    <span class="n">invalid_shape</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="mi">3</span>
-        <span class="c1"># Dim 0</span>
-        <span class="ow">or</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
-        <span class="ow">or</span> <span class="p">(</span>
-            <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
-        <span class="p">)</span>
-        <span class="c1"># Dim 1</span>
-        <span class="ow">or</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-        <span class="c1"># Dim 2</span>
-        <span class="ow">or</span> <span class="p">(</span>
-            <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalMask</span><span class="p">)</span>
-            <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-        <span class="p">)</span>
+<span class="k">def</span> <span class="nf">_detect_lse_packed_or_raise</span><span class="p">(</span><span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Detects the LSE format if we&#39;re in a varlen case.</span>
+<span class="sd">    Returns `None` if the format is not relevant (eg not varlen)</span>
+<span class="sd">    Raises an exception if the `lse` has the wrong shape</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">shape_mismatch_err</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;Input tensors have incompatible shapes.</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;  lse.shape    : </span><span class="si">{</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;  query.shape  : </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;  attn_bias    : </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
     <span class="p">)</span>
-    <span class="k">return</span> <span class="ow">not</span> <span class="n">invalid_shape</span>
-
-
-<span class="k">def</span> <span class="nf">_valid_unpadded_lse_shape</span><span class="p">(</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">):</span>
-    <span class="k">return</span> <span class="p">(</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span>
-        <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">2</span>
-        <span class="c1"># Dim 0</span>
-        <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
-        <span class="c1"># Dim 1</span>
-        <span class="ow">and</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="ow">and</span> <span class="nb">isinstance</span><span class="p">(</span>
-            <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-            <span class="p">(</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-            <span class="p">),</span>
-        <span class="p">)</span>
-    <span class="p">)</span>
+    <span class="c1"># 1. Check ndim &amp; head dimensions</span>
+    <span class="c1"># In any case, LSE should be [*, *GH]</span>
+    <span class="k">if</span> <span class="n">lse</span><span class="o">.</span><span class="n">ndim</span> <span class="o">!=</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">shape_mismatch_err</span><span class="p">)</span>
+    <span class="n">lse_bm</span> <span class="o">=</span> <span class="p">[</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="n">lse_packed_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
+    <span class="n">lse_packed</span> <span class="o">=</span> <span class="n">lse_bm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">lse_packed_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">and</span> <span class="n">lse_bm</span> <span class="o">&gt;=</span> <span class="n">lse_packed_shape</span>
+    <span class="c1"># 2. Check correctness for varlen biases with query.shape = [1, M, *GH, K]</span>
+    <span class="c1"># Either [1, *GH, M] (packed)</span>
+    <span class="c1"># Or     [num_seq, *GH, Mq] .. with `Mq &gt;= max_q` (padded)</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">VARLEN_BIASES</span><span class="p">):</span>
+        <span class="n">si</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span>
+        <span class="n">lse_padded_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">si</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span> <span class="n">si</span><span class="o">.</span><span class="n">max_seqlen</span><span class="p">]</span>
+        <span class="n">lse_padded</span> <span class="o">=</span> <span class="n">lse_bm</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">lse_padded_shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">and</span> <span class="n">lse_bm</span> <span class="o">&gt;=</span> <span class="n">lse_padded_shape</span>
+        <span class="k">if</span> <span class="n">lse_packed</span> <span class="ow">and</span> <span class="n">lse_padded</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">elif</span> <span class="n">lse_packed</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">elif</span> <span class="n">lse_padded</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">shape_mismatch_err</span><span class="p">)</span>
+    <span class="c1"># 3. For non-varlen, shape must be [B, *GH] with query.shape=[B, M, *GH, K]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">lse_packed</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="n">shape_mismatch_err</span><span class="p">)</span>
+    <span class="k">return</span> <span class="kc">None</span>
 
 
 <span class="k">def</span> <span class="nf">_memory_efficient_attention_backward</span><span class="p">(</span>
@@ -715,27 +724,22 @@
         <span class="n">x</span><span class="o">.</span><span class="n">shape</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
     <span class="p">)</span>
     <span class="n">inp</span><span class="o">.</span><span class="n">normalize_bmhk</span><span class="p">()</span>
-    <span class="c1"># LSE has shape [B, H, M] or [H, total_q_len], while query has shape [B, M, H, K] or [1, total_q_len, H, K]</span>
-    <span class="n">support_unpadded_lse</span> <span class="o">=</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">op</span><span class="o">.</span><span class="n">SUPPORTS_UNPADDED_LSE</span>
-    <span class="n">is_valid_unpadded_lse</span> <span class="o">=</span> <span class="n">support_unpadded_lse</span> <span class="ow">and</span> <span class="n">_valid_unpadded_lse_shape</span><span class="p">(</span>
-        <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span>
-    <span class="p">)</span>
-    <span class="n">is_valid_padded_lse</span> <span class="o">=</span> <span class="n">_valid_padded_lse_shape</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">)</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">is_valid_padded_lse</span> <span class="ow">or</span> <span class="n">is_valid_unpadded_lse</span><span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;Input tensors have incompatible shapes.&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;lse.shape    : </span><span class="si">{</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> </span><span class="se">\n</span><span class="s2">&quot;</span>
-            <span class="sa">f</span><span class="s2">&quot;query.shape  : </span><span class="si">{</span><span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2">&quot;</span>
-        <span class="p">)</span>
+    <span class="n">varlen_lse_packed</span> <span class="o">=</span> <span class="n">_detect_lse_packed_or_raise</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">lse</span><span class="p">,</span> <span class="n">inp</span><span class="p">)</span>
     <span class="n">grad</span> <span class="o">=</span> <span class="n">bmk2bmhk</span><span class="p">(</span><span class="n">grad</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
     <span class="n">ctx</span><span class="o">.</span><span class="n">out</span> <span class="o">=</span> <span class="n">bmk2bmhk</span><span class="p">(</span><span class="n">ctx</span><span class="o">.</span><span class="n">out</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
 
     <span class="k">if</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">is_valid_unpadded_lse</span><span class="p">)</span>
+        <span class="n">op</span> <span class="o">=</span> <span class="n">_dispatch_bw</span><span class="p">(</span><span class="n">inp</span><span class="p">,</span> <span class="n">varlen_lse_packed</span><span class="o">=</span><span class="n">varlen_lse_packed</span><span class="p">)</span>
     <span class="k">elif</span> <span class="ow">not</span> <span class="n">_skip_op_checks</span><span class="p">:</span>
         <span class="n">_ensure_op_supports_or_raise</span><span class="p">(</span>
             <span class="ne">ValueError</span><span class="p">,</span> <span class="s2">&quot;memory_efficient_attention_backward&quot;</span><span class="p">,</span> <span class="n">op</span><span class="p">,</span> <span class="n">inp</span>
         <span class="p">)</span>
+        <span class="k">if</span> <span class="n">varlen_lse_packed</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">varlen_lse_packed</span> <span class="o">!=</span> <span class="n">op</span><span class="o">.</span><span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;Wrong LSE format for </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> in variable seqlen case. &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;Double-check that the BW operator </span><span class="si">{</span><span class="n">op</span><span class="o">.</span><span class="n">NAME</span><span class="si">}</span><span class="s2"> is compatible &quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;with the operator used in the FW pass.&quot;</span>
+            <span class="p">)</span>
 
     <span class="n">grads</span> <span class="o">=</span> <span class="n">op</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">inp</span><span class="p">,</span> <span class="n">grad</span><span class="p">)</span>
     <span class="n">grads</span><span class="o">.</span><span class="n">dq</span> <span class="o">=</span> <span class="n">grads</span><span class="o">.</span><span class="n">dq</span><span class="o">.</span><span class="n">reshape</span><span class="p">(</span><span class="n">shape_dq</span><span class="p">)</span>
@@ -769,25 +773,6 @@
     <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;dropout is not supported.&quot;</span><span class="p">)</span>
     <span class="n">fwop</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">)</span> <span class="k">else</span> <span class="n">op</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span>
-        <span class="nb">isinstance</span><span class="p">(</span>
-            <span class="n">attn_bias</span><span class="p">,</span>
-            <span class="p">(</span>
-                <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
-                <span class="n">_attn_bias</span><span class="o">.</span><span class="n">LowerTriangularMask</span><span class="p">,</span>
-            <span class="p">),</span>
-        <span class="p">)</span>
-        <span class="ow">or</span> <span class="n">fwop</span> <span class="ow">is</span> <span class="kc">None</span>
-        <span class="ow">or</span> <span class="n">fwop</span><span class="o">.</span><span class="n">UNPADDED_LSE</span>
-    <span class="p">):</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">)</span><span class="si">}</span><span class="s2"> is not supported in memory_efficient_attention_partial.&quot;</span>
-        <span class="p">)</span>
     <span class="n">inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
         <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>

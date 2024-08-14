@@ -528,6 +528,11 @@
     <span class="n">SUPPORTS_BMGHK</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">NAME</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">OPERATOR_CATEGORY</span> <span class="o">=</span> <span class="s2">&quot;memory_efficient_attention&quot;</span>
+    <span class="c1"># Format for the LSE computed in the FW pass, and accepted in the BW pass,</span>
+    <span class="c1"># for BlockDiagonalMask and children.</span>
+    <span class="c1"># When using a varlen bias, both the FW and BW operators must have the</span>
+    <span class="c1"># same value for `VARLEN_LSE_PACKED`</span>
+    <span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="n">_TEST_BATCH_SIZES</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">300</span><span class="p">]</span>
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">32</span><span class="p">,</span> <span class="mi">128</span><span class="p">]</span>
@@ -624,7 +629,6 @@
         <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">4e-4</span><span class="p">,</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">5e-3</span><span class="p">,</span>
     <span class="p">}</span>
-    <span class="n">UNPADDED_LSE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span>
@@ -694,7 +698,6 @@
     <span class="p">}</span>
     <span class="n">SUPPORTS_ATTN_BIAS_GRAD</span> <span class="o">=</span> <span class="kc">False</span>
     <span class="n">SUPPORTS_PARTIAL</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="n">SUPPORTS_UNPADDED_LSE</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
