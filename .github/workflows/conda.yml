@@ -94,7 +94,8 @@ jobs:
           VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
-          git config --global --add safe.directory "*"
+          git config --global --add safe.directory "$(pwd)"
+          git rev-parse --short HEAD
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}

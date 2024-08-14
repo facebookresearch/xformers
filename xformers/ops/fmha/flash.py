@@ -51,6 +51,7 @@ try:
 
         if _build_metadata is not None:
             FLASH_VERSION = _build_metadata.flash_version
+        VARLEN_LSE_PACKED = True
     except ImportError:
         try:
             import flash_attn
@@ -59,8 +60,8 @@ try:
             )
 
             FLASH_VERSION = flash_attn.__version__
-            FLASH_VER_MIN = (2, 5, 7)
-            FLASH_VER_LAST = (2, 5, 7)  # last supported, inclusive
+            FLASH_VER_MIN = (2, 6, 3)
+            FLASH_VER_LAST = (2, 6, 3)  # last supported, inclusive
             flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
             if (
                 flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
@@ -70,12 +71,11 @@ try:
                     f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
                     f"but got {FLASH_VERSION}."
                 )
-
-            # TODO: remove this when unpadded LSE get upstreamed to FA.
-            VARLEN_LSE_PACKED = "arg19" in _C_flashattention.varlen_fwd.__doc__
+            VARLEN_LSE_PACKED = True
         except ImportError:
             assert is_pt_flash_compatible(force=True)
             FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
+            VARLEN_LSE_PACKED = False
             _USE_PT_FLASH_ATTN = True
 
     # create library so that flash-attn goes through the PyTorch Dispatcher
@@ -117,6 +117,7 @@ try:
         return_softmax,
         block_tables,
     ):
+        softcap = 0.0
         if _USE_PT_FLASH_ATTN:
             (
                 attention,
@@ -167,12 +168,11 @@ try:
                     is_causal,
                     window_left,  # window_size_left
                     window_right,  # window_size_right
+                    softcap,
                     return_softmax,
                     None,  # rng
                 )
             else:
-                # TODO: remove this when unpadded LSE get upstreamed to FA.
-                unpadded_lse_arg = [True] if VARLEN_LSE_PACKED else []
                 (
                     out,
                     q_padded,
@@ -190,6 +190,7 @@ try:
                     cu_seq_lens_q,
                     cu_seq_lens_k,
                     seqused_k,
+                    None,  # leftpad_k_
                     block_tables,
                     None,  # alibi_slopes
                     max_seq_len_q,
@@ -200,9 +201,9 @@ try:
                     is_causal,
                     window_left,
                     window_right,
+                    softcap,
                     return_softmax,
-                    None,
-                    *unpadded_lse_arg,
+                    None,  # gen
                 )
         return out, softmax_lse, rng_state
 
@@ -259,7 +260,9 @@ try:
         window_right,
         rng_state,
     ):
+        softcap = 0.0
         if _USE_PT_FLASH_ATTN:
+            assert softcap == 0.0
             if rng_state is not None:
                 philox_seed = rng_state[0]
                 philox_offset = rng_state[1]
@@ -304,13 +307,12 @@ try:
                     is_causal,
                     window_left,
                     window_right,
+                    softcap,
                     False,  # deterministic
                     None,
                     rng_state,
                 )
             else:
-                # TODO: remove this when unpadded LSE get upstreamed to FA.
-                unpadded_lse_arg = [True] if VARLEN_LSE_PACKED else []
                 _C_flashattention.varlen_bwd(
                     grad,
                     query,
@@ -332,10 +334,10 @@ try:
                     is_causal,
                     window_left,
                     window_right,
+                    softcap,
                     False,  # deterministic
                     None,
                     rng_state,
-                    *unpadded_lse_arg,
                 )
         return dq, dk, dv
 

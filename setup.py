@@ -39,8 +39,10 @@ module_name = "torch_attention_compat"
 
 # Load the module
 spec = importlib.util.spec_from_file_location(module_name, pt_attn_compat_file_path)
+assert spec is not None
 attn_compat_module = importlib.util.module_from_spec(spec)
 sys.modules[module_name] = attn_compat_module
+assert spec.loader is not None
 spec.loader.exec_module(attn_compat_module)
 
 
@@ -218,6 +220,8 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
     sources = ["csrc/flash_attn/flash_api.cpp"]
     for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
+        if "hdim224" in Path(f).name:
+            continue
         sources.append(str(Path(f).relative_to(flash_root)))
     common_extra_compile_args = ["-DFLASHATTENTION_DISABLE_ALIBI"]
     return [
