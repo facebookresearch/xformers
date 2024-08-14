@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improved
 - Profiler: Fix computation of FLOPS for the attention when using xFormers
 - Profiler: Fix MFU/HFU calculation when multiple dtypes are used
+- fMHA/splitK: Fixed `nan` in the output when using a `torch.Tensor` bias where a lot of consecutive keys are masked with `-inf`
 ### Removed
 - fMHA: Removed `decoder` and `small_k` backends
 

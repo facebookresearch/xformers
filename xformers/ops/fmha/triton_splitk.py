@@ -476,6 +476,11 @@ if TYPE_CHECKING or _is_triton_available():
             m_i_new = tl.maximum(m_i, tl.max(qk, 1))
             alpha = tl.math.exp2(m_i - m_i_new)
             p = tl.math.exp2(qk - m_i_new[:, None])
+            if HAS_ADDITIVE_BIAS:
+                # NOTE: It's possible that an entire block is masked out.
+                # if this is the case, `m_i_new=nan` and everything becomes nan
+                alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
+                p = tl.where(m_i_new[:, None] == float("-inf"), 0, p)
             if IS_CAUSAL:
                 # -- apply the causal mask --
                 p = tl.where(diag_idx_shifted >= start_n, p, 0)
