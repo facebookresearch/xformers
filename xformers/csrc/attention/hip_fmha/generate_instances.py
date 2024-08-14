@@ -6,7 +6,9 @@
 #
 
 import os
+import sys
 from pathlib import Path
+from typing import List
 
 FMHA_COPYRIGHT_HEADER = """
 /*
@@ -121,13 +123,13 @@ MODE_NAME_MAP = {
 }
 
 
-def create_infer_instances(instance_dir: Path) -> None:
+def create_infer_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
                 for has_bias in [True, False]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128, 256]:
+                        for max_k in headdims:
                             fname = FMHA_INFER_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -150,10 +152,10 @@ def create_infer_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + infer_instance_inc + "\n" + infer_instance)
+                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + infer_instance_inc + infer_instance)
 
 
-def create_infer_instances_ref(instance_dir: Path) -> None:
+def create_infer_instances_ref(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             ref_fname = FMHA_INSTANCE_REF_FNAME.format(
@@ -168,7 +170,7 @@ def create_infer_instances_ref(instance_dir: Path) -> None:
             with open(ref_fname, 'a') as file:
                 file.write(FMHA_COPYRIGHT_HEADER)
                 file.write(infer_instance_inc)
-                for max_k in [32, 64, 128, 256]:
+                for max_k in headdims:
                     for has_bias in [True, False]:
                         for has_dropout in [True, False]:
                             for has_causalmask in [True, False]:
@@ -185,13 +187,13 @@ def create_infer_instances_ref(instance_dir: Path) -> None:
                                 file.write(infer_instance)
 
 
-def create_forward_instances(instance_dir: Path) -> None:
+def create_forward_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
                 for has_bias in [True, False]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128, 256]:
+                        for max_k in headdims:
                             fname = FMHA_FORWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -214,10 +216,10 @@ def create_forward_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + forward_instance_inc + "\n" + forward_instance)
+                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + forward_instance_inc + forward_instance)
 
 
-def create_forward_instances_ref(instance_dir: Path) -> None:
+def create_forward_instances_ref(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             ref_fname = FMHA_INSTANCE_REF_FNAME.format(
@@ -232,7 +234,7 @@ def create_forward_instances_ref(instance_dir: Path) -> None:
             with open(ref_fname, 'a') as file:
                 file.write(FMHA_COPYRIGHT_HEADER)
                 file.write(forward_instance_inc)
-                for max_k in [32, 64, 128, 256]:
+                for max_k in headdims:
                     for has_bias in [True, False]:
                         for has_dropout in [True, False]:
                             for has_causalmask in [True, False]:
@@ -249,13 +251,13 @@ def create_forward_instances_ref(instance_dir: Path) -> None:
                                 file.write(forward_instance)
 
 
-def create_backward_instances(instance_dir: Path) -> None:
+def create_backward_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
                 for has_bias, has_bias_grad in [[True, False], [True, True], [False, False]]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128, 256]:
+                        for max_k in headdims:
                             fname = FMHA_BACKWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -280,10 +282,10 @@ def create_backward_instances(instance_dir: Path) -> None:
                                 max_k=max_k,
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
-                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + backward_instance_inc + "\n" + backward_instance)
+                            (instance_dir / fname).write_text(FMHA_COPYRIGHT_HEADER + backward_instance_inc + backward_instance)
 
 
-def create_backward_instances_ref(instance_dir: Path) -> None:
+def create_backward_instances_ref(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             ref_fname = FMHA_INSTANCE_REF_FNAME.format(
@@ -298,7 +300,7 @@ def create_backward_instances_ref(instance_dir: Path) -> None:
             with open(ref_fname, 'a') as file:
                 file.write(FMHA_COPYRIGHT_HEADER)
                 file.write(backward_instance_inc)
-                for max_k in [32, 64, 128, 256]:
+                for max_k in headdims:
                     for has_bias, has_bias_grad in [[True, False], [True, True], [False, False]]:
                         for has_dropout in [True, False]:
                             for has_causalmask in [True, False]:
@@ -317,12 +319,30 @@ def create_backward_instances_ref(instance_dir: Path) -> None:
 
 
 if __name__ == "__main__":
+    disable_hd256 = False
+
+    for arg in sys.argv:
+        if arg == "--ignore-hd256":
+            disable_hd256 = True
+
+    if disable_hd256:
+        headdims = [32, 64, 128]
+    else:
+        headdims = [32, 64, 128, 256]
+
     this_dir = os.path.dirname(__file__)
     output_dir = Path(this_dir) / "instances"
     output_dir.mkdir(parents=True, exist_ok=True)
-    create_infer_instances(output_dir)
-    create_infer_instances_ref(output_dir)
-    create_forward_instances(output_dir)
-    create_forward_instances_ref(output_dir)
-    create_backward_instances(output_dir)
-    create_backward_instances_ref(output_dir)
+
+    ## remove existing files in the directory
+    files = os.listdir(output_dir)
+    for ff in files:
+        file_path = os.path.join(output_dir, ff)
+        os.remove(file_path)
+
+    create_infer_instances(output_dir, headdims)
+    create_infer_instances_ref(output_dir, headdims)
+    create_forward_instances(output_dir, headdims)
+    create_forward_instances_ref(output_dir, headdims)
+    create_backward_instances(output_dir, headdims)
+    create_backward_instances_ref(output_dir, headdims)
