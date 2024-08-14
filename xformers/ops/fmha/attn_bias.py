@@ -1680,6 +1680,13 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
         return NotImplemented
 
 
-if torch.__version__ >= "2.1.0":
-    torch._dynamo.allow_in_graph(LowerTriangularMask)
-    torch._dynamo.allow_in_graph(LowerTriangularMaskWithTensorBias)
+torch._dynamo.allow_in_graph(LowerTriangularMask)
+torch._dynamo.allow_in_graph(LowerTriangularMaskWithTensorBias)
+
+VARLEN_BIASES = (
+    BlockDiagonalMask,
+    BlockDiagonalGappyKeysMask,
+    BlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
+)

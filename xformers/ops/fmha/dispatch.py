@@ -6,7 +6,7 @@
 
 import textwrap
 from collections import deque
-from typing import List, Sequence, Type, TypeVar
+from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar
 
 import torch
 
@@ -39,7 +39,12 @@ def _format_not_supported_reasons(op, reasons: List[str]) -> str:
     return f"`{op.NAME}` is not supported because:\n    " + "\n    ".join(reasons)
 
 
-def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
+def _run_priority_list(
+    name: str,
+    priority_list: Sequence[T],
+    inp: Inputs,
+    extra_op_reasons: Optional[List[Tuple[Any, List[str]]]] = None,
+) -> T:
     not_supported_reasons: List[List[str]] = []
     for op in priority_list:
         not_supported = op.not_supported_reasons(inp)
@@ -52,6 +57,9 @@ def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
 {textwrap.indent(_format_inputs_description(inp), '     ')}"""
     for op, not_supported in zip(priority_list, not_supported_reasons):
         msg += "\n" + _format_not_supported_reasons(op, not_supported)
+    if extra_op_reasons is not None:
+        for op, not_supported in extra_op_reasons:
+            msg += "\n" + _format_not_supported_reasons(op, not_supported)
     raise NotImplementedError(msg)
 
 
@@ -118,7 +126,9 @@ def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
     return False
 
 
-def _dispatch_bw(inp: Inputs, is_unpadded_lse: bool = False) -> Type[AttentionBwOpBase]:
+def _dispatch_bw(
+    inp: Inputs, varlen_lse_packed: Optional[bool]
+) -> Type[AttentionBwOpBase]:
     if torch.version.cuda:
         priority_list_ops: List[Type[AttentionBwOpBase]] = [
             flash.BwOp,
@@ -129,8 +139,28 @@ def _dispatch_bw(inp: Inputs, is_unpadded_lse: bool = False) -> Type[AttentionBw
             ck.BwOp,
         ]
 
-    if is_unpadded_lse:
-        priority_list_ops = [op for op in priority_list_ops if op.SUPPORTS_UNPADDED_LSE]
+    # NOTE: If we have a variable seqlen `attn_bias`, we need to get a BW pass
+    # that supports the LSE format
+    # *unless* we are in the case where both formats are the same (bs=1)
+    extra_op_reasons = []
+    if (
+        isinstance(inp.attn_bias, attn_bias.VARLEN_BIASES)
+        and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
+    ):
+        assert varlen_lse_packed is not None
+        for op in priority_list_ops:
+            if op.VARLEN_LSE_PACKED != varlen_lse_packed:
+                extra_op_reasons.append(
+                    (
+                        op,
+                        [
+                            f"LSE is in {'packed' if varlen_lse_packed else 'padded'} format"
+                        ],
+                    )
+                )
+        priority_list_ops = [
+            op for op in priority_list_ops if op.VARLEN_LSE_PACKED == varlen_lse_packed
+        ]
     if torch.version.cuda and _is_cutlassB_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.BwOp)
         priority_list_ops.insert(0, cutlass.BwOp)

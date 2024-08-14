@@ -305,6 +305,11 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_BMGHK: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
+    # Format for the LSE computed in the FW pass, and accepted in the BW pass,
+    # for BlockDiagonalMask and children.
+    # When using a varlen bias, both the FW and BW operators must have the
+    # same value for `VARLEN_LSE_PACKED`
+    VARLEN_LSE_PACKED: bool = True
 
     _TEST_BATCH_SIZES: List[int] = [1, 300]
     _TEST_K: List[int] = [32, 128]
@@ -401,7 +406,6 @@ class AttentionFwOpBase(AttentionOpBase):
         torch.half: 4e-4,
         torch.bfloat16: 5e-3,
     }
-    UNPADDED_LSE: bool = False
 
     @classmethod
     def apply(
@@ -471,7 +475,6 @@ class AttentionBwOpBase(AttentionOpBase):
     }
     SUPPORTS_ATTN_BIAS_GRAD = False
     SUPPORTS_PARTIAL = True
-    SUPPORTS_UNPADDED_LSE = False
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:

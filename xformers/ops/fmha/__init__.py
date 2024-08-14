@@ -7,10 +7,8 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
 
 import torch
 
-from . import attn_bias
-from . import attn_bias as _attn_bias
-from . import ck, ck_decoder, ck_splitk, cutlass, flash, triton_splitk
-from .attn_bias import AttentionBias, BlockDiagonalMask, LowerTriangularMask
+from . import attn_bias, ck, ck_decoder, ck_splitk, cutlass, flash, triton_splitk
+from .attn_bias import VARLEN_BIASES, AttentionBias, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -97,14 +95,29 @@ class _fMHA(torch.autograd.Function):
                     f"can only run with op_bw={op_ctx.op_bw.NAME}. Please set op_bw=None."
                 )
             op_bw = op_ctx.op_bw
+        if (
+            op_bw is not None
+            and isinstance(inp.attn_bias, VARLEN_BIASES)
+            and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
+            and op_bw.VARLEN_LSE_PACKED != op_fw.VARLEN_LSE_PACKED
+        ):
+            raise ValueError(
+                f"Specified op_bw={op_bw.NAME} is not compatible with the "
+                f"op_fw={op_fw.NAME}, because they use different format of logsumexp. "
+                f"NOTE: This is new with xFormers 0.0.28"
+            )
         if op_bw is None and (
             inp.query.requires_grad or inp.key.requires_grad or inp.value.requires_grad
         ):
-            is_valid_unpadded_lse = _valid_unpadded_lse_shape(op_ctx.lse, inp)
+            varlen_lse_packed = _detect_lse_packed_or_raise(op_ctx.lse, inp)
+            if varlen_lse_packed is not None and op_fw is not None:
+                assert (
+                    op_fw.VARLEN_LSE_PACKED == varlen_lse_packed
+                ), f"{op_fw.NAME}: wrong value for `VARLEN_LSE_PACKED` ?"
             # NOTE: We need to check tensor strides to decide which operator we run in the BW pass.
             # Unfortunately, PyTorch only allows to call this function during the FW pass, so
             # we decide the operator to use now.
-            op_bw = _dispatch_bw(inp, is_valid_unpadded_lse)
+            op_bw = _dispatch_bw(inp, varlen_lse_packed=varlen_lse_packed)
         ctx.op_fw = op_fw
         ctx.op_bw = op_bw
         ctx.p = inp.p
@@ -430,47 +443,43 @@ def _memory_efficient_attention_forward_requires_grad(
     return (out[0].reshape(output_shape), out[1])
 
 
-def _valid_padded_lse_shape(lse, inp):
-    invalid_shape = (
-        lse.ndim != 3
-        # Dim 0
-        or (
-            not isinstance(inp.attn_bias, BlockDiagonalMask)
-            and lse.shape[0] != inp.query.shape[0]
-        )
-        or (
-            isinstance(inp.attn_bias, BlockDiagonalMask)
-            and lse.shape[0] != inp.attn_bias.q_seqinfo.seqstart.shape[0] - 1
-        )
-        # Dim 1
-        or lse.shape[1] != inp.query.shape[2]
-        # Dim 2
-        or (
-            not isinstance(inp.attn_bias, BlockDiagonalMask)
-            and lse.shape[2] < inp.query.shape[1]
-        )
+def _detect_lse_packed_or_raise(lse: torch.Tensor, inp: Inputs) -> Optional[bool]:
+    """
+    Detects the LSE format if we're in a varlen case.
+    Returns `None` if the format is not relevant (eg not varlen)
+    Raises an exception if the `lse` has the wrong shape
+    """
+    shape_mismatch_err = (
+        "Input tensors have incompatible shapes.\n"
+        f"  lse.shape    : {lse.shape}\n"
+        f"  query.shape  : {inp.query.shape}\n"
+        f"  attn_bias    : {type(inp.attn_bias)}"
     )
-    return not invalid_shape
-
-
-def _valid_unpadded_lse_shape(lse, inp):
-    return (
-        inp.query.ndim == 4
-        and lse.ndim == 2
-        # Dim 0
-        and lse.shape[0] == inp.query.shape[2]
-        # Dim 1
-        and lse.shape[1] == inp.attn_bias.q_seqinfo.seqstart_py[-1]
-        and isinstance(
-            inp.attn_bias,
-            (
-                _attn_bias.BlockDiagonalMask,
-                _attn_bias.BlockDiagonalGappyKeysMask,
-                _attn_bias.PagedBlockDiagonalPaddedKeysMask,
-                _attn_bias.BlockDiagonalPaddedKeysMask,
-            ),
-        )
-    )
+    # 1. Check ndim & head dimensions
+    # In any case, LSE should be [*, *GH]
+    if lse.ndim != (inp.query.ndim - 1) or lse.shape[1:-1] != inp.query.shape[2:-1]:
+        raise ValueError(shape_mismatch_err)
+    lse_bm = [lse.shape[0], lse.shape[-1]]
+    lse_packed_shape = [inp.query.shape[0], inp.query.shape[1]]
+    lse_packed = lse_bm[0] == lse_packed_shape[0] and lse_bm >= lse_packed_shape
+    # 2. Check correctness for varlen biases with query.shape = [1, M, *GH, K]
+    # Either [1, *GH, M] (packed)
+    # Or     [num_seq, *GH, Mq] .. with `Mq >= max_q` (padded)
+    if isinstance(inp.attn_bias, VARLEN_BIASES):
+        si = inp.attn_bias.q_seqinfo
+        lse_padded_shape = [si.seqstart.shape[0] - 1, si.max_seqlen]
+        lse_padded = lse_bm[0] == lse_padded_shape[0] and lse_bm >= lse_padded_shape
+        if lse_packed and lse_padded:
+            return None
+        elif lse_packed:
+            return True
+        elif lse_padded:
+            return False
+        raise ValueError(shape_mismatch_err)
+    # 3. For non-varlen, shape must be [B, *GH] with query.shape=[B, M, *GH, K]
+    if not lse_packed:
+        raise ValueError(shape_mismatch_err)
+    return None
 
 
 def _memory_efficient_attention_backward(
@@ -494,27 +503,22 @@ def _memory_efficient_attention_backward(
         x.shape for x in (inp.query, inp.key, inp.value)
     )
     inp.normalize_bmhk()
-    # LSE has shape [B, H, M] or [H, total_q_len], while query has shape [B, M, H, K] or [1, total_q_len, H, K]
-    support_unpadded_lse = op is None or op.SUPPORTS_UNPADDED_LSE
-    is_valid_unpadded_lse = support_unpadded_lse and _valid_unpadded_lse_shape(
-        ctx.lse, inp
-    )
-    is_valid_padded_lse = _valid_padded_lse_shape(ctx.lse, inp)
-    if not (is_valid_padded_lse or is_valid_unpadded_lse):
-        raise ValueError(
-            "Input tensors have incompatible shapes."
-            f"lse.shape    : {ctx.lse.shape} \n"
-            f"query.shape  : {inp.query.shape}"
-        )
+    varlen_lse_packed = _detect_lse_packed_or_raise(ctx.lse, inp)
     grad = bmk2bmhk(grad, 1)
     ctx.out = bmk2bmhk(ctx.out, 1)
 
     if op is None:
-        op = _dispatch_bw(inp, is_valid_unpadded_lse)
+        op = _dispatch_bw(inp, varlen_lse_packed=varlen_lse_packed)
     elif not _skip_op_checks:
         _ensure_op_supports_or_raise(
             ValueError, "memory_efficient_attention_backward", op, inp
         )
+        if varlen_lse_packed is not None and varlen_lse_packed != op.VARLEN_LSE_PACKED:
+            raise ValueError(
+                f"Wrong LSE format for {op.NAME} in variable seqlen case. "
+                f"Double-check that the BW operator {op.NAME} is compatible "
+                f"with the operator used in the FW pass."
+            )
 
     grads = op.apply(ctx, inp, grad)
     grads.dq = grads.dq.reshape(shape_dq)
@@ -548,25 +552,6 @@ def memory_efficient_attention_partial(
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
     fwop: Optional[Type[AttentionFwOpBase]] = op[0] if isinstance(op, tuple) else op
-    if not (
-        isinstance(
-            attn_bias,
-            (
-                type(None),
-                _attn_bias.BlockDiagonalGappyKeysMask,
-                _attn_bias.BlockDiagonalPaddedKeysMask,
-                _attn_bias.PagedBlockDiagonalGappyKeysMask,
-                _attn_bias.PagedBlockDiagonalPaddedKeysMask,
-                _attn_bias.LowerTriangularFromBottomRightMask,
-                _attn_bias.LowerTriangularMask,
-            ),
-        )
-        or fwop is None
-        or fwop.UNPADDED_LSE
-    ):
-        raise ValueError(
-            f"{type(attn_bias)} is not supported in memory_efficient_attention_partial."
-        )
     inp = Inputs(
         query=query,
         key=key,

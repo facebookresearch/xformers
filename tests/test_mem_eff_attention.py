@@ -73,23 +73,22 @@ def _filter_unsupported_ops(ops: Sequence[T]) -> List[T]:
     ]
 
 
-ALL_FW_OPS_NO_UNPADDED_LSE = _filter_unsupported_ops(ALL_FW_OPS)
-ALL_FW_OPS = _filter_unsupported_ops(
-    ALL_FW_OPS
-    + (
-        [fmha.flash.FlashFwUnpaddedLSE]
-        if fmha.flash.FLASH_SUPPORTS_UNPADDED_LSE
-        else []
-    )
-)
+ALL_FW_OPS = _filter_unsupported_ops(ALL_FW_OPS)
 ALL_BW_OPS = _filter_unsupported_ops(ALL_BW_OPS)
 
 
 def sample_random_supported_fw(
-    inp: fmha.Inputs, seed: int
+    inp: fmha.Inputs, seed, op_bw: Type[fmha.common.AttentionBwOpBase]
 ) -> Type[fmha.common.AttentionFwOpBase]:
     r = random.Random(seed)
     fw_ops = list(ALL_FW_OPS)
+    if (
+        isinstance(inp.attn_bias, fmha.attn_bias.VARLEN_BIASES)
+        and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
+    ):
+        fw_ops = [
+            op for op in fw_ops if op.VARLEN_LSE_PACKED == op_bw.VARLEN_LSE_PACKED
+        ]
     r.shuffle(fw_ops)
     for op in fw_ops:
         if op.supports(inp):
@@ -247,12 +246,6 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
 parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv = pytest.mark.parametrize(
     "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
     **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS),
-)
-parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_NO_UNPADDED_LSE = (
-    pytest.mark.parametrize(
-        "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
-        **_generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(ALL_FW_OPS_NO_UNPADDED_LSE),
-    )
 )
 parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv__xs = pytest.mark.parametrize(
     "opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv",
@@ -431,7 +424,7 @@ def nanify_oob_seqlen(x: torch.Tensor) -> torch.Tensor:
 
 @pytest.mark.parametrize("fmt", ["BMK", "BMHK"])
 @pytest.mark.parametrize("packed", [False, True])
-@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv_NO_UNPADDED_LSE
+@parametrize_opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
 def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs):
     (
         op,
@@ -581,21 +574,9 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
             tensor_bias = attn_bias
         attn = attn + tensor_bias.float()
     ref_lse = attn.logsumexp(-1)
-    if isinstance(
-        attn_bias,
-        (
-            fmha.attn_bias.BlockDiagonalMask,
-            fmha.attn_bias.BlockDiagonalGappyKeysMask,
-            fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
-            fmha.attn_bias.BlockDiagonalPaddedKeysMask,
-        ),
-    ) and issubclass(op, (fmha.flash.FwOp, fmha.cutlass.FwOp)):
-        # Sometimes LSE is returned in padded format, i.e. (B, H, MAX_LEN) instead of (H, TOTAL_LEN).
-        # Unpad to compare with the reference.
-        # This is the case for Flash Attention when UNPADDED_LSE=False and for CUTLASS.
-        if op.UNPADDED_LSE:
-            lse = lse.unsqueeze(0)
-        else:
+    if isinstance(attn_bias, fmha.attn_bias.VARLEN_BIASES):
+        # Convert to packed format if not already the case
+        if not op.VARLEN_LSE_PACKED:
             lse = _block_diag_reshape_lse(lse, attn_bias.q_seqinfo)
     if op is fmha.cutlass.FwOp:
         # CUTLASS kernel pads the last dimention of LSE to 32
@@ -678,6 +659,7 @@ def test_backward(
         sample_random_supported_fw(
             fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias),
             seed=q_len * kv + kv_len * k,
+            op_bw=op_bw,
         )
         if op_bw != fmha.cutlass.BwOp
         else fmha.cutlass.FwOp
@@ -855,8 +837,8 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 @pytest.mark.parametrize("q_len", [2, 33])
 @pytest.mark.parametrize(
     "op",
-    ALL_FW_OPS_NO_UNPADDED_LSE,
-    ids=list(map(lambda t: t.NAME, ALL_FW_OPS_NO_UNPADDED_LSE)),
+    ALL_FW_OPS,
+    ids=list(map(lambda t: t.NAME, ALL_FW_OPS)),
 )
 def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     device = "cuda"
@@ -1032,12 +1014,17 @@ def test_lowlevel_api_shapes(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, fmt):
     key.requires_grad_(True)
     value.requires_grad_(True)
 
+    inputs = fmha.Inputs(query=query, key=key, value=value, attn_bias=attn_bias)
+    op_bw = opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv[0]
+    op_fw = sample_random_supported_fw(
+        inputs, seed=f"{op_bw.NAME}{query.shape}", op_bw=op_bw
+    )
     out, lse = xformers.ops.memory_efficient_attention_forward_requires_grad(
-        query, key, value, attn_bias
+        query, key, value, attn_bias, op=op_fw
     )
     assert out.ndim == query.ndim
     dq, dk, dv = xformers.ops.memory_efficient_attention_backward(
-        grad_out, out, lse, query, key, value, attn_bias
+        grad_out, out, lse, query, key, value, attn_bias, op=op_bw
     )
     assert dq.shape == query.shape
     assert dk.shape == key.shape
@@ -1138,7 +1125,7 @@ def test_custom_scale(opBW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     inputs = fmha.Inputs(
         query=query, key=key, value=value, attn_bias=attn_bias, scale=scale
     )
-    op_fw = sample_random_supported_fw(inputs, seed=q_len * k + kv_len * k)
+    op_fw = sample_random_supported_fw(inputs, seed=q_len * k + kv_len * k, op_bw=op_bw)
     grad_out = query.new_ones(B * H, q_len, Kv)
     query.requires_grad_(True)
     key.requires_grad_(True)
@@ -1344,7 +1331,7 @@ def test_attn_bias_blockdiag() -> None:
         torch.randn([1, 2, 1, 8]),
         torch.randn([1, 5, 1, 8]),
     ]
-    attn_bias, q = fmha.BlockDiagonalMask.from_tensor_list(queries)
+    attn_bias, q = fmha.attn_bias.BlockDiagonalMask.from_tensor_list(queries)
 
     # Verify mask
     as_tensor = attn_bias.materialize((10, 10))
@@ -1366,7 +1353,7 @@ def test_attn_bias_blockdiag_batched() -> None:
         torch.randn([3, 2, 1, 8]),
         torch.randn([1, 5, 1, 8]),
     ]
-    attn_bias, q = fmha.BlockDiagonalMask.from_tensor_list(queries)
+    attn_bias, q = fmha.attn_bias.BlockDiagonalMask.from_tensor_list(queries)
 
     # Verify mask
     as_tensor = attn_bias.materialize((14, 14))
@@ -1805,7 +1792,7 @@ def test_attn_bias_blockdiag_doc() -> None:
         torch.randn([1, 6, 1, K], dtype=dtype, device=device),
         torch.randn([1, 2, 1, K], dtype=dtype, device=device),
     ]
-    attn_bias, x = fmha.BlockDiagonalMask.from_tensor_list(list_x)
+    attn_bias, x = fmha.attn_bias.BlockDiagonalMask.from_tensor_list(list_x)
 
     linear = torch.nn.Linear(K, K * 3).to(device=device, dtype=dtype)  # type: ignore
 
@@ -1979,7 +1966,7 @@ def test_window_size_materialize() -> None:
     "opFW_biasT",
     [
         (op, biasT)
-        for op in ALL_FW_OPS_NO_UNPADDED_LSE
+        for op in ALL_FW_OPS
         for biasT in op.SUPPORTED_ATTN_BIAS_TYPES
         if op.SUPPORTS_BMGHK
     ],
@@ -2049,9 +2036,7 @@ def test_backward_gqa(opBW):
 
 
 @cuda_only
-@pytest.mark.parametrize(
-    "opFW", [op for op in ALL_FW_OPS_NO_UNPADDED_LSE if op.SUPPORTS_BMGHK]
-)
+@pytest.mark.parametrize("opFW", [op for op in ALL_FW_OPS if op.SUPPORTS_BMGHK])
 def test_forward_gqa_one_group(opFW):
     dtype = torch.float16
     B, Mq, Mkv, H, K = 3, 13, 16, 5, 128
@@ -3332,7 +3317,7 @@ def _merge_attentions_ref(attn_split, lse_split):
 @pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
 @pytest.mark.parametrize(
     "op",
-    [None, (fmha.flash.FwOp, fmha.flash.BwOp), (fmha.cutlass.FwOp, fmha.flash.BwOp)],
+    [None, (fmha.flash.FwOp, fmha.flash.BwOp)],
 )
 def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     torch.manual_seed(0)
