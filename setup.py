@@ -428,11 +428,16 @@ def get_extensions():
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
+        use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
+
         generator_flag = []
         if disable_hd256_hip_fmha == "1":
             generator_flag += ["-DFMHA_SUPPORT_MAX_HEADDIM_128=1"]
 
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
+        if use_rtn_bf16_convert == "1":
+            cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=0"]
+
         extra_compile_args = {
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
             "nvcc": [
