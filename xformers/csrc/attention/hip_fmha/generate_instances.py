@@ -373,7 +373,7 @@ if __name__ == "__main__":
     output_dir = Path(this_dir) / "instances"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    ## remove existing files in the directory
+    # remove existing files in the directory
     files = os.listdir(output_dir)
     for ff in files:
         file_path = os.path.join(output_dir, ff)
