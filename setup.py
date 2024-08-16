@@ -451,7 +451,7 @@ def get_extensions():
                 "-Werror",
                 "-Woverloaded-virtual",
                 "-mllvm",
-                "-enable-post-misched=0"
+                "-enable-post-misched=0",
             ]
             + generator_flag
             + cc_flag,

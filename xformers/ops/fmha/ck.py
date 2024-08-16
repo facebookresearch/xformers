@@ -344,7 +344,7 @@ class BwOp(AttentionBwOpBase):
     OPERATOR = get_operator("xformers", "efficient_attention_backward_ck")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
-    SUPPORTED_MAX_K = 256 
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
@@ -369,7 +369,7 @@ class BwOp(AttentionBwOpBase):
         32,  # 64x64 kernel
         64,
         128,  # 64x128/128x128 kernel
-        256, 
+        256,
     ]
 
     @classmethod
