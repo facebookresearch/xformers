@@ -24,6 +24,7 @@ import setuptools
 import torch
 from torch.utils.cpp_extension import (
     CUDA_HOME,
+    ROCM_HOME,
     BuildExtension,
     CppExtension,
     CUDAExtension,
@@ -417,10 +418,11 @@ def get_extensions():
             "--ptxas-options=-O2",
             "--ptxas-options=-allow-expensive-optimizations=true",
         ]
-    elif torch.cuda.is_available() and torch.version.hip:
+    elif torch.version.hip and (
+        torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
+    ):
         rename_cpp_cu(source_hip)
-        rocm_home = os.getenv("ROCM_PATH")
-        hip_version = get_hip_version(rocm_home)
+        hip_version = get_hip_version(ROCM_HOME)
 
         source_hip_cu = []
         for ff in source_hip:
@@ -439,12 +441,15 @@ def get_extensions():
         generator_flag = []
 
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
+
+        arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
+
         extra_compile_args = {
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
             "nvcc": [
                 "-O3",
                 "-std=c++17",
-                f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
+                *[f"--offload-arch={arch}" for arch in arch_list],
                 "-U__CUDA_NO_HALF_OPERATORS__",
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_FMHA_FWD_FAST_EXP2=1",
