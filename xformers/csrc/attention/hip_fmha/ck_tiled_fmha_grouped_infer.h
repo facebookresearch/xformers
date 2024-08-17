@@ -63,7 +63,7 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
       const bool use_async_pipeline =
-          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
+          (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
 
       if (!use_async_pipeline) {
         BOOL_SWITCH_2(
