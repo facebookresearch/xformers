@@ -8,8 +8,6 @@ from typing import Optional, Type, TypeVar
 
 import torch
 
-from xformers import _is_triton_available
-
 Self = TypeVar("Self", bound="SimplicialEmbedding")
 
 
@@ -53,14 +51,7 @@ class SimplicialEmbedding(torch.nn.Module):
         if self.temperature is not None:
             Vs /= self.temperature
 
-        if _is_triton_available():
-            from xformers.triton.softmax import softmax as triton_softmax
-
-            Vs = triton_softmax(
-                Vs, mask=None, causal=False
-            )  # the softmax is on the last dimension
-        else:
-            Vs = torch.nn.functional.softmax(Vs, dim=-1)
+        Vs = torch.nn.functional.softmax(Vs, dim=-1)
 
         # Concatenate back and return
         return Vs.reshape(B, C, E)

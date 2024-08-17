@@ -7,7 +7,9 @@ import ast
 import copy
 import functools
 import linecache
+import os
 import sys
+import tempfile
 from typing import Any, Dict, List
 
 import triton
@@ -116,6 +118,11 @@ class _VisitorUnrollKernel(ast.NodeTransformer):
 _getlines_orig = None
 _FILENAME_TO_SRC: Dict[str, List[str]] = {}
 
+# Materializing the codegen to disk can be useful for external tools, e.g. ncu
+# Disabled by default because writing to disk at module import time is unexpected and error-prone.
+_should_materialize_codegen = os.environ.get("XFORMERS_MATERIALIZE_CODEGEN") == "1"
+_tmp_dir = None
+
 
 def _monkey_patched_getlines(filename, module_globals=None):
     if filename in _FILENAME_TO_SRC:
@@ -132,7 +139,7 @@ def unroll_varargs(kernel, N: int):
     NOTE: Because it's quite costly to call `triton.jit`,
     we cache the returned value with `lru_cache`
     """
-    global _FILENAME_TO_SRC, _getlines_orig
+    global _FILENAME_TO_SRC, _getlines_orig, _tmp_dir
 
     k = triton.JITFunction(kernel.fn)
     parsed = ast.parse(k.src)
@@ -148,7 +155,20 @@ def unroll_varargs(kernel, N: int):
     # Now we want to `eval` the function, but we need all this
     # boilerplate code to make sure triton can run `inspect.getsource`
 
-    fn_filename = f"<unroll_varargs-{kernel.fn.__name__}-{N}>"
+    fn_basename = f"unroll_varargs-{kernel.fn.__name__}-{N}"
+    if _should_materialize_codegen:
+        if not _tmp_dir:
+            _tmp_dir = tempfile.TemporaryDirectory()
+        fn_filename = os.path.join(_tmp_dir.name, f"{fn_basename}.py")
+        with open(fn_filename, "w") as f:
+            f.write(new_src)
+    else:
+        # Patch `getlines` only the first time
+        if not _FILENAME_TO_SRC:
+            _getlines_orig = linecache.getlines
+            linecache.getlines = _monkey_patched_getlines
+        fn_filename = f"<{fn_basename}>"
+        _FILENAME_TO_SRC[fn_filename] = new_src.splitlines(keepends=True)
 
     # Create function given source
     code = compile(new_src, fn_filename, "exec")
@@ -157,11 +177,6 @@ def unroll_varargs(kernel, N: int):
     exec(code, kernel.fn.__globals__, _locals)
     assert len(_locals) == 1, len(_locals)
     fn = next(iter(_locals.values()))
-    # Patch `getlines` only the first time
-    if not _FILENAME_TO_SRC:
-        _getlines_orig = linecache.getlines
-        linecache.getlines = _monkey_patched_getlines
-    _FILENAME_TO_SRC[fn_filename] = [line + "\n" for line in new_src.splitlines()]
 
     jitted_fn = triton.jit(fn)
     jitted_fn.src = new_src

@@ -38,25 +38,15 @@ if _is_triton_available():
         _xformers_seqpar_matmul_kernel.configs.pop()
 
 
-def inner_sequence_parallel_fused(
-    seed: int,
-    kind: str,
+def compare_fused_and_non_fused_ops(
+    my_rank: int,
+    world_size: int,
+    subgroup: torch.distributed.ProcessGroup,
     step: str,
     dims: Tuple[int, ...],
     dtype: torch.dtype,
+    triton: bool,
 ):
-    my_rank = torch.distributed.get_rank()
-    world_size = torch.distributed.get_world_size()
-    subgroup = torch.distributed.new_group()
-
-    triton = True
-    if kind == "fallback":
-        os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
-    elif kind == "pytorch":
-        triton = False
-
-    torch.random.manual_seed(seed)
-
     batch_dims = dims[:-2]
     subbatch_dims = (batch_dims[0] // world_size,) + batch_dims[1:]
     outer_dim = dims[-2]
@@ -128,6 +118,36 @@ def inner_sequence_parallel_fused(
     torch.testing.assert_close(output_reference, output_fused, atol=0, rtol=0)
 
 
+def inner_sequence_parallel_fused(
+    seed: int,
+    kind: str,
+    step: str,
+    dims: Tuple[int, ...],
+    dtype: torch.dtype,
+):
+    my_rank = torch.distributed.get_rank()
+    world_size = torch.distributed.get_world_size()
+    subgroup = torch.distributed.new_group()
+
+    triton = True
+    if kind == "fallback":
+        os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
+    elif kind == "pytorch":
+        triton = False
+
+    torch.random.manual_seed(seed)
+
+    compare_fused_and_non_fused_ops(
+        my_rank=my_rank,
+        world_size=world_size,
+        subgroup=subgroup,
+        step=step,
+        dims=dims,
+        dtype=dtype,
+        triton=triton,
+    )
+
+
 @cuda_sm70_only
 @pytest.mark.parametrize(
     "kind",
@@ -165,4 +185,51 @@ def test_sequence_parallel_fused(
         step=step,
         dims=dims,
         dtype=dtype,
+    )
+
+
+def inner_sequence_parallel_fused_triton_handle_all_dtypes(
+    seed: int,
+    step: str,
+    dims: Tuple[int, ...],
+):
+    my_rank = torch.distributed.get_rank()
+    world_size = torch.distributed.get_world_size()
+    subgroup = torch.distributed.new_group()
+
+    torch.random.manual_seed(seed)
+
+    for dtype in [torch.bfloat16, torch.float16, torch.float32]:
+        compare_fused_and_non_fused_ops(
+            my_rank=my_rank,
+            world_size=world_size,
+            subgroup=subgroup,
+            step=step,
+            dims=dims,
+            dtype=dtype,
+            triton=True,
+        )
+
+
+@cuda_sm70_only
+@pytest.mark.parametrize("step", ["all-gather", "reduce-scatter"])
+@pytest.mark.parametrize(
+    "dims",
+    [
+        pytest.param((2, 2, 512, 512, 256), id="nice-shapes"),
+        pytest.param((2, 1023, 511, 257), id="ugly-shapes"),
+    ],
+)
+def test_sequence_parallel_fused_triton_handle_all_dtypes(
+    step: str,
+    dims: Tuple[int, ...],
+):
+    world_size = 2
+    seed = random.getrandbits(32)
+    launch_subprocesses(
+        world_size,
+        inner_sequence_parallel_fused_triton_handle_all_dtypes,
+        seed=seed,
+        step=step,
+        dims=dims,
     )

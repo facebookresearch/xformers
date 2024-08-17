@@ -107,7 +107,7 @@ def benchmark_swiglu(shape, dtype, bias: bool):
 def benchmark_swiglu_bw(shape, dtype, bias: bool):
     if dtype == "autocast_half":
         inp_dtype, model_dtype = torch.float, torch.float
-        cm: Any = partial(torch.cuda.amp.autocast, enabled=True, dtype=torch.float16)
+        cm: Any = partial(torch.amp.autocast, "cuda", enabled=True, dtype=torch.float16)
     else:
         inp_dtype, model_dtype = dtype, dtype
         cm = nullcontext

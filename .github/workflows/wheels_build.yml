@@ -26,12 +26,14 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
+  TORCH_CUDA_ARCH_LIST: ${{ join('6.0+PTX 7.0 7.5 8.0+PTX', fromJSON(inputs.cuda_short_version) >= 118 && ' 9.0a' || '') }}
   MAX_JOBS: 4
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
   XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
+  # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
 jobs:
   build:
@@ -48,6 +50,9 @@ jobs:
       run:
         shell: bash
     steps:
+      - if: runner.os == 'Windows'
+        name: Support longpaths
+        run: git config --system core.longpaths true
       - id: cuda_info
         shell: python
         run: |
@@ -77,20 +82,6 @@ jobs:
       - run: echo "CUDA_VERSION_SUFFIX=${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}"
       - run: echo "TORCH_ORG_S3_PATH=${{ steps.cuda_info.outputs.TORCH_ORG_S3_PATH }}"
       - run: echo "PUBLISH_PYPI=${{ steps.cuda_info.outputs.PUBLISH_PYPI }}"
-
-      - name: Add H100 if nvcc 11.08+
-        shell: python
-        run: |
-          import os
-          import sys
-          print(sys.version)
-          cuda_short_version = "${{ inputs.cuda_short_version }}"
-          arch_list = os.environ["TORCH_CUDA_ARCH_LIST"]
-          if cuda_short_version not in ["116", "117"]:
-            arch_list += " 9.0"
-          with open(os.environ['GITHUB_ENV'], "r+") as fp:
-            fp.write("TORCH_CUDA_ARCH_LIST=" + arch_list + "\n")
-      - run: echo "${TORCH_CUDA_ARCH_LIST}"
 
       - name: Recursive checkout
         uses: actions/checkout@v3

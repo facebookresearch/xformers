@@ -35,31 +35,6 @@ The sparse attention computation is automatically triggered when using the **sca
 There is nothing specific to do, and a couple of examples are provided in the tutorials.
 
 
-
-
-Triton parts
-############
-
-1. Requirements
-***************
-
-We use Triton_ to implement the following parts.
-These parts will only be visible on a CUDA-enabled machine, and Triton needs to be installed (`pip install triton`),
-if any of these conditions are not met a warning is issued.
-
-
-2. Possible usage
-*****************
-
-The following parts are independent and can be used as-is in any model,
-provided the above limitations (Triton is installed, and there is a CUDA GPU present) are fullfilled.
-They are used by default, when possible, in some of the xFormers building blocks.
-
-.. automodule:: xformers.triton
-    :members:
-    :undoc-members:
-
-
 .. _Triton: https://triton-lang.org/
 .. _Sputnik: https://github.com/google-research/sputnik
 .. _see: https://github.com/facebookresearch/xformers/blob/main/xformers/components/attention/scaled_dot_product.py

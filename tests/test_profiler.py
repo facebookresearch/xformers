@@ -225,9 +225,10 @@ def test_analyze_prof(dtype) -> None:
 @pytest.mark.parametrize("causal", [True, False], ids=["causal", ""])
 @cuda_only
 def test_analyze_prof_sdpa(dtype, enable_flash: bool, causal: bool) -> None:
-    B, N = 64, 128
-    x = torch.ones([B, 1, N, 128], dtype=dtype, device="cuda", requires_grad=True)
-    fw_flops = 2 * 2 * B * N * N * 128
+    B, M, H, K = 64, 256, 3, 128
+    x = torch.ones([B, H, M, K], dtype=dtype, device="cuda", requires_grad=True)
+    fw_flops = 2 * 2 * M * M * K
+    fw_flops *= B * H
     if causal:
         fw_flops //= 2
     with sdpa_kernel(
@@ -252,16 +253,17 @@ def test_analyze_prof_sdpa(dtype, enable_flash: bool, causal: bool) -> None:
 @cuda_only
 def test_analyze_prof_memeff(op, causal: bool) -> None:
     dtype = torch.float16
-    B, N = 64, 128
-    x = torch.ones([B, 1, N, 128], dtype=dtype, device="cuda", requires_grad=True)
-    device_sm = torch.cuda.get_device_capability(x.device)
-    if device_sm < op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY:
-        pytest.skip(f"Requires sm{op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY}")
-    fw_flops = 2 * 2 * B * N * N * 128
+    B, M, H, K = 64, 256, 3, 128
+    x = torch.ones([B, M, H, K], dtype=dtype, device="cuda", requires_grad=True)
+    fw_flops = 2 * 2 * M * M * K
+    fw_flops *= B * H
     bias = None
     if causal:
         bias = fmha.attn_bias.LowerTriangularMask()
         fw_flops //= 2
+    device_sm = torch.cuda.get_device_capability(x.device)
+    if device_sm < op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY:
+        pytest.skip(f"Requires sm{op[0].CUDA_MINIMUM_COMPUTE_CAPABILITY}")
     with assert_flops("memory_efficient_attention", match=fw_flops):
         y = xops.memory_efficient_attention(x, x, x, attn_bias=bias, op=op)
     with assert_flops("memory_efficient_attention BW", match=fw_flops * 5 // 2):

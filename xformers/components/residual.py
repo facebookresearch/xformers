@@ -4,18 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 
+from collections import namedtuple
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
-
-from xformers import _is_triton_available
-
-if _is_triton_available():
-    from xformers.triton.layer_norm import FusedLayerNorm
-
-from collections import namedtuple
 
 
 class ResidualNormStyle(str, Enum):
@@ -103,14 +97,7 @@ class PreNorm(nn.Module, RequiresWrappedInputs):
     ):
 
         super().__init__()
-        if (
-            _is_triton_available()
-            and use_triton
-            and normalization == NormalizationType.LayerNorm
-        ):
-            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_norm)
-        else:
-            self.norm = get_normalization_layer(normalization)(d_norm)
+        self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer
         self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)
@@ -145,14 +132,7 @@ class PostNorm(nn.Module, RequiresWrappedInputs):
         use_triton: bool = True,
     ):
         super().__init__()
-        if (
-            _is_triton_available()
-            and use_triton
-            and normalization == NormalizationType.LayerNorm
-        ):
-            self.norm: Union[nn.LayerNorm, FusedLayerNorm] = FusedLayerNorm(d_norm)
-        else:
-            self.norm = get_normalization_layer(normalization)(d_norm)
+        self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer
         self.wrap_inputs = isinstance(sublayer, RequiresWrappedInputs)

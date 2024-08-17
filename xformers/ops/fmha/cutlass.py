@@ -70,8 +70,7 @@ def _get_seqlen_info(
     if isinstance(
         attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
     ):
-        attn_bias.k_seqinfo.to(inp.query.device)
-        attn_bias.q_seqinfo.to(inp.query.device)
+        assert attn_bias.k_seqinfo.seqstart.device == inp.query.device
         seqstart_k = attn_bias.k_seqinfo.seqstart
         seqstart_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
@@ -200,6 +199,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
+    VARLEN_LSE_PACKED = False
     NAME = "cutlassF-pt" if USE_TORCH_CUTLASS else "cutlassF"
 
     _TEST_K: List[int] = [
@@ -389,6 +389,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    VARLEN_LSE_PACKED = False
     NAME = "cutlassB-pt" if USE_TORCH_CUTLASS else "cutlassB"
 
     _TEST_K: List[int] = [

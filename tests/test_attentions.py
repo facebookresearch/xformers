@@ -69,13 +69,6 @@ def _get_multihead(
 
         test_config["out_proj"] = noop
 
-    # Add some blocksparse layout to test the corresponding attention
-    block_size = 16
-    test_config["layout"] = torch.eye(
-        SEQ // block_size, SEQ // block_size, dtype=torch.long
-    )
-    test_config["block_size"] = block_size
-
     attention = build_attention(test_config)
 
     # build a multi head dispatch to test this attention mechanism
@@ -164,7 +157,7 @@ def test_order_invariance(
 
         # Test AMP, if available
         if device.type == "cuda":
-            with torch.cuda.amp.autocast(enabled=True):
+            with torch.amp.autocast("cuda", enabled=True):
                 _ = multi_head(inputs, inputs_shuffled, inputs)
 
 

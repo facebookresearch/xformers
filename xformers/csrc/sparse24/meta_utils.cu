@@ -167,7 +167,6 @@ at::Tensor _sparse24_pack_tensor_according_to_mask(
       uint16_t pack_info = ref_meta_reordered.at({dest_row, dest_col});
       // For each group of 4, read the only 2 that are selected in the mask
       for (int group_shift = 0; group_shift < 16; group_shift += 4) {
-        uint16_t element = 0;
         int pos0 = (pack_info >> group_shift) & 3;
         int pos1 = (pack_info >> (group_shift + 2)) & 3;
         ref_a_packed.at({m, 8 * k + group_shift / 2}) =

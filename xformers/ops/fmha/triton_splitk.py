@@ -16,13 +16,15 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    Union,
+    cast,
 )
 
 import torch
 
-from ..common import _has_triton21, register_operator
+from ... import _is_triton_available
+from ..common import register_operator
 from .attn_bias import (
-    AttentionBias,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
@@ -84,7 +86,7 @@ AUTOTUNER_KEY = [
     "BLOCK_N_PER_SPLIT",
 ]
 
-if TYPE_CHECKING or _has_triton21():
+if TYPE_CHECKING or _is_triton_available():
     import triton
     import triton.language as tl
 
@@ -474,6 +476,11 @@ if TYPE_CHECKING or _has_triton21():
             m_i_new = tl.maximum(m_i, tl.max(qk, 1))
             alpha = tl.math.exp2(m_i - m_i_new)
             p = tl.math.exp2(qk - m_i_new[:, None])
+            if HAS_ADDITIVE_BIAS:
+                # NOTE: It's possible that an entire block is masked out.
+                # if this is the case, `m_i_new=nan` and everything becomes nan
+                alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
+                p = tl.where(m_i_new[:, None] == float("-inf"), 0, p)
             if IS_CAUSAL:
                 # -- apply the causal mask --
                 p = tl.where(diag_idx_shifted >= start_n, p, 0)
@@ -751,11 +758,12 @@ if TYPE_CHECKING or _has_triton21():
         G: tl.constexpr,
         WRITE_LSE: tl.constexpr,
     ):
-        off_zhg = tl.program_id(0).to(tl.int64)
+        # grid = (M, B * G * H, 1)
+        off_m = tl.program_id(0).to(tl.int64)
+        off_zhg = tl.program_id(1).to(tl.int64)
         off_z = off_zhg // (H * G)
         off_h = (off_zhg // G) % H
         off_g = off_zhg % G
-        off_m = tl.program_id(1)
 
         Out_splitK_ptr = (
             Out_splitK
@@ -862,11 +870,12 @@ if TYPE_CHECKING or _has_triton21():
         This version of reduce kernel takes attention and LSE of chunks as lists of tensors,
         as opposed to _splitK_reduce, which takes each as a stacked tensor.
         """
-        off_zhg = tl.program_id(0).to(tl.int64)
+        # grid = (M, B * G * H, 1)
+        off_m = tl.program_id(0).to(tl.int64)
+        off_zhg = tl.program_id(1).to(tl.int64)
         off_z = off_zhg // (H * G)
         off_h = (off_zhg // G) % H
         off_g = off_zhg % G
-        off_m = tl.program_id(1)
 
         out_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
         for i in range(len(Out_splitK)):
@@ -985,11 +994,12 @@ if TYPE_CHECKING or _has_triton21():
         and outputs the corresponding gradients in the same format.
         """
 
-        off_zhg = tl.program_id(0).to(tl.int64)
+        # grid = (M, B * G * H, 1)
+        off_m = tl.program_id(0).to(tl.int64)
+        off_zhg = tl.program_id(1).to(tl.int64)
         off_z = off_zhg // (H * G)
         off_h = (off_zhg // G) % H
         off_g = off_zhg % G
-        off_m = tl.program_id(1)
 
         # Compute offsets inside each attention/LSE chunk.
         # Note that each chunk can have different strides, so offsets can also be different.
@@ -1308,16 +1318,37 @@ class FwOp(AttentionFwOpBase):
         return split_k
 
     @classmethod
+    def get_kernel(cls):
+        if cls.AUTOTUNE:
+            return _fwd_kernel_splitK_autotune[cls.NUM_GROUPS]
+        else:
+            return _get_splitk_kernel(cls.NUM_GROUPS)
+
+    @classmethod
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         output_dtype = inp.get_output_dtype()
-        if isinstance(inp.attn_bias, torch.Tensor):
-            attn_bias_tensor = inp.attn_bias
-            attn_bias: Optional[AttentionBias] = None
-        else:
+        if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
-            attn_bias = inp.attn_bias
+            attn_bias = cast(
+                Optional[
+                    Union[
+                        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        BlockDiagonalGappyKeysMask,
+                        BlockDiagonalCausalWithOffsetGappyKeysMask,
+                        BlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        PagedBlockDiagonalGappyKeysMask,
+                        PagedBlockDiagonalPaddedKeysMask,
+                    ]
+                ],
+                inp.attn_bias,
+            )
+        else:
+            attn_bias_tensor = inp.attn_bias
+            attn_bias = None
+
         seq_len = None
         seq_starts_k = None
         seq_starts_q = None
@@ -1332,26 +1363,23 @@ class FwOp(AttentionFwOpBase):
         is_paged = _is_supported_paged_bias(attn_bias)
         if attn_bias is not None:
             assert is_paged or is_block_diagonal or is_gappy
-            # TODO: do we really need to do this cast? seems fishy but
-            # I just copied it from the decoder.py
-            attn_bias.k_seqinfo.to(inp.query.device)  # type: ignore
-            attn_bias.q_seqinfo.to(inp.query.device)  # type: ignore
-            seq_len = attn_bias.k_seqinfo.seqlen  # type: ignore
+            assert attn_bias.k_seqinfo.seqlen.device == inp.query.device
+            seq_len = attn_bias.k_seqinfo.seqlen
             assert seq_len.stride(0) == 1
             if is_gappy:
-                seq_starts_k = attn_bias.k_seqinfo.seqstart  # type: ignore
+                seq_starts_k = attn_bias.k_seqinfo.seqstart
                 assert seq_starts_k.stride(0) == 1
             assert q.shape[0] == 1
             B = len(seq_len)
             G, Hq, Kq = q.shape[-3:]
             # force a bool because triton cannot take np.bool_
-            multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)  # type: ignore
+            multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)
             IS_CAUSAL = multiple_q and _is_supported_causal_bias(attn_bias)
             variable_q = multiple_q and not IS_CAUSAL
             Kkv = v.shape[-1]
 
             if variable_q:
-                seq_starts_q = attn_bias.q_seqinfo.seqstart  # type: ignore
+                seq_starts_q = attn_bias.q_seqinfo.seqstart
                 seq_starts_q_multiplier = 1
                 assert seq_starts_q.stride(0) == 1
             else:
@@ -1399,12 +1427,15 @@ class FwOp(AttentionFwOpBase):
         else:
             Lk = k.shape[-1]
             PACKED_PER_VAL = 1
+            assert cls.NUM_GROUPS == 1, f"{cls.NUM_GROUPS=}"
 
         _, Mk, G, H, Kkv = k.shape
         Bqq, Mqq, G, H, Kq = q.shape
         assert Lk == Kq, f"Keys have head dim {Lk} but queries have head dim {Kq}"
         if variable_q:
-            M = attn_bias.q_seqinfo.max_seqlen * seq_starts_q_multiplier  # type: ignore
+            assert attn_bias is not None
+            assert seq_starts_q_multiplier is not None
+            M = attn_bias.q_seqinfo.max_seqlen * seq_starts_q_multiplier
         else:
             M = Mqq
         page_size = inp.attn_bias.page_size if is_paged else 0  # type: ignore
@@ -1415,7 +1446,7 @@ class FwOp(AttentionFwOpBase):
             kv_cache_blocks_per_row = block_tables.shape[1]
             Mk = block_tables.shape[1] * page_size
         elif attn_bias is not None:
-            Mk = min(Mk, attn_bias.k_seqinfo.max_seqlen)  # type: ignore
+            Mk = min(Mk, attn_bias.k_seqinfo.max_seqlen)
 
         if cls.SPLIT_K is not None:
             split_k = cls.SPLIT_K
@@ -1477,13 +1508,10 @@ class FwOp(AttentionFwOpBase):
         split_size = (Mk + split_k - 1) // split_k
         use_seq_len = seq_len is not None
 
-        num_groups = cls.NUM_GROUPS if PACKED_PER_VAL > 1 else 1
+        kernel = cls.get_kernel()
         if cls.AUTOTUNE:
-            kernel = _fwd_kernel_splitK_autotune[num_groups]
             extra_args = {}
         else:
-            kernel = _get_splitk_kernel(num_groups)
-
             # TODO: remove this when autotuning on AMD is working
             num_warps = cls.NUM_WARPS
             num_stages = cls.NUM_STAGES
@@ -1535,7 +1563,7 @@ class FwOp(AttentionFwOpBase):
             BLOCK_DMODEL=Lk,
             USE_SEQ_LEN=use_seq_len,
             PACKED_PER_VAL=PACKED_PER_VAL,
-            N_GROUPS=num_groups,
+            N_GROUPS=cls.NUM_GROUPS,
             IS_CAUSAL=IS_CAUSAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
@@ -1693,7 +1721,7 @@ def merge_attentions(
 
     num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
     splitK_pow2 = triton.next_power_of_2(split_k)
-    grid = (B * G * H, M, 1)
+    grid = (M, B * G * H, 1)
     _splitK_reduce[grid](
         attn_split,
         lse_split,
@@ -1819,7 +1847,7 @@ def _prepare_reduce_kernel_params(
         )
 
     num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
-    grid = (B * G * H, M, 1)
+    grid = (M, B * G * H, 1)
 
     kernel_args = {
         "G": G,

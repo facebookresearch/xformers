@@ -12,7 +12,6 @@ from copy import deepcopy
 import pytest
 from torch import nn
 
-from xformers import _is_triton_available
 from xformers.factory import xFormer, xFormerConfig
 
 test_config = [
@@ -33,7 +32,7 @@ test_config = [
             },
         },
         "feedforward_config": {
-            "name": "FusedMLP",
+            "name": "MLP",
             "dropout": 0.1,
             "activation": "gelu",
             "hidden_layer_multiplier": 4,
@@ -51,8 +50,6 @@ class ViT(nn.Module):
 
 
 MLPs = ["MLP"]
-if _is_triton_available():
-    MLPs.append("FusedMLP")
 
 
 @pytest.mark.parametrize("mlp", MLPs)
