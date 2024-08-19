@@ -21,7 +21,7 @@ from .sequence_parallel_fused_ops import (
     fused_anything_and_reducescatter,
     fused_linear_and_reducescatter,
 )
-from .tiled_matmul import tiled_matmul_fwd
+from .tiled_matmul import tiled_matmul, tiled_matmul_out
 
 
 @torch.library.custom_op(
@@ -45,7 +45,7 @@ def sequence_parallel_leading_matmul_fwd(
         gathered_input = gather_along_first_dim(
             scattered_input, process_group=process_group
         )
-        (gathered_outputs,) = tiled_matmul_fwd(
+        (gathered_outputs,) = tiled_matmul(
             [[gathered_input]],
             [[w for w in weights]],
         )
@@ -103,7 +103,7 @@ def sequence_parallel_leading_matmul_bwd(
         ) -> None:
             (grad_gi,) = grad_gathered_inputs
             with torch.cuda.stream(stream_factory()):
-                tiled_matmul_fwd(
+                tiled_matmul_out(
                     [[grad_gos[dst_rank] for grad_gos in grad_gathered_outputss]],
                     [[w.t()] for w in weights],
                     out=[[grad_gi]],
@@ -143,7 +143,7 @@ def sequence_parallel_leading_matmul_bwd(
         gathered_input, handle = gather_along_first_dim_async(
             scattered_input, process_group=process_group
         )
-        ((grad_gathered_input,),) = tiled_matmul_fwd(
+        ((grad_gathered_input,),) = tiled_matmul(
             [[grad_go for grad_go in grad_gathered_outputs]],
             [[w.t()] for w in weights],
         )
@@ -154,7 +154,7 @@ def sequence_parallel_leading_matmul_bwd(
             grad_gathered_input, process_group=process_group
         )
 
-        grad_weights_tuples = tiled_matmul_fwd(
+        grad_weights_tuples = tiled_matmul(
             [[grad_go.t()] for grad_go in grad_gathered_outputs],
             [[gathered_input]],
         )
