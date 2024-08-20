@@ -467,6 +467,15 @@
             <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">dtype</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">output_dtype</span>
 
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">nbytes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Number of bytes in the input, not counting the attention bias.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="n">x</span><span class="o">.</span><span class="n">untyped_storage</span><span class="p">()</span><span class="o">.</span><span class="n">nbytes</span><span class="p">()</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">key</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">value</span><span class="p">]</span>
+        <span class="p">)</span>
+
 
 <span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">Context</span><span class="p">:</span>
@@ -518,6 +527,7 @@
     <span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span>
     <span class="n">SUPPORTED_MAX_K</span><span class="p">:</span> <span class="nb">float</span>
+    <span class="n">SUPPORTED_MIN_K</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
     <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),)</span>
     <span class="n">SUPPORTS_DROPOUT</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
@@ -550,7 +560,11 @@
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;query.shape[-1] != value.shape[-1]&quot;</span><span class="p">)</span>
         <span class="k">if</span> <span class="nb">max</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span> <span class="o">&gt;</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="p">:</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
-                <span class="sa">f</span><span class="s2">&quot;max(query.shape[-1] != value.shape[-1]) &gt; </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="si">}</span><span class="s2">&quot;</span>
+                <span class="sa">f</span><span class="s2">&quot;max(query.shape[-1], value.shape[-1]) &gt; </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span><span class="si">}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="k">if</span> <span class="nb">min</span><span class="p">(</span><span class="n">K</span><span class="p">,</span> <span class="n">Kv</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MIN_K</span><span class="p">:</span>
+            <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;min(query.shape[-1], value.shape[-1]) &lt; </span><span class="si">{</span><span class="bp">cls</span><span class="o">.</span><span class="n">SUPPORTED_MIN_K</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
         <span class="k">return</span> <span class="n">reasons</span>
 
@@ -577,7 +591,7 @@
             <span class="ow">and</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">hip</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">)</span>
         <span class="p">):</span>
             <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;xFormers wasn&#39;t build with CUDA support&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">device_type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">device_type</span> <span class="o">==</span> <span class="s2">&quot;cuda&quot;</span> <span class="ow">and</span> <span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">hip</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">):</span>
             <span class="n">device_capability</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">device_capability</span> <span class="o">&lt;</span> <span class="bp">cls</span><span class="o">.</span><span class="n">CUDA_MINIMUM_COMPUTE_CAPABILITY</span><span class="p">:</span>
                 <span class="n">reasons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
