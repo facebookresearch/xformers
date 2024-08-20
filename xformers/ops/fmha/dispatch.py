@@ -10,10 +10,23 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar
 
 import torch
 
-from . import attn_bias, ck, cutlass, flash, triton_splitk
+from . import attn_bias, ck, cutlass, flash, flash3, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
+
+
+_USE_FLASH_ATTENTION_3 = False
+
+
+def _set_use_fa3(use_flash_attention3: bool) -> None:
+    global _USE_FLASH_ATTENTION_3
+    _USE_FLASH_ATTENTION_3 = use_flash_attention3
+
+
+def _get_use_fa3() -> bool:
+    global _USE_FLASH_ATTENTION_3
+    return _USE_FLASH_ATTENTION_3
 
 
 def _format_inputs_description(inp: Inputs) -> str:
@@ -67,8 +80,10 @@ def _dispatch_fw_priority_list(
     inp: Inputs, needs_gradient: bool
 ) -> Sequence[Type[AttentionFwOpBase]]:
     if torch.version.cuda:
+        flash3_op = [flash3.FwOp] if _get_use_fa3() else []
         priority_list_ops = deque(
-            [
+            flash3_op
+            + [
                 flash.FwOp,
                 cutlass.FwOp,
             ]
@@ -100,6 +115,8 @@ def _dispatch_fw_priority_list(
                 if torch.version.cuda and not isinstance(
                     inp.attn_bias, attn_bias.BlockDiagonalMask
                 ):
+                    if _get_use_fa3():
+                        priority_list_ops.remove(flash3.FwOp)
                     priority_list_ops.remove(flash.FwOp)
                     priority_list_ops.appendleft(flash.FwOp)
 

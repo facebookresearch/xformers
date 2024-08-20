@@ -17,7 +17,7 @@ from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
 import xformers.ops
-from xformers.attn_bias_utils import create_attn_bias
+from xformers.attn_bias_utils import create_attn_bias, pack_kv_cache
 from xformers.ops import fmha
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
 from xformers.ops.fmha.common import AttentionFwOpBase, AttentionOpBase
@@ -25,10 +25,10 @@ from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
 from .utils import (
     assert_allclose,
+    construct_fp8_attention_inputs,
     cuda_only,
     disable_on_rocm,
     disable_tf32,
-    pack_kv_cache,
     ref_attention_bmhk_for_test,
     ref_attention_for_test,
     rocm_only,
@@ -45,6 +45,9 @@ sm75_or_better_only = pytest.mark.skipif(
 )
 sm80_or_better_only = pytest.mark.skipif(
     compute_capability < (8, 0), reason="requires sm80+"
+)
+sm90_or_better_only = pytest.mark.skipif(
+    compute_capability < (9, 0), reason="requires sm90+"
 )
 skip_if_rocm = pytest.mark.skipif(
     torch.version.hip is not None, reason="not supported on ROCm"
@@ -112,7 +115,7 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             shapes.append((B, M, Mkv, H, K, K))
             shapes.append((B, Mq, M, H, K, K))
         for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 256 + 2, 256 + 8, 512]:
-            if _K <= op.SUPPORTED_MAX_K:
+            if op.SUPPORTED_MIN_K <= _K <= op.SUPPORTED_MAX_K:
                 shapes.append((B, Mq, Mkv, H, _K, _K))
         # Different value for K / Kv
         if op.SUPPORTS_DIFFERENT_VALUE_EMBED:
@@ -1256,7 +1259,8 @@ def test_unsupported_cpu(op: Type[fmha.AttentionFwOpBase]):
 @cuda_only
 @pytest.mark.parametrize("op", ALL_FW_OPS, ids=[op.NAME for op in ALL_FW_OPS])
 def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
-    q = torch.empty([1, 1, 32, 4], device="cuda", dtype=torch.float16).permute(
+    K = max(op.SUPPORTED_MIN_K, 32)
+    q = torch.empty([1, 1, K, 4], device="cuda", dtype=torch.float16).permute(
         0, 3, 1, 2
     )
 
@@ -1272,7 +1276,8 @@ def test_unsupported_stride_lastdim(op: Type[fmha.AttentionFwOpBase]):
 @cuda_only
 @pytest.mark.parametrize("op", ALL_FW_OPS, ids=[op.NAME for op in ALL_FW_OPS])
 def test_unsupported_stride_alignment(op: Type[fmha.AttentionFwOpBase]):
-    q = torch.empty([1, 2, 1, 33], device="cuda", dtype=torch.float16)[:, :, :, :32]
+    K = max(op.SUPPORTED_MIN_K, 32)
+    q = torch.empty([1, 2, 1, K + 1], device="cuda", dtype=torch.float16)[:, :, :, :K]
 
     try:
         fmha.memory_efficient_attention(q, q, q, op=(op, None))
@@ -2733,6 +2738,7 @@ def paged_attention_run_inner(
     [
         fmha.triton_splitk.FwOp,
         fmha.flash.FwOp,
+        fmha.flash3.FwOp,
         None,
     ],
     ids=lambda op: "None" if op is None else op.NAME,
@@ -2755,6 +2761,8 @@ def test_merge_attentions_nobias(
     Merging the same attention twice shouldn't change anything.
     This also tests the shape of the lse output of each permitted op.
     """
+    if op is fmha.flash3.FwOp and not op.is_available():
+        pytest.skip("Flash3 not available")
     B, Mq, K = 13, 3, 128
     case_name = str((write_lse, G, H, stack_inputs)).encode("ascii")
     many_keys = hashlib.md5(case_name).digest()[0] % 2
@@ -3394,6 +3402,68 @@ def test_bias_lower_triangular_with_bias() -> None:
     assert dense_bias.grad is not None
     assert mask_biased2.grad is None
     assert_allclose(dense_bias.grad, grad, "dense.grad")
+
+
+@sm90_or_better_only
+@pytest.mark.parametrize("B", [1, 16, 64])
+@pytest.mark.parametrize("Mkv", [2048, 8192])
+@pytest.mark.parametrize("Hkv", [1, 2])
+@pytest.mark.parametrize("G", [1, 8])
+@pytest.mark.parametrize("page_size", [64, 256])
+@torch.no_grad()
+def test_triton_splitk_rowwise_fp8(
+    B: int,
+    Mkv: int,
+    Hkv: int,
+    G: int,
+    page_size: int,
+    Mq: int = 1,
+    K: int = 128,
+) -> None:
+    torch.manual_seed(10)
+
+    Hq = Hkv * G
+
+    device = torch.device("cuda")
+    dtype = torch.bfloat16
+
+    inp, inp_ref, inp_fp8_paged, inp_bf16_paged = construct_fp8_attention_inputs(
+        B, Mkv, Mq, Hkv, Hq, K, page_size, device, dtype
+    )
+
+    (
+        attn_output_fp8,
+        context_fp8,
+    ) = fmha._memory_efficient_attention_forward_requires_grad(
+        inp, op=fmha.triton_splitk.FwOp
+    )
+
+    (
+        attn_output_ref,
+        context_ref,
+    ) = fmha._memory_efficient_attention_forward_requires_grad(
+        inp_ref, op=fmha.triton_splitk.FwOp
+    )
+
+    torch.testing.assert_close(attn_output_fp8, attn_output_ref, atol=5e-3, rtol=5e-3)
+    assert context_fp8 is not None and context_ref is not None
+    torch.testing.assert_close(context_fp8.lse, context_ref.lse, atol=5e-4, rtol=5e-4)
+
+    # Paged K/V cache
+
+    (
+        attn_output_fp8_paged,
+        context_fp8_paged,
+    ) = fmha._memory_efficient_attention_forward_requires_grad(
+        inp_fp8_paged, op=fmha.triton_splitk.FwOp
+    )
+    torch.testing.assert_close(
+        attn_output_fp8, attn_output_fp8_paged, atol=2e-3, rtol=2e-3
+    )
+    assert context_fp8_paged is not None
+    torch.testing.assert_close(
+        context_fp8.lse, context_fp8_paged.lse, atol=1e-4, rtol=1e-4
+    )
 
 
 # end of file

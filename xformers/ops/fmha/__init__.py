@@ -7,7 +7,16 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
 
 import torch
 
-from . import attn_bias, ck, ck_decoder, ck_splitk, cutlass, flash, triton_splitk
+from . import (
+    attn_bias,
+    ck,
+    ck_decoder,
+    ck_splitk,
+    cutlass,
+    flash,
+    flash3,
+    triton_splitk,
+)
 from .attn_bias import VARLEN_BIASES, AttentionBias, LowerTriangularMask
 from .common import (
     AttentionBwOpBase,
@@ -19,7 +28,13 @@ from .common import (
     Inputs,
     bmk2bmhk,
 )
-from .dispatch import _dispatch_bw, _dispatch_fw, _ensure_op_supports_or_raise
+from .dispatch import (
+    _dispatch_bw,
+    _dispatch_fw,
+    _ensure_op_supports_or_raise,
+    _get_use_fa3,
+    _set_use_fa3,
+)
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
@@ -294,6 +309,48 @@ def memory_efficient_attention(
             output_dtype=output_dtype,
         ),
         op=op,
+    )
+
+
+torch.library.define(
+    "xformer::memory_efficient_attention_forward",
+    "(Tensor q, Tensor k, Tensor v, Tensor? b = None, float? p = 0.0, float? scale = None) -> Tensor",
+)
+
+
+@torch.library.impl("xformer::memory_efficient_attention_forward", "Meta")
+def memory_efficient_attention_forward_meta(q, k, v):
+    return q.new_empty(q.shape)
+
+
+# torch.compile has issue when tracing through op dispatch and ensure_op_support
+# so provide a wrapper to register it as a custom torch library op.
+@torch.library.impl("xformer::memory_efficient_attention_forward", "CUDA")
+def memory_efficient_attention_forward_torch_wrapper(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
+    p: float = 0.0,
+    scale: Optional[float] = None,
+) -> torch.Tensor:
+    """
+    This provides a torch-compilable wrapper op to
+    memory_efficient_attention_forward in certain special cases.
+
+    Note that the following are not supported
+        - `op` input (?)
+        - certain attn_bias types (?)
+        - output_dtype
+        - K != Kv
+    """
+    return memory_efficient_attention_forward(
+        query,
+        key,
+        value,
+        attn_bias,
+        p,
+        scale,
     )
 
 
@@ -801,6 +858,7 @@ class _MergeAttentions(torch.autograd.Function):
 ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
     flash.FwOp,
+    flash3.FwOp,
     triton_splitk.FwOp,
 ]
 
@@ -823,4 +881,6 @@ __all__ = [
     "ALL_FW_OPS",
     "ALL_BW_OPS",
     "attn_bias",
+    "_get_use_fa3",
+    "_set_use_fa3",
 ]

@@ -5,6 +5,7 @@
 
 import functools
 import sys
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -86,6 +87,39 @@ AUTOTUNER_KEY = [
     "BLOCK_N_PER_SPLIT",
 ]
 
+
+@dataclass
+class InputsFp8(Inputs):
+    """
+    Each of k/v_fp8_scales is an int32 tensor of shape (1, B * Mkv, Hq),
+    or (1, page_size * max_pages_per_lane, Hq) in the paged case.
+    Each int32 element contains two packed fp16 number
+    - scales and shifts for row-wise FP8 quantization.
+    """
+
+    k_fp8_scale_shift: Optional[torch.Tensor] = None
+    v_fp8_scale_shift: Optional[torch.Tensor] = None
+
+    @property
+    def nbytes(self) -> int:
+        """
+        Number of bytes in the input, not counting the attention bias.
+        """
+        return (
+            super(InputsFp8, self).nbytes
+            + (
+                self.k_fp8_scale_shift.untyped_storage().nbytes()
+                if self.k_fp8_scale_shift is not None
+                else 0
+            )
+            + (
+                self.v_fp8_scale_shift.untyped_storage().nbytes()
+                if self.v_fp8_scale_shift is not None
+                else 0
+            )
+        )
+
+
 if TYPE_CHECKING or _is_triton_available():
     import triton
     import triton.language as tl
@@ -106,6 +140,8 @@ if TYPE_CHECKING or _is_triton_available():
         Seq_starts_q,
         Seq_starts_q_multiplier,
         additive_bias,
+        K_fp8_scale_shift,
+        V_fp8_scale_shift,
         stride_qz,
         stride_qm,
         stride_qg,
@@ -139,6 +175,14 @@ if TYPE_CHECKING or _is_triton_available():
         stride_bias_h,
         stride_bias_qm,
         stride_bias_km,
+        stride_k_fp8_scale_shift_z: tl.constexpr,
+        stride_k_fp8_scale_shift_n: tl.constexpr,
+        stride_k_fp8_scale_shift_g: tl.constexpr,
+        stride_k_fp8_scale_shift_h: tl.constexpr,
+        stride_v_fp8_scale_shift_z: tl.constexpr,
+        stride_v_fp8_scale_shift_n: tl.constexpr,
+        stride_v_fp8_scale_shift_g: tl.constexpr,
+        stride_v_fp8_scale_shift_h: tl.constexpr,
         kv_cache_blocks_per_row: tl.constexpr,
         Z: tl.constexpr,
         N_CTX_Q: tl.constexpr,  # The number of queries
@@ -190,16 +234,23 @@ if TYPE_CHECKING or _is_triton_available():
         )
         tl.static_assert(
             (PACKED_PER_VAL == 1 and tl.constexpr(K.dtype.element_ty != tl.int32))
-            or (PACKED_PER_VAL == 8 and tl.constexpr(K.dtype.element_ty == tl.int32)),
-            f"Only 4-bit quantization is supported, K/V should have dtype int32 in "
+            or (
+                (PACKED_PER_VAL == 4 or PACKED_PER_VAL == 8)
+                and tl.constexpr(K.dtype.element_ty == tl.int32)
+            ),
+            f"Only int4 and fp8 quantization is supported, K/V should have dtype int32 in "
             f"the quantized case: {PACKED_PER_VAL=} {tl.constexpr(K.dtype)=} {tl.constexpr(K.dtype.element_ty)=}",
         )
         tl.static_assert(
             (((N_GROUPS == 1 or N_GROUPS == 2) or N_GROUPS == 4) or N_GROUPS == 8),
             "Number of quantization groups can be 1 (row-wise quantization), 2, 4, or 8.",
         )
-
-        QUANTIZED: tl.constexpr = PACKED_PER_VAL > 1
+        tl.static_assert(
+            N_GROUPS == 1 or K_fp8_scale_shift is None,
+            f"Only row-wise fp8 quantization is supported, but got {N_GROUPS=} > 1.",
+        )
+        FP8_QUANTIZED: tl.constexpr = K_fp8_scale_shift is not None
+        INT4_QUANTIZED: tl.constexpr = PACKED_PER_VAL > 1 and not FP8_QUANTIZED
         PACKED_D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // PACKED_PER_VAL // N_GROUPS
         D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // N_GROUPS
 
@@ -237,6 +288,21 @@ if TYPE_CHECKING or _is_triton_available():
         k_base = K + off_h * stride_kh + off_g * stride_kg
         v_base = V + off_h * stride_vh + off_g * stride_vg
 
+        if FP8_QUANTIZED:
+            k_fp8_scale_shift_base = (
+                K_fp8_scale_shift
+                + off_h * stride_k_fp8_scale_shift_h
+                + off_g * stride_k_fp8_scale_shift_g
+            )
+            v_fp8_scale_shift_base = (
+                V_fp8_scale_shift
+                + off_h * stride_v_fp8_scale_shift_h
+                + off_g * stride_v_fp8_scale_shift_g
+            )
+        else:
+            k_fp8_scale_shift_base = None
+            v_fp8_scale_shift_base = None
+
         # Boundaries of split-k chunk
         chunk_hi = (splitk_idx + 1) * BLOCK_N_PER_SPLIT
         chunk_lo = splitk_idx * BLOCK_N_PER_SPLIT
@@ -269,7 +335,7 @@ if TYPE_CHECKING or _is_triton_available():
             # Additional shift by 1 along the last dimension in the quantized case, since
             # the first element along that dim contains packed quantization coefficients.
             K_block_ptr = tl.make_block_ptr(
-                base=k_base + stride_kk * QUANTIZED * N_GROUPS,
+                base=k_base + stride_kk * INT4_QUANTIZED * N_GROUPS,
                 shape=(PACKED_D_PER_GROUP, hi),
                 strides=(stride_kk, stride_kn),
                 offsets=(0, lo),
@@ -277,7 +343,7 @@ if TYPE_CHECKING or _is_triton_available():
                 order=(0, 1),
             )
             V_block_ptr = tl.make_block_ptr(
-                base=v_base + stride_vk * QUANTIZED * N_GROUPS,
+                base=v_base + stride_vk * INT4_QUANTIZED * N_GROUPS,
                 shape=(hi, PACKED_D_PER_GROUP),
                 strides=(stride_vn, stride_vk),
                 offsets=(lo, 0),
@@ -285,7 +351,7 @@ if TYPE_CHECKING or _is_triton_available():
                 order=(1, 0),
             )
 
-            if QUANTIZED:
+            if INT4_QUANTIZED:
                 # Pointers to quantization coefficients. Even those they are 1D,
                 # we have to use block pointers, since usual pointers
                 # don't support boundary checks
@@ -301,6 +367,29 @@ if TYPE_CHECKING or _is_triton_available():
                     base=v_base,
                     shape=(hi, 1),
                     strides=(stride_vn, stride_vk),
+                    offsets=(lo, 0),
+                    block_shape=(BLOCK_N, 1),
+                    order=(1, 0),
+                )
+            elif FP8_QUANTIZED:
+                if Seq_starts_k is not None:
+                    k_fp8_scale_shift_base += start_kv_idx * stride_k_fp8_scale_shift_n
+                    v_fp8_scale_shift_base += start_kv_idx * stride_v_fp8_scale_shift_n
+                else:
+                    k_fp8_scale_shift_base += off_z * stride_k_fp8_scale_shift_z
+                    v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
+                K_scale_shift_block_ptr = tl.make_block_ptr(
+                    base=k_fp8_scale_shift_base,
+                    shape=(1, hi),
+                    strides=(1, stride_k_fp8_scale_shift_n),
+                    offsets=(0, lo),
+                    block_shape=(1, BLOCK_N),
+                    order=(0, 1),
+                )
+                V_scale_shift_block_ptr = tl.make_block_ptr(
+                    base=v_fp8_scale_shift_base,
+                    shape=(hi, 1),
+                    strides=(stride_v_fp8_scale_shift_n, 1),
                     offsets=(lo, 0),
                     block_shape=(BLOCK_N, 1),
                     order=(1, 0),
@@ -392,7 +481,7 @@ if TYPE_CHECKING or _is_triton_available():
 
                 current_block_size = min(hi - start_n, BLOCK_N)
                 K_block_ptr = tl.make_block_ptr(
-                    base=k_base + stride_kk * QUANTIZED * N_GROUPS,
+                    base=k_base + stride_kk * INT4_QUANTIZED * N_GROUPS,
                     shape=(PACKED_D_PER_GROUP, offset + current_block_size),
                     strides=(stride_kk, stride_kn),
                     offsets=(0, offset),
@@ -400,14 +489,14 @@ if TYPE_CHECKING or _is_triton_available():
                     order=(0, 1),
                 )
                 V_block_ptr = tl.make_block_ptr(
-                    base=v_base + stride_vk * QUANTIZED * N_GROUPS,
+                    base=v_base + stride_vk * INT4_QUANTIZED * N_GROUPS,
                     shape=(offset + current_block_size, PACKED_D_PER_GROUP),
                     strides=(stride_vn, stride_vk),
                     offsets=(offset, 0),
                     block_shape=(BLOCK_N, PACKED_D_PER_GROUP),
                     order=(1, 0),
                 )
-                if QUANTIZED:
+                if INT4_QUANTIZED:
                     # Pointers to quantization coefficients. Even those they are 1D,
                     # we have to use block pointers, since usual pointers
                     # don't support boundary checks
@@ -423,6 +512,23 @@ if TYPE_CHECKING or _is_triton_available():
                         base=v_base,
                         shape=(offset + current_block_size, 1),
                         strides=(stride_vn, stride_vk),
+                        offsets=(offset, 0),
+                        block_shape=(BLOCK_N, 1),
+                        order=(1, 0),
+                    )
+                elif FP8_QUANTIZED:
+                    K_scale_shift_block_ptr = tl.make_block_ptr(
+                        base=k_fp8_scale_shift_base,
+                        shape=(1, offset + current_block_size),
+                        strides=(1, stride_k_fp8_scale_shift_n),
+                        offsets=(0, offset),
+                        block_shape=(1, BLOCK_N),
+                        order=(0, 1),
+                    )
+                    V_scale_shift_block_ptr = tl.make_block_ptr(
+                        base=v_fp8_scale_shift_base,
+                        shape=(offset + current_block_size, 1),
+                        strides=(stride_v_fp8_scale_shift_n, 1),
                         offsets=(offset, 0),
                         block_shape=(BLOCK_N, 1),
                         order=(1, 0),
@@ -443,6 +549,7 @@ if TYPE_CHECKING or _is_triton_available():
                     BOUNDS_CHECKS_N,
                     PACKED_PER_VAL,
                     PACKED_D_PER_GROUP,
+                    FP8_QUANTIZED,
                     Q.dtype.element_ty,
                     i,
                 )
@@ -581,7 +688,10 @@ if TYPE_CHECKING or _is_triton_available():
             {
                 "BOUNDS_CHECKS_N": lambda args: bool(
                     (args["BLOCK_N_PER_SPLIT"] % args["BLOCK_N"])
-                    or (args["N_CTX_K"] % args["BLOCK_N_PER_SPLIT"])
+                    or (
+                        args["BLOCK_N_PER_SPLIT"] > 0
+                        and args["N_CTX_K"] % args["BLOCK_N_PER_SPLIT"]
+                    )
                     or args["USE_SEQ_LEN"]
                 )
             }
@@ -645,10 +755,11 @@ if TYPE_CHECKING or _is_triton_available():
         BOUNDS_CHECKS_N: tl.constexpr,
         PACKED_PER_VAL: tl.constexpr,
         PACKED_D_PER_GROUP: tl.constexpr,
+        FP8_QUANTIZED: tl.constexpr,
         dtype: tl.constexpr,
         group_id: tl.constexpr,
     ):
-        """Load K/V for a given block. In case of int4-quantized K/V, dequantize them after loading.
+        """Load K/V for a given block. In case of int4/fp8-quantized K/V, dequantize them after loading.
         If quantization is group-wise, use group_id to advance the pointers to the current group.
         """
         # Advance to the current quantization group
@@ -659,9 +770,24 @@ if TYPE_CHECKING or _is_triton_available():
         k = tl.load(K_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ())
         v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
 
-        if PACKED_PER_VAL > 1:
-            # K/V are quantized, load quantization coefficients and dequantize
+        # If K/V are quantized, load quantization coefficients and dequantize.
+        if FP8_QUANTIZED:
+            v_scale_shift = tl.load(
+                V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+            )
+            v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
 
+            k_scale_shift = tl.load(
+                K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
+            )
+            k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
+            k_t = dequantize(
+                tl.trans(k), tl.trans(k_scale), tl.trans(k_shift), PACKED_PER_VAL
+            ).to(dtype)
+            k = tl.trans(k_t)
+        elif PACKED_PER_VAL > 1:
+            # Int4 quantization.
             K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
             V_scale_shift_block_ptr = tl.advance(V_scale_shift_block_ptr, (0, group_id))
 
@@ -698,7 +824,7 @@ if TYPE_CHECKING or _is_triton_available():
         x_,
         scale,
         shift,
-        PACKED_PER_VAL: tl.constexpr = 8,
+        PACKED_PER_VAL: tl.constexpr,
     ):
         """PACKED_PER_VAL is the number of values packed into each element x_.
         For example, for int4 quantization and x_ of type int32, PACKED_PER_VAL is 8.
@@ -708,7 +834,7 @@ if TYPE_CHECKING or _is_triton_available():
         # offsets: (PACKED_PER_VAL,)
         BLOCK_N: tl.constexpr = x_.shape[0]
         BLOCK_DMODEL_PACKED: tl.constexpr = x_.shape[1]
-        offsets = tl.arange(0, PACKED_PER_VAL) * 4
+        offsets = tl.arange(0, PACKED_PER_VAL) * (32 // PACKED_PER_VAL)
         quant_offset = (
             x_[:, :, None, :] >> offsets
         )  # (BLOCK_N, D // PACKED_PER_VAL, PACKED_PER_VAL)
@@ -716,13 +842,25 @@ if TYPE_CHECKING or _is_triton_available():
         quant_offset = tl.reshape(
             quant_offset, (BLOCK_N, BLOCK_DMODEL_PACKED * PACKED_PER_VAL)
         )
-        # Trick - instead of converting int4 to float16 we view it as float16
-        # and then multiply by 32768 * 512 == 2**24
-        quant_offset = (quant_offset & 0xF).to(tl.uint16).to(tl.float16, bitcast=True)
-        quant_offset = (quant_offset * 32768.0).to(tl.float16)
-        scale_512 = scale * 512
+        if PACKED_PER_VAL == 4:
+            # FP8 quantization.
+            fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+            dequant = (
+                quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype)
+                * scale
+                + shift
+            )
+        else:
+            # Int4 quantization.
+            # Trick - instead of converting int4 to float16 we view it as float16
+            # and then multiply by 32768 * 512 == 2**24
+            quant_offset = (
+                (quant_offset & 0xF).to(tl.uint16).to(tl.float16, bitcast=True)
+            )
+            quant_offset = (quant_offset * 32768.0).to(tl.float16)
+            scale_512 = scale * 512
 
-        dequant = quant_offset * scale_512 + shift
+            dequant = quant_offset * scale_512 + shift
         return dequant
 
     @triton.jit
@@ -1102,10 +1240,10 @@ def _is_cuda_at_least_sm80(device: torch.device) -> bool:
 
 @register_operator
 class FwOp(AttentionFwOpBase):
-    """Flash-Attention with Split-K. Supports fused int-4 K/V quantization.
+    """Flash-Attention with Split-K. Supports fused int4 and fp8 K/V quantization.
     Quantized path will be taken if input K/V have type int32.
 
-    Quantization can be row-wise or group-wise (when cls.NUM_GROUPS > 1) along
+    Int4 quantization can be row-wise or group-wise (when cls.NUM_GROUPS > 1) along
     the last dimension of K and V. Currently 1, 2, 4, or 8 groups per row are supported.
     Quantization coefficients (scale and shift) are represented as two
     float16 constants per group, packed into int32. Quantization coefficients of
@@ -1120,6 +1258,10 @@ class FwOp(AttentionFwOpBase):
         scale, shift = unpack_int32_into_float16x2(group_quant[0])
         group_dequant = group_quant[..., 1:] * scale + shift
     ...
+
+    For fp8 only row-wise quantization is supported. To use it, provide input of type
+    xformers.ops.fmha.triton_splitk.InputsFp8 (instead of the usual xformers.ops.fmha.Inputs) to
+    xformers.ops.fmha.triton_splitk.FwOp.apply or xformers.ops.fmha._memory_efficient_attention_forward.
 
     This op uses Paged Attention when bias is one of the Paged* classes.
     In this case bias has additional fields:
@@ -1279,6 +1421,10 @@ class FwOp(AttentionFwOpBase):
                     "Additive attention bias has to have shape (B, G, H, Mq, Mkv) "
                     f"or (B, H, Mq, Mkv), but got {d.attn_bias.shape}."
                 )
+            if cls.SPLIT_K is not None and cls.SPLIT_K > 1:
+                reasons.append(
+                    "Additive attention bias is not supported with split-k > 1."
+                )
 
         return reasons
 
@@ -1325,9 +1471,39 @@ class FwOp(AttentionFwOpBase):
             return _get_splitk_kernel(cls.NUM_GROUPS)
 
     @classmethod
+    def get_fp8_scale_shift(
+        cls, inp: Inputs
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+        if not hasattr(inp, "k_fp8_scale_shift"):
+            return None, None
+        inp_ = cast(InputsFp8, inp)
+        k_fp8_scale_shift = inp_.k_fp8_scale_shift
+        v_fp8_scale_shift = inp_.v_fp8_scale_shift
+        assert k_fp8_scale_shift is not None
+        assert v_fp8_scale_shift is not None
+        if k_fp8_scale_shift.ndim == 3:
+            return k_fp8_scale_shift.unsqueeze(2), v_fp8_scale_shift.unsqueeze(2)
+        if k_fp8_scale_shift.ndim == 4:
+            return k_fp8_scale_shift, v_fp8_scale_shift
+        raise ValueError(
+            "FP8 scales have to be provided in BMH or BMGH format, "
+            f"but got {k_fp8_scale_shift.shape=}"
+        )
+
+    @classmethod
     def apply(
-        cls, inp: Inputs, needs_gradient: bool
+        cls,
+        inp: Inputs,
+        needs_gradient: bool,
     ) -> Tuple[torch.Tensor, Optional[Context]]:
+        """
+        Note that inp can be of type InputsFp8, in which case K/V are assumed to be row-wise FP8-quantized.
+        This is different from int4 quantization, where coefficients are kept together with the quantized
+        values at the beginning of each row, and inp has type Inputs.
+        """
+
+        k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
+
         output_dtype = inp.get_output_dtype()
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
@@ -1384,12 +1560,14 @@ class FwOp(AttentionFwOpBase):
                 assert seq_starts_q.stride(0) == 1
             else:
                 q = q.view(B, -1, G, Hq, Kq)
-            if is_paged or is_gappy:
-                k = k.view(1, -1, G, Hq, Kkv)
-                v = v.view(1, -1, G, Hq, Kkv)
-            else:
-                k = k.view(B, -1, G, Hq, Kkv)
-                v = v.view(B, -1, G, Hq, Kkv)
+
+            kv_shape = (1 if is_paged or is_gappy else B, -1, G, Hq, Kkv)
+            k = k.view(kv_shape)
+            v = v.view(kv_shape)
+            if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
+                k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
+                v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+
             Mq = q.shape[1]
             NUM_QUERIES_CAUSAL = Mq
         else:
@@ -1419,11 +1597,18 @@ class FwOp(AttentionFwOpBase):
                 q = q.permute(0, 3, 1, 2, 4).reshape(q.shape[0], -1, G, 1, Kq)
             k = k[:, :, :, :1]
             v = v[:, :, :, :1]
+            if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
+                k_fp8_scale_shift = k_fp8_scale_shift[:, :, :, :1]
+                v_fp8_scale_shift = v_fp8_scale_shift[:, :, :, :1]
 
         if k.dtype == torch.int32:
-            # Quantized K/V
-            PACKED_PER_VAL = 8
-            Lk = (k.shape[-1] - cls.NUM_GROUPS) * 8
+            if k_fp8_scale_shift is not None:
+                Lk = k.shape[-1] * 4
+                PACKED_PER_VAL = 4
+            else:
+                # Quantized K/V
+                PACKED_PER_VAL = 8
+                Lk = (k.shape[-1] - cls.NUM_GROUPS) * 8
         else:
             Lk = k.shape[-1]
             PACKED_PER_VAL = 1
@@ -1452,7 +1637,7 @@ class FwOp(AttentionFwOpBase):
             split_k = cls.SPLIT_K
         else:
             # Use heuristics
-            split_k = cls.get_split_k(B, G, H, Mk)
+            split_k = cls.get_split_k(B, G, H, Mk) if attn_bias_tensor is None else 1
 
         # M_ceil = Mqq rounded up to a multiple of MAX_BLOCK_M
         M_ceil = (Mqq + cls.MAX_BLOCK_M - 1) // cls.MAX_BLOCK_M * cls.MAX_BLOCK_M
@@ -1544,6 +1729,8 @@ class FwOp(AttentionFwOpBase):
             Seq_starts_q=seq_starts_q,
             Seq_starts_q_multiplier=seq_starts_q_multiplier,
             additive_bias=attn_bias_tensor,
+            K_fp8_scale_shift=k_fp8_scale_shift,
+            V_fp8_scale_shift=v_fp8_scale_shift,
             **_strides(q, "qz", "qm", "qg", "qh", "qk"),
             **_strides(k, "kz", "kn", "kg", "kh", "kk"),
             **_strides(v, "vz", "vn", "vg", "vh", "vk"),
@@ -1552,6 +1739,20 @@ class FwOp(AttentionFwOpBase):
             **_strides(block_tables, "blocktablesz", "blocktablesl"),
             **_strides(
                 attn_bias_tensor, "bias_b", "bias_g", "bias_h", "bias_qm", "bias_km"
+            ),
+            **_strides(
+                k_fp8_scale_shift,
+                "k_fp8_scale_shift_z",
+                "k_fp8_scale_shift_n",
+                "k_fp8_scale_shift_g",
+                "k_fp8_scale_shift_h",
+            ),
+            **_strides(
+                v_fp8_scale_shift,
+                "v_fp8_scale_shift_z",
+                "v_fp8_scale_shift_n",
+                "v_fp8_scale_shift_g",
+                "v_fp8_scale_shift_h",
             ),
             kv_cache_blocks_per_row=kv_cache_blocks_per_row,
             Z=B,

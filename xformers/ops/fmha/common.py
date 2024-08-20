@@ -244,6 +244,15 @@ class Inputs:
             return self.query.dtype
         return self.output_dtype
 
+    @property
+    def nbytes(self) -> int:
+        """
+        Number of bytes in the input, not counting the attention bias.
+        """
+        return sum(
+            x.untyped_storage().nbytes() for x in [self.query, self.key, self.value]
+        )
+
 
 @dataclass
 class Context:
@@ -295,6 +304,7 @@ class AttentionOpBase(BaseOperator):
     CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
+    SUPPORTED_MIN_K: int = 0
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (type(None),)
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
@@ -327,7 +337,11 @@ class AttentionOpBase(BaseOperator):
             reasons.append("query.shape[-1] != value.shape[-1]")
         if max(K, Kv) > cls.SUPPORTED_MAX_K:
             reasons.append(
-                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+                f"max(query.shape[-1], value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+            )
+        if min(K, Kv) < cls.SUPPORTED_MIN_K:
+            reasons.append(
+                f"min(query.shape[-1], value.shape[-1]) < {cls.SUPPORTED_MIN_K}"
             )
         return reasons
 
@@ -354,7 +368,7 @@ class AttentionOpBase(BaseOperator):
             and (torch.version.hip is None)
         ):
             reasons.append("xFormers wasn't build with CUDA support")
-        if device_type == "cuda":
+        if device_type == "cuda" and (torch.version.hip is None):
             device_capability = torch.cuda.get_device_capability(d.device)
             if device_capability < cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
                 reasons.append(
