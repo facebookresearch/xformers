@@ -38,13 +38,16 @@ compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
 sm70_or_better_only = pytest.mark.skipif(
-    torch.version.cuda is not None and compute_capability < (7, 0), reason="requires sm70+"
+    torch.version.cuda is not None and compute_capability < (7, 0),
+    reason="requires sm70+",
 )
 sm75_or_better_only = pytest.mark.skipif(
-    torch.version.cuda is not None and compute_capability < (7, 5), reason="requires sm75+"
+    torch.version.cuda is not None and compute_capability < (7, 5),
+    reason="requires sm75+",
 )
 sm80_or_better_only = pytest.mark.skipif(
-    torch.version.cuda is not None and compute_capability < (8, 0), reason="requires sm80+"
+    torch.version.cuda is not None and compute_capability < (8, 0),
+    reason="requires sm80+",
 )
 skip_if_rocm = pytest.mark.skipif(
     torch.version.hip is not None, reason="not supported on ROCm"

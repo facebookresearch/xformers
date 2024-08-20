@@ -3,28 +3,14 @@ name: ROCM_CI
 on: 
   pull_request:
     types: [labeled, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      logLevel:
-        description: 'Log level'     
-        required: true
-        default: 'warning'
-  schedule:
-    - cron: "15 1 * * *"
 
 jobs:
   build:
-    runs-on: self-hosted
-    container:
-      image: 'rocm/pytorch-nightly:latest'
-      options: ' --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host --shm-size 8G '
+    if: contains(github.event.label.name, 'rocm')
+    runs-on: rocm
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        path: '_xformers'
-        submodules: 'recursive'
-        set-safe-directory: true
-        fetch-depth: 0
+    - uses: actions/checkout@v2
     - name: Get CPU info on Ubuntu
       if: contains(runner.os, 'linux')
       run: |
@@ -49,60 +35,37 @@ jobs:
         export ROCM_PATH=/opt/rocm
         echo ROCM_PATH         = $ROCM_PATH
 
+        export MAX_JOBS=64
+        echo MAX_JOBS          = $MAX_JOBS
+
         hipcc --version
         rocm-smi
         rocminfo | grep "gfx"
-        
-    - name: Setup build env
-      run: |
-        conda create -n xformers python=3.11
-        export PATH=/opt/conda/envs/xformers/bin:$PATH
-        python -VV
-        
-        python -m pip install -U torch --index-url=https://download.pytorch.org/whl/nightly/rocm6.1 
-        python -c "import torch; print(f'PyTorch version {torch.__version__}')"
-        
-        python -m pip install ninja scipy pytest pytest-html
 
-    - name: Pre-build clean
+    - name: Build XFormers
       run: |
-        cd _xformers
-        git clean -ffdx
-        cd ..
+        git clone --recursive -b $GIT_BRANCH $GITHUB_REPOSITORY
+        docker run -it --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host --shm-size 8G -v $PWD/xformers:/xformers  rocm/pytorch-nightly:latest
 
-    - name: Build xformers
-      run: |
-        export PATH=/opt/conda/envs/xformers/bin:$PATH
-        export MAX_JOBS=144
-        
-        python -m pip install -e ./_xformers --verbose
-        python -m xformers.info
+        pip3 install --upgrade pip
+        pip3 uninstall -y xformers
+        MAX_JOBS=$MAX_JOBS pip3 install -e /xformers --verbose
+        pip3 install scipy==1.10
+
+        python3 -c "import torch; print(torch.__version__)"
+        python3 -m xformers.info
 
     - name: Run python tests
       run: |
-        export PATH=/opt/conda/envs/xformers/bin:$PATH
-        
-        python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
+        pytest -rpfs /xformers/tests/test_mem_eff_attention.py | tee test_mem_eff_attention.log
     
     - name: Archive logs
-      if: '!cancelled()'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
         name: test results
-        path: test_mem_eff_attention.html
+        path: test_mem_eff_attention_ck.log
 
-    - name: Post-build clean
-      if: '!cancelled()'
+    - name: Process test results
       run: |
-        cd _xformers
-        git clean -ffdx
-        cd ..
-
-  clean:
-    runs-on: self-hosted
-    if: ${{ always() }}
-    needs: [build]
-    steps:
-      - name: Remove dangling Docker images
-        run: |
-          docker images -q -f dangling=true | xargs --no-run-if-empty docker rmi
+        echo "Processing test results TBD"
+      
