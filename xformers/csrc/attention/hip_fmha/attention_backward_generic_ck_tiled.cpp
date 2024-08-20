@@ -544,14 +544,6 @@ efficient_attention_backward_ck(
     grad_v = tmp_grad_v_view.sum(3);
   }
 
-  /*
-    if (inDataType == at::ScalarType::Half)
-      grad_q = grad_q_f32.to(torch::kFloat16);
-
-    if (inDataType == at::ScalarType::BFloat16)
-      grad_q = grad_q_f32.to(torch::kBFloat16);
-  */
-
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 }
 
