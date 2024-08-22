@@ -24,6 +24,7 @@ import setuptools
 import torch
 from torch.utils.cpp_extension import (
     CUDA_HOME,
+    ROCM_HOME,
     BuildExtension,
     CppExtension,
     CUDAExtension,
@@ -417,7 +418,9 @@ def get_extensions():
             "--ptxas-options=-O2",
             "--ptxas-options=-allow-expensive-optimizations=true",
         ]
-    elif torch.cuda.is_available() and torch.version.hip:
+    elif torch.version.hip and (
+        torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
+    ):
         disable_hd256_hip_fmha = os.getenv("DISABLE_HD256_HIP_FMHA", "0")
         if disable_hd256_hip_fmha == "1":
             source_hip_maxk_256 = []
@@ -427,8 +430,7 @@ def get_extensions():
             source_hip = list(set(source_hip) - set(source_hip_maxk_256))
 
         rename_cpp_cu(source_hip)
-        rocm_home = os.getenv("ROCM_PATH")
-        hip_version = get_hip_version(rocm_home)
+        hip_version = get_hip_version(ROCM_HOME)
 
         source_hip_cu = []
         for ff in source_hip:
@@ -444,22 +446,23 @@ def get_extensions():
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
-        use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
-
         generator_flag = []
         if disable_hd256_hip_fmha == "1":
             generator_flag += ["-DFMHA_SUPPORT_MAX_HEADDIM_128=1"]
 
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
+        use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
         if use_rtn_bf16_convert == "1":
             cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=0"]
+
+        arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
 
         extra_compile_args = {
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
             "nvcc": [
                 "-O3",
                 "-std=c++17",
-                f"--offload-arch={os.getenv('HIP_ARCHITECTURES', 'native')}",
+                *[f"--offload-arch={arch}" for arch in arch_list],
                 "-U__CUDA_NO_HALF_OPERATORS__",
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",

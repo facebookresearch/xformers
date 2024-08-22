@@ -1,4 +1,4 @@
-name: ROCM_CI
+name: rocm-ci
 
 on: 
   pull_request:
@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    if: contains(github.event.label.name, 'rocm')
+    if: github.repository == 'rocm/xformers'
     runs-on: rocm
 
     steps:
