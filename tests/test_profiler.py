@@ -11,13 +11,12 @@ import pytest
 import torch
 import torch.nn as nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
-from torch.utils._python_dispatch import TorchDispatchMode, _get_current_dispatch_mode
+from torch.utils._python_dispatch import _get_current_dispatch_mode
 
 import xformers.ops as xops
 import xformers.ops.fmha as fmha
 import xformers.profiler
 from xformers.profiler import profile_analyzer
-from xformers.profiler.slow_ops_profiler import GemmOpComputeFlops, flop_mapping
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 
@@ -29,61 +28,6 @@ TEST_SCHEDULE = tuple(
     for x in xformers.profiler.api.DEFAULT_SCHEDULE
     if x[0] is not xformers.profiler.PyTorchProfiler
 )
-
-
-class GEMMShapeDispatcher(TorchDispatchMode):
-    def __init__(self) -> None:
-        super().__init__()
-        self.mnk = (0, 0, 0)
-
-    def __torch_dispatch__(self, func, types, args=(), kwargs=None):
-        if kwargs is None:
-            kwargs = {}
-        if func._overloadpacket in flop_mapping:
-            compute_flops = flop_mapping[func._overloadpacket]
-            if isinstance(compute_flops, GemmOpComputeFlops):
-                self.mnk = compute_flops._get_mnk(args)
-        return func(*args)
-
-
-def test_gemm_flops() -> None:
-    M, N, K = 13, 17, 53
-
-    a = torch.empty([M, K])
-    b = torch.empty([K, N])
-    x = torch.empty([K])
-
-    with GEMMShapeDispatcher() as disp:
-        a @ b
-        assert disp.mnk == (M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        a @ x
-        assert disp.mnk == (M, 1, K)
-    with GEMMShapeDispatcher() as disp:
-        torch.nn.functional.linear(a, b.transpose(0, 1))
-        assert disp.mnk == (M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        torch.addmm(torch.empty([1, 1]), a, b)
-        assert disp.mnk == (M, N, K)
-
-    B = 3
-    ba = torch.empty([B, M, K])
-    bb = torch.empty([B, K, N])
-    with GEMMShapeDispatcher() as disp:
-        ba @ bb
-        assert disp.mnk == (B * M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        ba @ bb[:1]
-        assert disp.mnk == (B * M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        ba[:1] @ bb
-        assert disp.mnk == (B * M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        ba @ bb[0]
-        assert disp.mnk == (B * M, N, K)
-    with GEMMShapeDispatcher() as disp:
-        torch.addbmm(torch.empty([1, 1]), ba, bb)
-        assert disp.mnk == (B * M, N, K)
 
 
 @cuda_only

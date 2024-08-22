@@ -42,27 +42,12 @@ class DualGemmSiluOp(BaseOperator):
     OPERATOR_CATEGORY = "swiglu"
     NAME = "dual_gemm_silu"
 
-    @classmethod
-    # type: ignore
-    def operator_flop(
-        cls, x: torch.Tensor, w1: torch.Tensor, b1, w2: torch.Tensor, b2
-    ) -> int:
-        """NOTE: we neglect the impact of biases / pointwises"""
-        M, N, K = x.shape[0], w1.shape[0], w1.shape[1]
-        return M * N * K * 2 * 2
-
 
 @register_operator
 class GemmFusedSumOp(BaseOperator):
     OPERATOR = get_xformers_operator("gemm_fused_operand_sum")
     OPERATOR_CATEGORY = "swiglu"
     NAME = "gemm_fused_operand_sum"
-
-    @classmethod
-    # type: ignore
-    def operator_flop(cls, a: torch.Tensor, b: torch.Tensor, out1, out2) -> int:
-        M, N, K = a.shape[0], b.shape[1], a.shape[1]
-        return M * N * K * 2
 
 
 class _SwiGLUDecomposedFunc(torch.autograd.Function):

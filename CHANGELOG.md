@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When using the most recent version of Flash-Attention, it is no longer possible to mix it with the cutlass backend. In other words, it is no longer possible to use the cutlass Fw with the flash Bw.
 ### Removed
 - fMHA: Removed `decoder` and `small_k` backends
+- profiler: Removed `DetectSlowOpsProfiler` profiler
 
 ## [0.0.27.post2] - 2024-07-26
 Pre-built binary wheels require PyTorch 2.4.0
