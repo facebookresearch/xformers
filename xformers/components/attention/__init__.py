@@ -120,14 +120,5 @@ __all__ = [
     "register_attention",
 ]
 
-# Optionally expose the BlockSparse attention
-try:
-    from .blocksparse import BlockSparseAttention  # noqa
-
-    __all__ += ["BlockSparseAttention"]
-except ImportError:
-    pass
-
-
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components.attention")

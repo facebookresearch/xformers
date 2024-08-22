@@ -26,8 +26,12 @@ from ..common import BaseOperator
 from .attn_bias import (
     AttentionBias,
     AttentionBiasSubTensor,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LowerTriangularMask,
+    PagedBlockDiagonalGappyKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 
 
@@ -126,6 +130,24 @@ class Inputs:
             )
         if any(x.device != self.query.device for x in qkv):
             raise ValueError("Query/Key/Value should all be on the same device")
+        if isinstance(
+            self.attn_bias,
+            (
+                BlockDiagonalMask,
+                BlockDiagonalPaddedKeysMask,
+                PagedBlockDiagonalPaddedKeysMask,
+                BlockDiagonalGappyKeysMask,
+                PagedBlockDiagonalGappyKeysMask,
+            ),
+        ):
+            bias_device = self.attn_bias.q_seqinfo.seqstart.device
+            if bias_device != self.query.device:
+                raise ValueError(
+                    f"Attention bias and Query/Key/Value should be on the same device\n"
+                    f"  query.device: {self.query.device}\n"
+                    f"  attn_bias   : {bias_device}\n"
+                )
+
         quantized_dtypes = self.key.dtype == self.value.dtype == torch.int32
         non_quantized_dtypes = all(x.dtype == self.query.dtype for x in qkv)
         if not (quantized_dtypes or non_quantized_dtypes):
@@ -222,6 +244,15 @@ class Inputs:
             return self.query.dtype
         return self.output_dtype
 
+    @property
+    def nbytes(self) -> int:
+        """
+        Number of bytes in the input, not counting the attention bias.
+        """
+        return sum(
+            x.untyped_storage().nbytes() for x in [self.query, self.key, self.value]
+        )
+
 
 @dataclass
 class Context:
@@ -266,8 +297,6 @@ class AttentionOpBase(BaseOperator):
     - :attr:`xformers.ops.fmha.flash.BwOp`
     - :attr:`xformers.ops.fmha.triton.FwOp`
     - :attr:`xformers.ops.fmha.triton.BwOp`
-    - :attr:`xformers.ops.fmha.small_k.FwOp`
-    - :attr:`xformers.ops.fmha.small_k.BwOp`
     """
 
     OPERATOR: Any
@@ -275,6 +304,7 @@ class AttentionOpBase(BaseOperator):
     CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
+    SUPPORTED_MIN_K: int = 0
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (type(None),)
     SUPPORTS_DROPOUT: bool
     SUPPORTS_CUSTOM_SCALE: bool = False
@@ -285,6 +315,11 @@ class AttentionOpBase(BaseOperator):
     SUPPORTS_BMGHK: bool = False
     NAME: str
     OPERATOR_CATEGORY = "memory_efficient_attention"
+    # Format for the LSE computed in the FW pass, and accepted in the BW pass,
+    # for BlockDiagonalMask and children.
+    # When using a varlen bias, both the FW and BW operators must have the
+    # same value for `VARLEN_LSE_PACKED`
+    VARLEN_LSE_PACKED: bool = True
 
     _TEST_BATCH_SIZES: List[int] = [1, 300]
     _TEST_K: List[int] = [32, 128]
@@ -302,7 +337,11 @@ class AttentionOpBase(BaseOperator):
             reasons.append("query.shape[-1] != value.shape[-1]")
         if max(K, Kv) > cls.SUPPORTED_MAX_K:
             reasons.append(
-                f"max(query.shape[-1] != value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+                f"max(query.shape[-1], value.shape[-1]) > {cls.SUPPORTED_MAX_K}"
+            )
+        if min(K, Kv) < cls.SUPPORTED_MIN_K:
+            reasons.append(
+                f"min(query.shape[-1], value.shape[-1]) < {cls.SUPPORTED_MIN_K}"
             )
         return reasons
 
@@ -329,7 +368,7 @@ class AttentionOpBase(BaseOperator):
             and (torch.version.hip is None)
         ):
             reasons.append("xFormers wasn't build with CUDA support")
-        if device_type == "cuda":
+        if device_type == "cuda" and (torch.version.hip is None):
             device_capability = torch.cuda.get_device_capability(d.device)
             if device_capability < cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
                 reasons.append(
@@ -381,7 +420,6 @@ class AttentionFwOpBase(AttentionOpBase):
         torch.half: 4e-4,
         torch.bfloat16: 5e-3,
     }
-    UNPADDED_LSE: bool = False
 
     @classmethod
     def apply(
@@ -451,7 +489,6 @@ class AttentionBwOpBase(AttentionOpBase):
     }
     SUPPORTS_ATTN_BIAS_GRAD = False
     SUPPORTS_PARTIAL = True
-    SUPPORTS_UNPADDED_LSE = False
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
@@ -525,42 +562,6 @@ class AttentionBwOpBase(AttentionOpBase):
 AttentionOp = Tuple[
     Optional[Type[AttentionFwOpBase]], Optional[Type[AttentionBwOpBase]]
 ]
-
-
-@dataclass
-class AttentionOpDispatch:
-    """Dispatcher to automatically select
-    the best operator to run memory-efficient attention.
-
-    :Deprecated:
-
-        This class is deprecated and will be removed in a later version
-    """
-
-    op: AttentionOp
-
-    @classmethod
-    def from_arguments(
-        cls,
-        query: torch.Tensor,
-        key: torch.Tensor,
-        value: torch.Tensor,
-        attn_bias: Optional[Union[torch.Tensor, AttentionBias]] = None,
-        p: float = 0.0,
-        scale: Optional[float] = None,
-    ) -> "AttentionOpDispatch":
-        """Here for backward compatibility"""
-        from .dispatch import _dispatch_bw, _dispatch_fw
-
-        inp = Inputs(
-            query=query,
-            key=key,
-            value=value,
-            attn_bias=attn_bias,
-            p=p,
-            scale=scale,
-        )
-        return AttentionOpDispatch(op=(_dispatch_fw(inp, True), _dispatch_bw(inp)))
 
 
 def bmk2bmhk(tensor, num_heads: int) -> torch.Tensor:

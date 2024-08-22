@@ -12,6 +12,7 @@
   (!defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 700 || \
    (!defined(_MSC_VER) && __CUDA_ARCH__ >= 600))
 #if CUDA_ARCH_SUPPORTS_ATOMICS
+#include <cuda/atomic>
 #include <cuda/std/atomic>
 #include <cuda/std/version>
 // cuda::atomic_ref is only available in libcudacxx 1.7.0+ (which corresponds to
@@ -51,7 +52,7 @@ __host__ __device__
         const char* assertion,
         const char* file,
         unsigned int line,
-        const char* function) throw() __attribute__((__noreturn__));
+        const char* function) noexcept __attribute__((__noreturn__));
 }
 #endif // NDEBUG
 

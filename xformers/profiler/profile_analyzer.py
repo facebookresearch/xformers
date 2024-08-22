@@ -20,8 +20,11 @@ class FakeKinetoEvent:
         self._kineto_event = e
 
 
-def _attention_flops(queries, values, causal: bool) -> int:
+def _attention_flops(queries, values, causal: bool, fmt: str = "BHMK") -> int:
     assert isinstance(causal, bool)
+    assert fmt in ["BMHK", "BHMK"]
+    if fmt == "BMHK":
+        queries, values = [[x[0], x[2], x[1], x[3]] for x in [queries, values]]
     *B, N, K = queries
     *B, Nv, Kv = values
     if causal:  # NOTE: Causal from bottom right
@@ -58,23 +61,39 @@ def _replace_if_needed(
     op_name = e.name()
     flops = None
 
+    FMT_BMHK = dict(fmt="BMHK")
     ATTN_OPS = {
-        getattr(lib, op).default.name(): (getattr(lib, op), is_bwd)
-        for lib, op, is_bwd in [
-            (torch.ops.aten, "scaled_dot_product_attention", False),
-            (torch.ops.xformers_flash, "flash_fwd", False),
-            (torch.ops.xformers, "efficient_attention_forward_cutlass", False),
-            (torch.ops.aten, "_efficient_attention_forward", False),
-            (torch.ops.aten, "_scaled_dot_product_flash_attention_backward", True),
-            (torch.ops.aten, "_scaled_dot_product_efficient_attention_backward", True),
-            (torch.ops.xformers_flash, "flash_bwd", True),
-            (torch.ops.xformers, "efficient_attention_backward_cutlass", True),
-            (torch.ops.aten, "_efficient_attention_backward", True),
+        getattr(lib, op).default.name(): (getattr(lib, op), is_bwd, kwargs)
+        for lib, op, is_bwd, kwargs in [
+            (torch.ops.aten, "scaled_dot_product_attention", False, {}),
+            (torch.ops.xformers_flash, "flash_fwd", False, FMT_BMHK),
+            (
+                torch.ops.xformers,
+                "efficient_attention_forward_cutlass",
+                False,
+                FMT_BMHK,
+            ),
+            (torch.ops.aten, "_efficient_attention_forward", False, FMT_BMHK),
+            (torch.ops.aten, "_scaled_dot_product_flash_attention_backward", True, {}),
+            (
+                torch.ops.aten,
+                "_scaled_dot_product_efficient_attention_backward",
+                True,
+                {},
+            ),
+            (torch.ops.xformers_flash, "flash_bwd", True, FMT_BMHK),
+            (
+                torch.ops.xformers,
+                "efficient_attention_backward_cutlass",
+                True,
+                FMT_BMHK,
+            ),
+            (torch.ops.aten, "_efficient_attention_backward", True, FMT_BMHK),
         ]
         if hasattr(lib, op)
     }
     if op_name in ATTN_OPS.keys():
-        op, is_bwd = ATTN_OPS[op_name]
+        op, is_bwd, kwargs = ATTN_OPS[op_name]
         shapes = e.shapes()
         concrete_inputs = e.concrete_inputs()
         try:
@@ -85,6 +104,7 @@ def _replace_if_needed(
             shapes[_get_arg_idx(op, "query")],
             shapes[_get_arg_idx(op, "value")],
             is_causal,
+            **kwargs,
         )
         if is_bwd:
             flops = flops * 5 // 2
@@ -93,24 +113,6 @@ def _replace_if_needed(
         new_e.flops = lambda: flops  # type: ignore
         e = cast(torch._C._autograd._KinetoEvent, new_e)
     return e
-
-
-# BW compat with older PT versions
-if "start_ns" in dir(torch._C._autograd._KinetoEvent):
-
-    def _start_ns(e) -> int:
-        return e.start_ns()
-
-    def _duration_ns(e) -> int:
-        return e.duration_ns()
-
-else:
-
-    def _start_ns(e) -> int:
-        return e.start_us() * 1000
-
-    def _duration_ns(e) -> int:
-        return e.duration_us() * 1000
 
 
 @dataclass
@@ -169,19 +171,20 @@ class AnalyzedTrace:
         def _find_parent_op(
             e: torch._C._autograd._KinetoEvent,
         ) -> torch._C._autograd._KinetoEvent:
-            e_range = [_start_ns(e), _start_ns(e) + _duration_ns(e)]
+            e_range = [e.start_ns(), e.start_ns() + e.duration_ns()]
             candidate = e
             for parent in all_ops:
                 if parent.device_type() != e.device_type():
                     continue
                 if parent.start_thread_id() != e.start_thread_id():
                     continue
-                p_range = [_start_ns(parent), _start_ns(parent) + _duration_ns(parent)]
+                p_range = [parent.start_ns(), parent.start_ns() + parent.duration_ns()]
                 if not (p_range[0] < e_range[0] < e_range[1] < p_range[1]):
                     continue
                 # We take the longest parent with flops
-                if parent.flops() > 0 and _duration_ns(candidate) < _duration_ns(
-                    parent
+                if (
+                    parent.flops() > 0
+                    and candidate.duration_ns() < parent.duration_ns()
                 ):
                     candidate = parent
             return candidate
@@ -221,8 +224,8 @@ class AnalyzedTrace:
         for op in events:
             if op.device_type().name != "CUDA":
                 continue
-            begin_ns = min(begin_ns, _start_ns(op))
-            end_ns = max(end_ns, _start_ns(op) + _duration_ns(op))
+            begin_ns = min(begin_ns, op.start_ns())
+            end_ns = max(end_ns, op.start_ns() + op.duration_ns())
 
         return AnalyzedTrace(
             operations_per_dtype_fw=operations_per_dtype_fw,

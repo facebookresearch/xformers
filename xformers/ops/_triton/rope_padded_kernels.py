@@ -26,6 +26,12 @@ def _rope_padded_kernel(
     seqstartk,
     seqlenk,
     theta,
+    linear_scale,
+    use_dynamic_scaling: tl.constexpr,
+    dynamic_old_context_len: tl.constexpr,
+    dynamic_scale_factor: tl.constexpr,
+    dynamic_low_freq_factor: tl.constexpr,
+    dynamic_high_freq_factor: tl.constexpr,
     first_seqpos,
     seqpos,
     k_start: tl.constexpr,
@@ -181,7 +187,28 @@ def _rope_padded_kernel(
         re_x = tl.load(x_in + cols_re, mask=mask)
         im_x = tl.load(x_in + cols_im, mask=mask)
         # freqs = seq_pos / (theta ** (powers / dim))
-        freqs = seq_pos * pow(theta, powers / (-dim))
+        freqs = pow(theta, powers / (-dim))
+
+        if use_dynamic_scaling:
+            lo_freq_wavelen = dynamic_old_context_len / dynamic_low_freq_factor
+            hi_freq_wavelen = dynamic_old_context_len / dynamic_high_freq_factor
+
+            wavelens = 6.28318530718 / freqs  # 2*pi
+            is_low_freq = wavelens > lo_freq_wavelen
+            freqs = tl.where(is_low_freq, freqs / dynamic_scale_factor, freqs)
+
+            is_mid_freq = hi_freq_wavelen <= wavelens and wavelens <= lo_freq_wavelen
+
+            smooth = (dynamic_old_context_len / wavelens - dynamic_low_freq_factor) / (
+                dynamic_high_freq_factor - dynamic_low_freq_factor
+            )
+            freqs = tl.where(
+                is_mid_freq,
+                (1 - smooth) * freqs / dynamic_scale_factor + smooth * freqs,
+                freqs,
+            )
+
+        freqs = seq_pos * freqs / linear_scale
         sines = tl.sin(freqs)
         cosines = tl.cos(freqs)
         re_out = re_x * cosines - im_x * sines

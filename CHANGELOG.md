@@ -4,23 +4,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.27] - TBD
+## [0.0.28] - TBD
 ### Added
-- fMHA: PagedBlockDiagonalGappyKeysMask
-- fMHA: heterogeneous queries in triton_splitk
+### Improved
+- Profiler: Fix computation of FLOPS for the attention when using xFormers
+- Profiler: Fix MFU/HFU calculation when multiple dtypes are used
+- fMHA/splitK: Fixed `nan` in the output when using a `torch.Tensor` bias where a lot of consecutive keys are masked with `-inf`
+- Update Flash-Attention version to `v2.6.3` *when building from scratch*
+- When using the most recent version of Flash-Attention, it is no longer possible to mix it with the cutlass backend. In other words, it is no longer possible to use the cutlass Fw with the flash Bw.
+### Removed
+- fMHA: Removed `decoder` and `small_k` backends
+
+## [0.0.27.post2] - 2024-07-26
+Pre-built binary wheels require PyTorch 2.4.0
+
+## [0.0.27.post1] - 2024-07-25
+Pre-built binary wheels require PyTorch 2.4.0
+
+## [0.0.27] - 2024-07-10
+Pre-built binary wheels require PyTorch 2.3.1
+### Added
+- fMHA: `PagedBlockDiagonalGappyKeysMask`
+- fMHA: heterogeneous queries in `triton_splitk`
 - fMHA: support for paged attention in flash
-- backwards pass for merge_attentions
-- fMHA: Added `torch.compile` support for 2 biases (`LowerTriangularMask` and `LowerTriangularMaskWithTensorBias`)
+- fMHA: Added backwards pass for `merge_attentions`
+- fMHA: Added `torch.compile` support for 3 biases (`LowerTriangularMask`, `LowerTriangularMaskWithTensorBias` and `BlockDiagonalMask`) - some might require PyTorch 2.4
 - fMHA: Added `torch.compile` support in `memory_efficient_attention` when passing the flash operator explicitely (eg `memory_efficient_attention(..., op=(flash.FwOp, flash.BwOp))`)
+- fMHA: `memory_efficient_attention` now expects its `attn_bias` argument to be on the same device as the other input tensor. Previously, it would convert the bias to the right device.
+- fMHA: `AttentionBias` subclasses are now constructed by default on the `cuda` device if available - they used to be created on the CPU device
 - 2:4 sparsity: Added `xformers.ops.sp24.sparsify24_ste` for Straight Through Estimator (STE) with options to rescale the gradient differently for masked out/kept values
 ### Improved
 - fMHA: Fixed out-of-bounds reading for Split-K triton implementation
 - Profiler: fix bug with modules that take a single tuple as argument
 - Profiler: Added manual trigger for a profiling step, by creating a `trigger` file in the profiling directory
 ### Removed
-- Removed support for PyTorch version older than 2.2.0
+- Removed support for PyTorch version older than 2.2
 
 ## [0.0.26] - 2024-04-29
+Pre-built binary wheels require PyTorch 2.3.0
 ### Added
 - [2:4 sparsity] Added support for Straight-Through Estimator for `sparsify24` gradient (`GRADIENT_STE`)
 - [2:4 sparsity] `sparsify24_like` now supports the cuSparseLt backend, and the STE gradient

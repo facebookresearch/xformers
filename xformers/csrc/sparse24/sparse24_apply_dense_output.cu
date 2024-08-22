@@ -3,6 +3,7 @@
 #include <ATen/autocast_mode.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
+#include "autocast.h"
 #include "compute_sparse_tile.h"
 #include "sparse24_pack.h"
 
@@ -214,7 +215,7 @@ at::Tensor sparse24_apply_dense_output_autocast(
     double mul0,
     double mul1) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = at::autocast::get_autocast_gpu_dtype();
+  auto exec_type = xformers::get_autocast_cuda_dtype();
   return sparse24_apply_dense_output(
       at::autocast::cached_cast(exec_type, input), threads_masks, mul0, mul1);
 }

@@ -354,8 +354,8 @@ efficient_attention_backward_ck(
     p.max_seqlen_k = *max_seqlen_k_;
 
     // unpadded lse layout required
-    TORCH_CHECK(p.Hq == logsumexp.size(0));
-    TORCH_CHECK(p.M == logsumexp.size(1));
+    TORCH_CHECK(p.Hq == logsumexp.size(1));
+    TORCH_CHECK(p.M == logsumexp.size(2));
 
     if (scale.has_value())
       p.scale = float(*scale);
@@ -384,8 +384,8 @@ efficient_attention_backward_ck(
         static_cast<int>(grad_out.stride(3))};
 
     p.lsed_strides = {
-        static_cast<int>(logsumexp.stride(0)),
-        static_cast<int>(logsumexp.stride(1))};
+        static_cast<int>(logsumexp.stride(1)),
+        static_cast<int>(logsumexp.stride(2))};
 
     if (use_grad_q_f32) {
       p.grad_q_f32_strides = {

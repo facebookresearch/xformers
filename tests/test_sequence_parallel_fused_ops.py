@@ -22,6 +22,9 @@ if torch.cuda.is_available():
 cuda_sm70_only = pytest.mark.skipif(
     compute_capability < (7, 0), reason="requires sm70+"
 )
+cuda_sm80_only = pytest.mark.skipif(
+    compute_capability < (8, 0), reason="requires sm80+"
+)
 at_least_2_gpus = pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="needs at least 2 GPUs"
 )
@@ -38,25 +41,16 @@ if _is_triton_available():
         _xformers_seqpar_matmul_kernel.configs.pop()
 
 
-def inner_sequence_parallel_fused(
-    seed: int,
-    kind: str,
+def compare_fused_and_non_fused_ops(
+    my_rank: int,
+    world_size: int,
+    subgroup: torch.distributed.ProcessGroup,
     step: str,
     dims: Tuple[int, ...],
     dtype: torch.dtype,
+    triton: bool,
+    compile: bool,
 ):
-    my_rank = torch.distributed.get_rank()
-    world_size = torch.distributed.get_world_size()
-    subgroup = torch.distributed.new_group()
-
-    triton = True
-    if kind == "fallback":
-        os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
-    elif kind == "pytorch":
-        triton = False
-
-    torch.random.manual_seed(seed)
-
     batch_dims = dims[:-2]
     subbatch_dims = (batch_dims[0] // world_size,) + batch_dims[1:]
     outer_dim = dims[-2]
@@ -88,7 +82,10 @@ def inner_sequence_parallel_fused(
         output_reference = torch.matmul(inputs, weight.t()).flatten(0, 1)
 
         # Faster fused mode
-        output_fused = fused_allgather_and_linear(
+        fused_allgather_and_linear_compiled = torch.compile(
+            fused_allgather_and_linear, fullgraph=True, disable=not compile
+        )
+        output_fused = fused_allgather_and_linear_compiled(
             inputs[my_rank], weight, group=subgroup, _triton=triton
         )
 
@@ -121,11 +118,51 @@ def inner_sequence_parallel_fused(
         output_reference = torch.sum(staging, dim=0, dtype=dtype)
 
         # Faster fused mode
-        output_fused = fused_linear_and_reducescatter(
+        fused_linear_and_reducescatter_compiled = torch.compile(
+            fused_linear_and_reducescatter, fullgraph=True, disable=not compile
+        )
+        output_fused = fused_linear_and_reducescatter_compiled(
             inputs[my_rank], weights[my_rank], group=subgroup, _triton=triton
         )
 
     torch.testing.assert_close(output_reference, output_fused, atol=0, rtol=0)
+
+
+def inner_sequence_parallel_fused(
+    seed: int,
+    kind: str,
+    step: str,
+    dims: Tuple[int, ...],
+    dtype: torch.dtype,
+    use_compile: bool,
+):
+    my_rank = torch.distributed.get_rank()
+    world_size = torch.distributed.get_world_size()
+    subgroup = torch.distributed.new_group()
+
+    triton = True
+    if kind == "fallback":
+        os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
+    elif kind == "pytorch":
+        triton = False
+
+    torch.random.manual_seed(seed)
+    if use_compile:
+        # https://fb.workplace.com/groups/1075192433118967/permalink/1471157400189133/
+        # Dynamo doesn't know how to treat ProcessGroup symbolically, so it specializes
+        # on that particular ProcessGroup and will recompile if you pass a different one
+        torch._dynamo.reset_code_caches()  # avoids hitting recompilation limit
+
+    compare_fused_and_non_fused_ops(
+        my_rank=my_rank,
+        world_size=world_size,
+        subgroup=subgroup,
+        step=step,
+        dims=dims,
+        dtype=dtype,
+        triton=triton,
+        compile=use_compile,
+    )
 
 
 @cuda_sm70_only
@@ -144,16 +181,18 @@ def inner_sequence_parallel_fused(
 @pytest.mark.parametrize(
     "dtype",
     [
-        pytest.param(torch.bfloat16, id="bf16"),
+        # https://fb.workplace.com/groups/1075192433118967/posts/1480158559289017
+        # Dynamo misbehaves on V100 or earlier when handling bf16
+        pytest.param(torch.bfloat16, id="bf16", marks=cuda_sm80_only),
         pytest.param(torch.float16, id="fp16"),
         pytest.param(torch.float32, id="fp32"),
     ],
 )
+@pytest.mark.parametrize(
+    "use_compile", [pytest.param(False, id="eager"), pytest.param(True, id="compile")]
+)
 def test_sequence_parallel_fused(
-    kind: str,
-    step: str,
-    dims: Tuple[int, ...],
-    dtype: torch.dtype,
+    kind: str, step: str, dims: Tuple[int, ...], dtype: torch.dtype, use_compile: bool
 ):
     world_size = 1 if kind == "singleton" else 2
     seed = random.getrandbits(32)
@@ -165,4 +204,53 @@ def test_sequence_parallel_fused(
         step=step,
         dims=dims,
         dtype=dtype,
+        use_compile=use_compile,
+    )
+
+
+def inner_sequence_parallel_fused_triton_handle_all_dtypes(
+    seed: int,
+    step: str,
+    dims: Tuple[int, ...],
+):
+    my_rank = torch.distributed.get_rank()
+    world_size = torch.distributed.get_world_size()
+    subgroup = torch.distributed.new_group()
+
+    torch.random.manual_seed(seed)
+
+    for dtype in [torch.bfloat16, torch.float16, torch.float32]:
+        compare_fused_and_non_fused_ops(
+            my_rank=my_rank,
+            world_size=world_size,
+            subgroup=subgroup,
+            step=step,
+            dims=dims,
+            dtype=dtype,
+            triton=True,
+            compile=False,
+        )
+
+
+@cuda_sm70_only
+@pytest.mark.parametrize("step", ["all-gather", "reduce-scatter"])
+@pytest.mark.parametrize(
+    "dims",
+    [
+        pytest.param((2, 2, 512, 512, 256), id="nice-shapes"),
+        pytest.param((2, 1023, 511, 257), id="ugly-shapes"),
+    ],
+)
+def test_sequence_parallel_fused_triton_handle_all_dtypes(
+    step: str,
+    dims: Tuple[int, ...],
+):
+    world_size = 2
+    seed = random.getrandbits(32)
+    launch_subprocesses(
+        world_size,
+        inner_sequence_parallel_fused_triton_handle_all_dtypes,
+        seed=seed,
+        step=step,
+        dims=dims,
     )

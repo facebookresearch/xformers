@@ -39,8 +39,10 @@ module_name = "torch_attention_compat"
 
 # Load the module
 spec = importlib.util.spec_from_file_location(module_name, pt_attn_compat_file_path)
+assert spec is not None
 attn_compat_module = importlib.util.module_from_spec(spec)
 sys.modules[module_name] = attn_compat_module
+assert spec.loader is not None
 spec.loader.exec_module(attn_compat_module)
 
 
@@ -218,6 +220,8 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
 
     sources = ["csrc/flash_attn/flash_api.cpp"]
     for f in glob.glob(os.path.join(flash_root, "csrc", "flash_attn", "src", "*.cu")):
+        if "hdim224" in Path(f).name:
+            continue
         sources.append(str(Path(f).relative_to(flash_root)))
     common_extra_compile_args = ["-DFLASHATTENTION_DISABLE_ALIBI"]
     return [
@@ -301,6 +305,9 @@ def get_extensions():
         source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
 
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
+    cutlass_util_dir = os.path.join(
+        this_dir, "third_party", "cutlass", "tools", "util", "include"
+    )
     cutlass_examples_dir = os.path.join(this_dir, "third_party", "cutlass", "examples")
     if not os.path.exists(cutlass_dir):
         raise RuntimeError(
@@ -316,7 +323,9 @@ def get_extensions():
     extra_compile_args = {"cxx": ["-O3", "-std=c++17"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
-        extra_compile_args["cxx"].extend(["/MP", "/Zc:lambda", "/Zc:preprocessor"])
+        extra_compile_args["cxx"].extend(
+            ["/MP", "/Zc:lambda", "/Zc:preprocessor", "/Zc:__cplusplus"]
+        )
     elif "OpenMP not found" not in torch.__config__.parallel_info():
         extra_compile_args["cxx"].append("-fopenmp")
 
@@ -335,7 +344,12 @@ def get_extensions():
         cuda_version = get_cuda_version(CUDA_HOME)
         extension = CUDAExtension
         sources += source_cuda
-        include_dirs += [sputnik_dir, cutlass_dir, cutlass_examples_dir]
+        include_dirs += [
+            sputnik_dir,
+            cutlass_dir,
+            cutlass_util_dir,
+            cutlass_examples_dir,
+        ]
         nvcc_flags = [
             "-DHAS_PYTORCH",
             "--use_fast_math",
@@ -360,6 +374,8 @@ def get_extensions():
                 "/Zc:lambda",
                 "-Xcompiler",
                 "/Zc:preprocessor",
+                "-Xcompiler",
+                "/Zc:__cplusplus",
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 

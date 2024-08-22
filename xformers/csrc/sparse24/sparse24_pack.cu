@@ -4,6 +4,7 @@
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 #include <torch/types.h>
+#include "autocast.h"
 #include "compute_sparse_tile.h"
 #include "sparse24_metadata.h"
 #include "sparse24_pack.h"
@@ -154,7 +155,7 @@ std::
         std::string algorithm,
         std::string backend) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = at::autocast::get_autocast_gpu_dtype();
+  auto exec_type = xformers::get_autocast_cuda_dtype();
   return sparse24_sparsify_both_ways(
       at::autocast::cached_cast(exec_type, input), algorithm, backend);
 }

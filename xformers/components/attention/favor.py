@@ -10,7 +10,7 @@ from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 
 from xformers.components.attention import Attention, AttentionConfig, register_attention
 from xformers.components.attention.feature_maps import (
@@ -147,7 +147,7 @@ class FavorAttention(Attention):
         k_prime = self.feature_map(k)
         q_prime = self.feature_map(q)
 
-        with autocast(enabled=False):
+        with autocast("cuda", enabled=False):
             # The softmax kernel approximation for Favor will easily overflow
             # Force the computations here to stay in fp32 for numerical stability
             # Note that the dimensions are vastly reduced when compared to scaled_dot_product

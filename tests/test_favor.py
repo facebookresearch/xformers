@@ -144,7 +144,7 @@ def test_favor_approximation_accuracy(feature, causal, normalize_inputs, device)
         normalize_inputs=normalize_inputs,
     ).to(device)
 
-    with torch.cuda.amp.autocast(enabled=_device.type == "cuda"):
+    with torch.amp.autocast("cuda", enabled=_device.type == "cuda"):
         standard_attention_result = sdp_attention(query, key, value)
         approx_attention_result = approx_attention(query, key, value)
 
