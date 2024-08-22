@@ -16,10 +16,6 @@ try:
 
     DCGM_PROFILER_AVAILABLE = True
 except ModuleNotFoundError:
-    logger.warning(
-        f"Unable to find python bindings at {DCGM_PYTHON_PATH}. "
-        "No data will be captured."
-    )
 
     class DCGMProfiler:  # type: ignore
         """The dummy DCGM Profiler."""
@@ -34,7 +30,10 @@ except ModuleNotFoundError:
             pass
 
         def __enter__(self) -> None:
-            pass
+            logger.warning(
+                f"Unable to find python bindings at {DCGM_PYTHON_PATH}. "
+                "No data will be captured."
+            )
 
         def __exit__(self, exc_type, exc_val, exc_tb) -> None:
             pass

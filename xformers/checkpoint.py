@@ -28,6 +28,7 @@ try:
 except ImportError:
     _scipy_is_available = False
 
+
 try:
     # let's keep BC for older PyTorch for now
     from torch.distributed.algorithms._checkpoint.checkpoint_wrapper import (
@@ -36,7 +37,6 @@ try:
     from torch.utils.checkpoint import (  # type: ignore
         _CachedTorchDispatchMode,
         _CachingTorchDispatchMode,
-        _ignored_ops,
     )
 except ImportError:
     ActivationWrapper = torch.nn.Module  # type: ignore
@@ -47,7 +47,16 @@ except ImportError:
 
     _CachedTorchDispatchMode = _NotAvailable  # type: ignore
     _CachingTorchDispatchMode = _NotAvailable  # type: ignore
-    _ignored_ops = set()  # type: ignore
+
+
+try:
+    from torch.utils.checkpoint import SAC_IGNORED_OPS as _ignored_ops  # type: ignore
+
+    _PT_HAS_NEW_IMPL = True
+except ImportError:
+    from torch.utils.checkpoint import _ignored_ops  # type: ignore
+
+    _PT_HAS_NEW_IMPL = False
 
 
 _additional_ignored_ops = {
@@ -70,12 +79,6 @@ class ProfileMetadata:
     is_rand_op: bool
 
 
-def _detach(x):
-    if isinstance(x, torch.Tensor):
-        return x.detach()
-    return x
-
-
 def _get_default_policy(allow_list=None):
     _default_allow_list = [
         "xformers.efficient_attention_forward_cutlass.default",
@@ -86,7 +89,7 @@ def _get_default_policy(allow_list=None):
     if allow_list is None:
         allow_list = _default_allow_list
 
-    def _default_policy(mode, func, *args, **kwargs):
+    def _default_policy(ctx, func, *args, **kwargs):
         return str(func) in allow_list
 
     return _default_policy
@@ -115,6 +118,14 @@ def list_operators(function, *args, **kwargs):
 
 
 class CachedTorchDispatchMode(_CachedTorchDispatchMode):
+    def __init__(self, policy_fn, storage, allow_cache_entry_mutation):
+        global _PT_HAS_NEW_IMPL
+        if _PT_HAS_NEW_IMPL:
+            super().__init__(policy_fn, storage, allow_cache_entry_mutation)
+        else:
+            super().__init__(policy_fn, storage)
+
+    # this is here for the old implementations
     def pop_from_storage(self, func, args, kwargs):
         # the autograd engine might add spurious views. This is a basic
         # guard and should be improved
@@ -156,7 +167,7 @@ def selective_checkpoint_context_fn(policy_fn=None):
         caching_mode = _CachingTorchDispatchMode(deepcopy(policy_fn), temp_storage)
     else:
         caching_mode = NullTorchDispatchMode()
-    cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage)
+    cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage, True)
 
     return caching_mode, cached_mode
 
@@ -452,7 +463,7 @@ class _OptimalPolicy:
         self.counter = 0
         self.optim_output = optim_output.tolist()
 
-    def __call__(self, mode, func, *args, **kwargs) -> bool:
+    def __call__(self, ctx, func, *args, **kwargs) -> bool:
         # returning False means recompute, True means store in memory
         if func in OPS_TO_ALWAYS_SKIP:
             return False
@@ -473,10 +484,13 @@ class SelectiveCheckpointWrapper(ActivationWrapper):
         self.memory_budget = memory_budget
         self.policy_fn = policy_fn
 
-        # TODO: this should be enabled by default in PyTorch
-        torch._dynamo.config._experimental_support_context_fn_in_torch_utils_checkpoint = (
-            True
-        )
+        try:
+            # for backward-compatibility as this doesn't exist in PT anymore
+            torch._dynamo.config._experimental_support_context_fn_in_torch_utils_checkpoint = (
+                True
+            )
+        except AttributeError:
+            pass
 
     @torch.compiler.disable
     def _get_policy_fn(self, *args, **kwargs):

@@ -87,6 +87,14 @@ class AttentionBias:
         raise NotImplementedError()
 
 
+def _get_default_bias_device(device: Optional[torch.device] = None) -> torch.device:
+    if device is None:
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        return torch.device("cpu")
+    return device
+
+
 def _materialize_causal_mask(
     shape: Tuple[int, ...],
     dtype: torch.dtype = torch.float32,
@@ -218,6 +226,9 @@ class LowerTriangularFromBottomRightMask(AttentionBias):
         equivalent if the number of queries equals the number of keys.
     """
 
+    def to(self, device: torch.device) -> "LowerTriangularFromBottomRightMask":
+        return self
+
     def materialize(
         self,
         shape: Tuple[int, ...],
@@ -302,15 +313,22 @@ class _SeqLenInfo:
     min_seqlen: int
     seqstart_py: List[int]
 
-    def to(self, device: torch.device) -> None:
-        self.seqstart = self.seqstart.to(device, non_blocking=True)
+    def to(self, device: torch.device) -> "_SeqLenInfo":
+        if self.seqstart.device == device:
+            return self
+        return _SeqLenInfo(
+            seqstart=self.seqstart.to(device),
+            max_seqlen=self.max_seqlen,
+            min_seqlen=self.min_seqlen,
+            seqstart_py=self.seqstart_py,
+        )
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
         yield from zip(self.seqstart_py, self.seqstart_py[1:])
 
     @classmethod
     def _get_seqstart(
-        cls, seqlens: Iterable[int]
+        cls, seqlens: Iterable[int], *, device: torch.device
     ) -> Tuple[int, int, List[int], torch.Tensor]:
         """
         Given sequence lengths, returns the min/max value and the sequence start
@@ -325,16 +343,21 @@ class _SeqLenInfo:
             min_seqlen = min(min_seqlen, seqlen) if min_seqlen != -1 else seqlen
             max_seqlen = max(max_seqlen, seqlen)
             seqstart_py.append(seqstart_py[len(seqstart_py) - 1] + seqlen)
-        seqstart = torch.tensor(seqstart_py, dtype=torch.int32)
+        seqstart = torch.tensor(seqstart_py, dtype=torch.int32, device=device)
 
         return (min_seqlen, max_seqlen, seqstart_py, seqstart)
 
     @classmethod
-    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
+    def from_seqlens(
+        cls, seqlens: Iterable[int], *, device: Optional[torch.device] = None
+    ) -> "_SeqLenInfo":
         """
         Input tensors are assumed to be in shape [B, M, *]
         """
-        min_seqlen, max_seqlen, seqstart_py, seqstart = cls._get_seqstart(seqlens)
+        device = _get_default_bias_device(device)
+        min_seqlen, max_seqlen, seqstart_py, seqstart = cls._get_seqstart(
+            seqlens, device=device
+        )
 
         return cls(
             max_seqlen=max_seqlen,
@@ -413,23 +436,40 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
     def __post_init__(self) -> None:
         assert len(self.seqstart_py) == len(self.seqlen_py) + 1
 
-    def to(self, device: torch.device) -> None:
-        self.seqlen = self.seqlen.to(device, non_blocking=True)
-        super().to(device)
+    def to(self, device: torch.device) -> "_PaddedSeqLenInfo":
+        if self.seqlen.device == device:
+            return self
+        return _PaddedSeqLenInfo(
+            # _SeqLenInfo
+            seqstart=self.seqstart.to(device),
+            max_seqlen=self.max_seqlen,
+            min_seqlen=self.min_seqlen,
+            seqstart_py=self.seqstart_py,
+            # _PaddedSeqLenInfo
+            seqlen=self.seqlen.to(device),
+            seqlen_py=self.seqlen_py,
+            padding=self.padding,
+        )
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
         for (start, _), length in zip(super().intervals(), self.seqlen_py):
             yield start, start + length
 
     @classmethod
-    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
+    def from_seqlens(
+        cls, seqlens: Iterable[int], *, device: Optional[torch.device] = None
+    ) -> "_SeqLenInfo":
         raise RuntimeError(
             "Use either `_SeqLenInfo.from_seqlens` or `_PaddedSeqLenInfo.from_seqlens_padded`"
         )
 
     @classmethod
     def from_seqlens_padded(
-        cls, seqlens: Sequence[int], padding: int
+        cls,
+        seqlens: Sequence[int],
+        padding: int,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "_PaddedSeqLenInfo":
         """
         Input tensors are assumed to be in shape [B, M, *]
@@ -439,14 +479,15 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         assert all(
             seqlen <= padding for seqlen in seqlens
         ), f"Seqlens {seqlens} Padding {padding}"
+        device = _get_default_bias_device(device)
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
-        seqlen = torch.tensor(seqlens, dtype=torch.int32)
+        seqlen = torch.tensor(seqlens, dtype=torch.int32, device=device)
         return cls(
             seqlen=seqlen,
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),
-            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+            seqstart=torch.tensor(seqstart_py, dtype=torch.int32, device=device),
             seqstart_py=seqstart_py,
             padding=padding,
         )
@@ -510,21 +551,38 @@ class _GappySeqInfo(_SeqLenInfo):
     # of the i-th sequence
     # seqstart: torch.Tensor
 
-    def to(self, device: torch.device) -> None:
-        self.seqlen = self.seqlen.to(device, non_blocking=True)
-        super().to(device)
+    def to(self, device: torch.device) -> "_GappySeqInfo":
+        if self.seqlen.device == device:
+            return self
+        return _GappySeqInfo(
+            # _SeqLenInfo
+            seqstart=self.seqstart.to(device),
+            max_seqlen=self.max_seqlen,
+            min_seqlen=self.min_seqlen,
+            seqstart_py=self.seqstart_py,
+            # _GappySeqInfo
+            seqlen=self.seqlen.to(device),
+            seqlen_py=self.seqlen_py,
+        )
 
     def intervals(self) -> Iterable[Tuple[int, int]]:
         for (start, _), length in zip(super().intervals(), self.seqlen_py):
             yield start, start + length
 
     @classmethod
-    def from_seqlens(cls, seqlens: Iterable[int]) -> "_SeqLenInfo":
+    def from_seqlens(
+        cls, seqlens: Iterable[int], *, device: Optional[torch.device] = None
+    ) -> "_SeqLenInfo":
         raise NotImplementedError()
 
     @classmethod
     def from_seqlens_gappy(
-        cls, seqstarts: Sequence[int], seqlens: Sequence[int], paged: bool
+        cls,
+        seqstarts: Sequence[int],
+        seqlens: Sequence[int],
+        paged: bool,
+        *,
+        device: torch.device,
     ) -> "_GappySeqInfo":
         assert not isinstance(seqlens, torch.Tensor)
         seqstart_py = list(seqstarts)
@@ -535,13 +593,13 @@ class _GappySeqInfo(_SeqLenInfo):
             raise ValueError(
                 f"len(seqstarts)={seqstarts} should be {extra}len(seqlens)={seqlens}"
             )
-        seqlen = torch.tensor(seqlens, dtype=torch.int32)
+        seqlen = torch.tensor(seqlens, dtype=torch.int32, device=device)
         return cls(
             seqlen=seqlen,
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),
-            seqstart=torch.tensor(seqstart_py, dtype=torch.int32),
+            seqstart=torch.tensor(seqstart_py, dtype=torch.int32, device=device),
             seqstart_py=seqstart_py,
         )
 
@@ -595,6 +653,13 @@ class BlockDiagonalMask(AttentionBias):
     k_seqinfo: _SeqLenInfo
     _batch_sizes: Optional[Sequence[int]] = None
 
+    def to(self, device) -> "BlockDiagonalMask":
+        return BlockDiagonalMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+            _batch_sizes=self._batch_sizes,
+        )
+
     def _create_block_mask(
         self,
         shape: Tuple[int, ...],
@@ -644,6 +709,8 @@ class BlockDiagonalMask(AttentionBias):
         cls,
         q_seqlen: Sequence[int],
         kv_seqlen: Optional[Sequence[int]] = None,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "BlockDiagonalMask":
         """Creates a :attr:`BlockDiagonalMask` from a list of tensors lengths for query and key/value.
 
@@ -654,12 +721,13 @@ class BlockDiagonalMask(AttentionBias):
         Returns:
             BlockDiagonalMask
         """
+        device = _get_default_bias_device(device)
         assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen)
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
         if kv_seqlen is None or q_seqlen == kv_seqlen:
             k_seqinfo = q_seqinfo
         else:
-            k_seqinfo = _SeqLenInfo.from_seqlens(kv_seqlen)
+            k_seqinfo = _SeqLenInfo.from_seqlens(kv_seqlen, device=device)
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
     @classmethod
@@ -864,6 +932,12 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
     q_seqinfo: _SeqLenInfo
     k_seqinfo: _PaddedSeqLenInfo
 
+    def to(self, device) -> "BlockDiagonalPaddedKeysMask":
+        return BlockDiagonalPaddedKeysMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+        )
+
     def _create_block_mask(
         self,
         shape: Tuple[int, ...],
@@ -907,6 +981,8 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         kv_padding: int,
         kv_seqlen: Sequence[int],
         causal_diagonal: Any = None,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "BlockDiagonalPaddedKeysMask":
         """Creates a :attr:`BlockDiagonalPaddedKeysMask` from a list of tensor
         lengths for query and key/value.
@@ -919,12 +995,15 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         Returns:
             BlockDiagonalPaddedKeysMask
         """
+        device = _get_default_bias_device(device)
         assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen), (
             q_seqlen,
             kv_seqlen,
         )
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
-        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(
+            kv_seqlen, kv_padding, device=device
+        )
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
     def make_paged(
@@ -982,6 +1061,8 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
         kv_padding: int,
         kv_seqlen: Sequence[int],
         causal_diagonal: Any = None,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "BlockDiagonalCausalWithOffsetPaddedKeysMask":
         """Creates a :attr:`BlockDiagonalCausalWithOffsetPaddedKeysMask` from a list of tensor
         lengths for query and key/value.
@@ -998,8 +1079,11 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
             q_seqlen,
             kv_seqlen,
         )
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
-        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        device = _get_default_bias_device(device)
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(
+            kv_seqlen, kv_padding, device=device
+        )
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
 
@@ -1020,6 +1104,14 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
     _UNPAGED_TYPE: ClassVar[
         Type[BlockDiagonalPaddedKeysMask]
     ] = BlockDiagonalPaddedKeysMask
+
+    def to(self, device: torch.device) -> "PagedBlockDiagonalPaddedKeysMask":
+        return PagedBlockDiagonalPaddedKeysMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+            block_tables=self.block_tables.to(device),
+            page_size=self.page_size,
+        )
 
     def materialize(
         self,
@@ -1067,6 +1159,8 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
         kv_seqlen: Sequence[int],
         block_tables: torch.Tensor,
         page_size: int,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "PagedBlockDiagonalPaddedKeysMask":
         """Creates a :attr:`PagedBlockDiagonalPaddedKeysMask` from a list of tensor
         lengths for query and key/value.
@@ -1083,9 +1177,10 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
             q_seqlen,
             kv_seqlen,
         )
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        device = _get_default_bias_device(device)
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
         k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(
-            kv_seqlen, padding=block_tables.shape[1] * page_size
+            kv_seqlen, padding=block_tables.shape[1] * page_size, device=device
         )
         return cls(
             q_seqinfo=q_seqinfo,
@@ -1121,6 +1216,12 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
     q_seqinfo: _SeqLenInfo
     k_seqinfo: _GappySeqInfo
 
+    def to(self, device: torch.device) -> "BlockDiagonalGappyKeysMask":
+        return BlockDiagonalGappyKeysMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+        )
+
     def materialize(
         self,
         shape: Tuple[int, ...],
@@ -1151,6 +1252,8 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
         q_seqlen: Sequence[int],
         kv_seqstarts: Sequence[int],
         kv_seqlen: Sequence[int],
+        *,
+        device: Optional[torch.device] = None,
     ) -> "BlockDiagonalGappyKeysMask":
         """Creates a :attr:`BlockDiagonalGappyKeysMask` from a list of tensor
         lengths for query and key/value.
@@ -1159,8 +1262,11 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
             q_seqlen,
             kv_seqlen,
         )
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
-        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(kv_seqstarts, kv_seqlen, False)
+        device = _get_default_bias_device(device)
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
+        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(
+            kv_seqstarts, kv_seqlen, False, device=device
+        )
         return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo)
 
     def make_paged(
@@ -1183,7 +1289,7 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
         ]
         assert all(0 <= i < max_row_len for i in new_seqstarts)
         k_seqinfo = _GappySeqInfo.from_seqlens_gappy(
-            new_seqstarts, self.k_seqinfo.seqlen_py, True
+            new_seqstarts, self.k_seqinfo.seqlen_py, True, device=block_tables.device
         )
         assert self.k_seqinfo.max_seqlen <= max_row_len
         paged_bias = paged_type(
@@ -1272,7 +1378,10 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
         bias_nonpaged = self._UNPAGED_TYPE(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=_GappySeqInfo.from_seqlens_gappy(
-                new_seqstarts, self.k_seqinfo.seqlen_py, False
+                new_seqstarts,
+                self.k_seqinfo.seqlen_py,
+                False,
+                device=torch.device(device),
             ),
         )
         mask_nonpaged = bias_nonpaged.materialize(shape, dtype, device)
@@ -1305,6 +1414,8 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
         kv_seqlen: Sequence[int],
         block_tables: torch.Tensor,
         page_size: int,
+        *,
+        device: Optional[torch.device] = None,
     ) -> "PagedBlockDiagonalGappyKeysMask":
         """Creates a :attr:`PagedBlockDiagonalGappyKeysMask` from a list of tensor
         lengths for query and key/value.
@@ -1323,8 +1434,11 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
             kv_seqlen,
             kv_seqstarts,
         )
-        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
-        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(kv_seqstarts, kv_seqlen, True)
+        device = block_tables.device if device is None else device
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen, device=device)
+        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(
+            kv_seqstarts, kv_seqlen, True, device=device
+        )
         return cls(
             q_seqinfo=q_seqinfo,
             k_seqinfo=k_seqinfo,
@@ -1430,7 +1544,7 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
     @staticmethod
     def __new__(cls, *, _subtensor=None):
         if _subtensor is None:
-            _subtensor = torch.empty((0,), device="cpu")
+            _subtensor = torch.empty((0,), device=_get_default_bias_device())
         tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
             cls,
             [],
@@ -1454,8 +1568,9 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
             torch.ops.aten.clone,
             torch.ops.aten.detach,
             torch.ops.aten._to_copy,
+            torch.ops.aten.to,
         ]:
-            return cls(_subtensor=func(args[0]._subtensor, **kwargs))
+            return cls(_subtensor=func(args[0]._subtensor, *args[1:], **kwargs))
         return NotImplemented
 
     def __tensor_flatten__(self):
@@ -1555,6 +1670,7 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
             torch.ops.aten.clone,
             torch.ops.aten.detach,
             torch.ops.aten._to_copy,
+            torch.ops.aten.to,
         ]:
             output = func(
                 *[a._subtensor if isinstance(a, cls) else a for a in args],
@@ -1564,6 +1680,13 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
         return NotImplemented
 
 
-if torch.__version__ >= "2.1.0":
-    torch._dynamo.allow_in_graph(LowerTriangularMask)
-    torch._dynamo.allow_in_graph(LowerTriangularMaskWithTensorBias)
+torch._dynamo.allow_in_graph(LowerTriangularMask)
+torch._dynamo.allow_in_graph(LowerTriangularMaskWithTensorBias)
+
+VARLEN_BIASES = (
+    BlockDiagonalMask,
+    BlockDiagonalGappyKeysMask,
+    BlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
+)

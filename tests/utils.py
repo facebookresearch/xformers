@@ -4,13 +4,19 @@
 # LICENSE file in the root directory of this source tree.
 
 from functools import wraps
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import pytest
 import torch
 
-from xformers.attn_bias_utils import ref_attention, ref_attention_bmhk
+from xformers.attn_bias_utils import pack_kv_cache, ref_attention, ref_attention_bmhk
+from xformers.ops.fmha import Inputs
+from xformers.ops.fmha.attn_bias import (
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+)
+from xformers.ops.fmha.triton_splitk import InputsFp8
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 rocm_only = pytest.mark.skipif(
@@ -76,68 +82,210 @@ def assert_allclose(
     )
 
 
-def pack_kv_cache(
-    cache_k: torch.Tensor,
-    cache_v: torch.Tensor,
-    kv_seqlens: List[int],
-    BLOCK_N: int,
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def construct_fp8_attention_inputs(
+    B: int,
+    Mkv: int,
+    Mq: int,
+    Hkv: int,
+    Hq: int,
+    K: int,
+    page_size: int,
+    device: torch.device,
+    dtype: torch.dtype,
+    randomize_lengths: bool = True,
+) -> Tuple[InputsFp8, Inputs, InputsFp8, Inputs]:
     """
-    Create block tables and pages K/V cache for testing paged attention.
-    Args:
-        cache_k, cache_v: K/V caches, each of shape [B, MAX_T, H_kv, D].
-            Note that these tensors are unexpanded,
-            i.e. for multiquery case cache_k.shape[2] = 1
-        kv_seqlens: list of K/V sequence lengths
-        BLOCK_N: number of tokens per per paged attention block
-        B: batch size
-    Returns:
-        block_tables: [B, MAX_BLOCKS]
-        packed_cache_k: [1, total_len_rounded, H_kv, D]
-        packed_cache_v: [1, total_len_rounded, H_kv, D]
-    where total_len_rounded is a sum of K/V seqlens, each rounded up
-    to a multiple of BLOCK_N.
+    Construct inputs for benchmarks and tests of Triton Split-k attention
+    with fused row-wise FP8 dequantization.
+    Quantization coefficients are packed as int32 tensors where each
+    element contains two fp16 numbers - scales and shifts.
     """
+    G = Hq // Hkv
+    q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
+    k = torch.randn(1, B * Mkv, Hkv, 1, K, dtype=dtype, device=device)
+    v = torch.randn(1, B * Mkv, Hkv, 1, K, dtype=dtype, device=device)
 
-    kv_seqlens_rounded = [(x + BLOCK_N - 1) // BLOCK_N * BLOCK_N for x in kv_seqlens]
-
-    total_len_rounded = sum(kv_seqlens_rounded)
-
-    B, MAX_T, H, D = cache_k.shape
-
-    packed_cache_k = torch.empty(
-        total_len_rounded, H, D, device=cache_k.device, dtype=cache_k.dtype
+    pt_fp8_dtype = (
+        torch.float8_e4m3fnuz if torch.version.hip is not None else torch.float8_e4m3fn
     )
-    packed_cache_v = torch.empty(
-        total_len_rounded, H, D, device=cache_k.device, dtype=cache_k.dtype
-    )
-    seqstart = 0
-    for b in range(B):
-        packed_cache_k[seqstart : seqstart + kv_seqlens[b]] = cache_k[
-            b, : kv_seqlens[b]
-        ].clone()
-        packed_cache_v[seqstart : seqstart + kv_seqlens[b]] = cache_v[
-            b, : kv_seqlens[b]
-        ].clone()
-        seqstart += kv_seqlens_rounded[b]
 
-    num_blocks_per_row = (MAX_T + BLOCK_N - 1) // BLOCK_N
-    block_tables = (
-        torch.arange(num_blocks_per_row, device="cuda", dtype=torch.int32)
-        .unsqueeze(0)
-        .expand(B, num_blocks_per_row)
+    k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
+        k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
     )
-    seqstarts = (
-        (
-            torch.tensor(kv_seqlens_rounded).cumsum(dim=0)
-            - torch.tensor(kv_seqlens_rounded)
+    v_fp8, v_fp8_scales, v_fp8_shifts = quantize_fp8_asymmetric(
+        v.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+    )
+
+    k_fp8, v_fp8 = k_fp8.view(torch.int32), v_fp8.view(torch.int32)
+
+    k_fp8_scales = k_fp8_scales.to(torch.float16)
+    v_fp8_scales = v_fp8_scales.to(torch.float16)
+    k_fp8_shifts = k_fp8_shifts.to(torch.float16)
+    v_fp8_shifts = v_fp8_shifts.to(torch.float16)
+
+    def _to_expanded_shape(x):
+        return x.view(1, B * Mkv, Hkv, 1, -1).expand(1, B * Mkv, Hkv, G, -1)
+
+    k_fp8 = _to_expanded_shape(k_fp8)
+    v_fp8 = _to_expanded_shape(v_fp8)
+
+    k_fp8_scales_shifts = _combine_scale_shift(k_fp8_scales, k_fp8_shifts)
+    v_fp8_scales_shifts = _combine_scale_shift(v_fp8_scales, v_fp8_shifts)
+
+    k_fp8_scales_shifts = (
+        _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1).contiguous()
+    )
+    v_fp8_scales_shifts = (
+        _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1).contiguous()
+    )
+
+    k_fp8_scales = _to_expanded_shape(k_fp8_scales).squeeze(-1).to(torch.float16)
+    v_fp8_scales = _to_expanded_shape(v_fp8_scales).squeeze(-1).to(torch.float16)
+    k_fp8_shifts = _to_expanded_shape(k_fp8_shifts).squeeze(-1).to(torch.float16)
+    v_fp8_shifts = _to_expanded_shape(v_fp8_shifts).squeeze(-1).to(torch.float16)
+
+    kv_seqlens = (
+        torch.randint(0, Mkv, size=(B,)).tolist() if randomize_lengths else [Mkv] * B
+    )
+
+    k_deq = dequantize_fp8_asymmetric(
+        k_fp8.view(pt_fp8_dtype), k_fp8_scales, k_fp8_shifts
+    ).to(dtype)
+    v_deq = dequantize_fp8_asymmetric(
+        v_fp8.view(pt_fp8_dtype), v_fp8_scales, v_fp8_shifts
+    ).to(dtype)
+
+    k_deq = k_deq[:, :, :, :1, :].contiguous()
+    v_deq = v_deq[:, :, :, :1, :].contiguous()
+
+    attn_bias = BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[1 for _ in range(B)],
+        kv_seqlen=kv_seqlens,
+        kv_padding=Mkv,
+    )
+    inp = InputsFp8(
+        query=q,
+        key=k_fp8,
+        value=v_fp8,
+        k_fp8_scale_shift=k_fp8_scales_shifts,
+        v_fp8_scale_shift=v_fp8_scales_shifts,
+        attn_bias=attn_bias,
+    )
+    inp_ref = Inputs(
+        query=q,
+        key=_to_expanded_shape(k_deq),
+        value=_to_expanded_shape(v_deq),
+        attn_bias=attn_bias,
+    )
+
+    # Paged K/V cache
+    block_tables, packed_cache_k, packed_cache_v = pack_kv_cache(
+        k_deq.view(B, Mkv, Hkv, -1),
+        v_deq.view(B, Mkv, Hkv, -1),
+        kv_seqlens,
+        page_size,
+    )
+    block_tables_orig, packed_cache_k_orig, packed_cache_v_orig = pack_kv_cache(
+        k.view(B, Mkv, Hkv, -1),
+        v.view(B, Mkv, Hkv, -1),
+        kv_seqlens,
+        page_size,
+    )
+    assert (block_tables_orig == block_tables).all()
+
+    (
+        packed_cache_k_fp8,
+        packed_k_fp8_scales,
+        packed_k_fp8_shifts,
+    ) = quantize_fp8_asymmetric(
+        packed_cache_k_orig.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+    )
+    (
+        packed_cache_v_fp8,
+        packed_v_fp8_scales,
+        packed_v_fp8_shifts,
+    ) = quantize_fp8_asymmetric(
+        packed_cache_v_orig.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
+    )
+
+    total_len_rounded = packed_cache_k_fp8.shape[0] // Hkv
+
+    packed_cache_k_fp8 = packed_cache_k_fp8.view(torch.int32).view(
+        1, total_len_rounded, Hkv, -1
+    )
+    packed_cache_v_fp8 = packed_cache_v_fp8.view(torch.int32).view(
+        1, total_len_rounded, Hkv, -1
+    )
+
+    packed_k_fp8_scales_shifts = _combine_scale_shift(
+        packed_k_fp8_scales, packed_k_fp8_shifts
+    )
+    packed_v_fp8_scales_shifts = _combine_scale_shift(
+        packed_v_fp8_scales, packed_v_fp8_shifts
+    )
+
+    def _to_packed_expanded_shape(x):
+        return x.reshape(1, total_len_rounded, Hkv, 1, -1).expand(
+            1, total_len_rounded, Hkv, Hq // Hkv, -1
         )
-        .to(device="cuda")
-        .unsqueeze(1)
-    ) // BLOCK_N
-    block_tables = (block_tables + seqstarts).contiguous().to(dtype=torch.int32)
-    return (
-        block_tables,
-        packed_cache_k.unsqueeze(0),
-        packed_cache_v.unsqueeze(0),
+
+    packed_k_fp8_scales_shifts = (
+        _to_packed_expanded_shape(packed_k_fp8_scales_shifts).squeeze(-1).contiguous()
     )
+    packed_v_fp8_scales_shifts = (
+        _to_packed_expanded_shape(packed_v_fp8_scales_shifts).squeeze(-1).contiguous()
+    )
+
+    attn_bias_paged = attn_bias.make_paged(
+        block_tables=block_tables,
+        page_size=page_size,
+        paged_type=PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    )
+    inp_bf16_paged = Inputs(
+        query=q,
+        key=_to_packed_expanded_shape(packed_cache_k),
+        value=_to_packed_expanded_shape(packed_cache_v),
+        attn_bias=attn_bias_paged,
+    )
+    inp_fp8_paged = InputsFp8(
+        query=q,
+        key=_to_packed_expanded_shape(packed_cache_k_fp8),
+        value=_to_packed_expanded_shape(packed_cache_v_fp8),
+        attn_bias=attn_bias_paged,
+        k_fp8_scale_shift=packed_k_fp8_scales_shifts,
+        v_fp8_scale_shift=packed_v_fp8_scales_shifts,
+    )
+
+    return inp, inp_ref, inp_fp8_paged, inp_bf16_paged
+
+
+def _combine_scale_shift(scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+    return (
+        torch.concat([scale.unsqueeze(-1), shift.unsqueeze(-1)], dim=-1)
+        .flatten(-2)
+        .to(torch.float16)
+        .view(torch.int32)
+    )
+
+
+def quantize_fp8_asymmetric(
+    x: torch.Tensor,
+    pt_fp8_dtype: torch.dtype = torch.float8_e4m3fn,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    max_fp8 = torch.finfo(pt_fp8_dtype).max
+
+    shift = x.mean(dim=1)
+    x_centered = x - shift[..., None]
+
+    row_max: torch.Tensor = x_centered.abs().max(dim=-1)[0]
+    scale = max_fp8 * row_max.to(torch.float32).pow(-1)
+    scale = torch.nan_to_num(scale, posinf=1)
+
+    x_quant = (x_centered / scale[..., None]).to(pt_fp8_dtype)
+    return x_quant, scale, shift
+
+
+def dequantize_fp8_asymmetric(
+    x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+) -> torch.Tensor:
+    return x.to(scale.dtype) * scale[..., None] + shift[..., None]

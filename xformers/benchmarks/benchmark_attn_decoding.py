@@ -161,10 +161,6 @@ class AttentionDecodingBase:
             print(f"Runtime error: {e}")
 
 
-class AttentionDecodingDecoder(AttentionDecodingBase):
-    OP = xops.fmha.decoder.FwOp
-
-
 class AttentionDecodingCUTLASS(AttentionDecodingBase):
     OP = xops.fmha.cutlass.FwOp
 
@@ -289,7 +285,6 @@ BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
 }
 
 if torch.version.cuda:
-    BENCHMARKS["decoder"] = AttentionDecodingDecoder
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
 if torch.version.hip:
@@ -393,8 +388,10 @@ def test_flash_attention_decoder(name, case):
     torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
 
-# run benchmark performance
-if __name__ == "__main__":
+def main() -> None:
+    """
+    run performance benchmark
+    """
     benchmark_main_helper2(
         "attn_decoding",
         fw=True,
@@ -402,3 +399,7 @@ if __name__ == "__main__":
         functions=BENCHMARKS,
         min_run_time=min_run_time,
     )
+
+
+if __name__ == "__main__":
+    main()  # pragma: no cover

@@ -4,11 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Tuple
 
 import torch
+from torch.distributed.distributed_c10d import _resolve_process_group
 
-from .common import make_pytorch_cuda_operator
 from .differentiable_collectives import (
     gather_along_first_dim,
     gather_along_first_dim_async,
@@ -21,16 +21,22 @@ from .sequence_parallel_fused_ops import (
     fused_anything_and_reducescatter,
     fused_linear_and_reducescatter,
 )
-from .tiled_matmul import tiled_matmul_fwd
+from .tiled_matmul import tiled_matmul, tiled_matmul_out
 
 
-@make_pytorch_cuda_operator
+@torch.library.custom_op(
+    "xformers_python::sequence_parallel_leading_matmul_fwd",
+    mutates_args=(),
+    device_types="cuda",
+)
 def sequence_parallel_leading_matmul_fwd(
     scattered_input: torch.Tensor,
     weights: List[torch.Tensor],
     fuse: bool,
-    process_group: torch.distributed.ProcessGroup,
+    process_group_name: str,
 ) -> List[torch.Tensor]:
+    process_group = _resolve_process_group(process_group_name)
+
     if fuse:
         gathered_outputs = fused_allgather_and_linear(
             scattered_input, [w.t() for w in weights], group=process_group
@@ -39,22 +45,48 @@ def sequence_parallel_leading_matmul_fwd(
         gathered_input = gather_along_first_dim(
             scattered_input, process_group=process_group
         )
-        (gathered_outputs,) = tiled_matmul_fwd(
+        (gathered_outputs,) = tiled_matmul(
             [[gathered_input]],
             [[w for w in weights]],
         )
     return gathered_outputs
 
 
-@make_pytorch_cuda_operator
+@torch.library.register_fake("xformers_python::sequence_parallel_leading_matmul_fwd")
+def sequence_parallel_leading_matmul_fwd_fake(
+    scattered_input: torch.Tensor,
+    weights: List[torch.Tensor],
+    fuse: bool,
+    process_group_name: str,
+) -> List[torch.Tensor]:
+    mp_size = _resolve_process_group(process_group_name).size()
+    return [
+        scattered_input.new_empty((scattered_input.shape[0] * mp_size, w.shape[1]))
+        for w in weights
+    ]
+
+
+@torch.library.custom_op(
+    "xformers_python::sequence_parallel_leading_matmul_bwd",
+    mutates_args=(),
+    device_types="cuda",
+)
 def sequence_parallel_leading_matmul_bwd(
     scattered_input: torch.Tensor,
     weights: List[torch.Tensor],
     grad_gathered_outputs: List[torch.Tensor],
     fuse: bool,
-    process_group: torch.distributed.ProcessGroup,
+    process_group_name: str,
 ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    process_group = _resolve_process_group(process_group_name)
     mp_size = process_group.size()
+
+    # torch.library.opcheck gives us gradients whose strides are zero.
+    # See https://github.com/pytorch/pytorch/issues/132857.
+    grad_gathered_outputs = [
+        grad_go.clone() if any(s == 0 for s in grad_go.stride()) else grad_go
+        for grad_go in grad_gathered_outputs
+    ]
 
     if fuse:
         grad_scattered_input = torch.empty_like(scattered_input)
@@ -71,7 +103,7 @@ def sequence_parallel_leading_matmul_bwd(
         ) -> None:
             (grad_gi,) = grad_gathered_inputs
             with torch.cuda.stream(stream_factory()):
-                tiled_matmul_fwd(
+                tiled_matmul_out(
                     [[grad_gos[dst_rank] for grad_gos in grad_gathered_outputss]],
                     [[w.t()] for w in weights],
                     out=[[grad_gi]],
@@ -111,7 +143,7 @@ def sequence_parallel_leading_matmul_bwd(
         gathered_input, handle = gather_along_first_dim_async(
             scattered_input, process_group=process_group
         )
-        ((grad_gathered_input,),) = tiled_matmul_fwd(
+        ((grad_gathered_input,),) = tiled_matmul(
             [[grad_go for grad_go in grad_gathered_outputs]],
             [[w.t()] for w in weights],
         )
@@ -122,7 +154,7 @@ def sequence_parallel_leading_matmul_bwd(
             grad_gathered_input, process_group=process_group
         )
 
-        grad_weights_tuples = tiled_matmul_fwd(
+        grad_weights_tuples = tiled_matmul(
             [[grad_go.t()] for grad_go in grad_gathered_outputs],
             [[gathered_input]],
         )
@@ -134,36 +166,41 @@ def sequence_parallel_leading_matmul_bwd(
     return grad_scattered_input, grad_weights
 
 
-class _SequenceParallelLeadingMatmul(torch.autograd.Function):
-    @staticmethod
-    def forward(  # type: ignore[override]
-        ctx,
-        fuse: bool,
-        process_group: torch.distributed.ProcessGroup,
-        scattered_input: torch.Tensor,
-        *weights: torch.Tensor,
-    ) -> Tuple[torch.Tensor, ...]:
-        ctx.save_for_backward(scattered_input, *weights)
-        ctx.fuse = fuse
-        ctx.process_group = process_group
-        gathered_output = sequence_parallel_leading_matmul_fwd(
-            scattered_input, list(weights), fuse, process_group
-        )
-        return tuple(gathered_output)
+@torch.library.register_fake("xformers_python::sequence_parallel_leading_matmul_bwd")
+def sequence_parallel_leading_matmul_bwd_fake(
+    scattered_input: torch.Tensor,
+    weights: List[torch.Tensor],
+    grad_gathered_outputs: List[torch.Tensor],
+    fuse: bool,
+    process_group_name: str,
+) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+    return (torch.empty_like(scattered_input), [torch.empty_like(w) for w in weights])
 
-    @staticmethod
-    def backward(  # type: ignore[override]
-        ctx, *grad_gathered_outputs: torch.Tensor
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        scattered_input, *weights = ctx.saved_tensors
-        (grad_scattered_input, grad_weights,) = sequence_parallel_leading_matmul_bwd(
-            scattered_input,
-            list(weights),
-            list(grad_gathered_outputs),
-            ctx.fuse,
-            ctx.process_group,
-        )
-        return None, None, grad_scattered_input, *grad_weights
+
+def sequence_parallel_leading_matmul_setup_context(ctx, inputs, output):
+    scattered_input, weights, fuse, process_group_name = inputs
+    ctx.save_for_backward(scattered_input, *weights)
+    ctx.fuse = fuse
+    ctx.process_group_name = process_group_name
+
+
+def sequence_parallel_leading_matmul_bwd_bridge(ctx, grad_gathered_outputs):
+    scattered_input, *weights = ctx.saved_tensors
+    (grad_scattered_input, grad_weights,) = sequence_parallel_leading_matmul_bwd(
+        scattered_input,
+        list(weights),
+        list(grad_gathered_outputs),
+        ctx.fuse,
+        ctx.process_group_name,
+    )
+    return grad_scattered_input, grad_weights, None, None
+
+
+torch.library.register_autograd(
+    "xformers_python::sequence_parallel_leading_matmul_fwd",
+    sequence_parallel_leading_matmul_bwd_bridge,
+    setup_context=sequence_parallel_leading_matmul_setup_context,
+)
 
 
 def sequence_parallel_leading_matmul(
@@ -173,19 +210,25 @@ def sequence_parallel_leading_matmul(
     fuse: bool,
     process_group: torch.distributed.ProcessGroup,
 ) -> List[torch.Tensor]:
-    os = _SequenceParallelLeadingMatmul.apply(
-        fuse, process_group, x.flatten(0, -2), *ws
+    os = sequence_parallel_leading_matmul_fwd(
+        x.flatten(0, -2), ws, fuse, process_group.group_name
     )
     return [o.view(-1, *x.shape[1:-1], w.shape[1]) for o, w in zip(os, ws)]
 
 
-@make_pytorch_cuda_operator
+@torch.library.custom_op(
+    "xformers_python::sequence_parallel_trailing_matmul_fwd",
+    mutates_args=(),
+    device_types="cuda",
+)
 def sequence_parallel_trailing_matmul_fwd(
     gathered_input: torch.Tensor,
     weight: torch.Tensor,
     fuse: bool,
-    process_group: torch.distributed.ProcessGroup,
+    process_group_name: str,
 ) -> torch.Tensor:
+    process_group = _resolve_process_group(process_group_name)
+
     if fuse:
         scattered_output = fused_linear_and_reducescatter(
             gathered_input, weight.t(), group=process_group
@@ -198,15 +241,38 @@ def sequence_parallel_trailing_matmul_fwd(
     return scattered_output
 
 
-@make_pytorch_cuda_operator
+@torch.library.register_fake("xformers_python::sequence_parallel_trailing_matmul_fwd")
+def sequence_parallel_trailing_matmul_fwd_fake(
+    gathered_input: torch.Tensor,
+    weight: torch.Tensor,
+    fuse: bool,
+    process_group_name: str,
+) -> torch.Tensor:
+    mp_size = _resolve_process_group(process_group_name).size()
+    return gathered_input.new_empty(
+        (gathered_input.shape[0] // mp_size, weight.shape[1])
+    )
+
+
+@torch.library.custom_op(
+    "xformers_python::sequence_parallel_trailing_matmul_bwd",
+    mutates_args=(),
+    device_types="cuda",
+)
 def sequence_parallel_trailing_matmul_bwd(
     gathered_input: torch.Tensor,
     weight: torch.Tensor,
     grad_scattered_output: torch.Tensor,
     fuse: bool,
-    process_group: torch.distributed.ProcessGroup,
+    process_group_name: str,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
+    process_group = _resolve_process_group(process_group_name)
     mp_size = process_group.size()
+
+    # torch.library.opcheck gives us gradients whose strides are zero.
+    # See https://github.com/pytorch/pytorch/issues/132857.
+    if any(s == 0 for s in grad_scattered_output.stride()):
+        grad_scattered_output = grad_scattered_output.clone()
 
     if fuse:
         grad_gathered_input = torch.empty_like(gathered_input)
@@ -243,36 +309,41 @@ def sequence_parallel_trailing_matmul_bwd(
     return grad_gathered_input, grad_weight
 
 
-class _SequenceParallelTrailingMatmul(torch.autograd.Function):
-    @staticmethod
-    def forward(  # type: ignore[override]
-        ctx,
-        fuse: bool,
-        process_group: torch.distributed.ProcessGroup,
-        gathered_input: torch.Tensor,
-        weight: torch.Tensor,
-    ) -> torch.Tensor:
-        ctx.save_for_backward(gathered_input, weight)
-        ctx.fuse = fuse
-        ctx.process_group = process_group
-        scattered_output = sequence_parallel_trailing_matmul_fwd(
-            gathered_input, weight, fuse, process_group
-        )
-        return scattered_output
+@torch.library.register_fake("xformers_python::sequence_parallel_trailing_matmul_bwd")
+def sequence_parallel_trailing_matmul_bwd_fake(
+    gathered_input: torch.Tensor,
+    weight: torch.Tensor,
+    grad_scattered_output: torch.Tensor,
+    fuse: bool,
+    process_group_name: str,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    return (torch.empty_like(gathered_input), torch.empty_like(weight))
 
-    @staticmethod
-    def backward(  # type: ignore[override]
-        ctx, grad_scattered_output: torch.Tensor
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        gathered_input, weight = ctx.saved_tensors
-        (grad_gathered_input, grad_weight,) = sequence_parallel_trailing_matmul_bwd(
-            gathered_input,
-            weight,
-            grad_scattered_output,
-            ctx.fuse,
-            ctx.process_group,
-        )
-        return None, None, grad_gathered_input, grad_weight
+
+def sequence_parallel_trailing_matmul_setup_context(ctx, inputs, output):
+    gathered_input, weight, fuse, process_group_name = inputs
+    ctx.save_for_backward(gathered_input, weight)
+    ctx.fuse = fuse
+    ctx.process_group_name = process_group_name
+
+
+def sequence_parallel_trailing_matmul_bwd_bridge(ctx, grad_scattered_output):
+    gathered_input, weight = ctx.saved_tensors
+    (grad_gathered_input, grad_weight,) = sequence_parallel_trailing_matmul_bwd(
+        gathered_input,
+        weight,
+        grad_scattered_output,
+        ctx.fuse,
+        ctx.process_group_name,
+    )
+    return grad_gathered_input, grad_weight, None, None
+
+
+torch.library.register_autograd(
+    "xformers_python::sequence_parallel_trailing_matmul_fwd",
+    sequence_parallel_trailing_matmul_bwd_bridge,
+    setup_context=sequence_parallel_trailing_matmul_setup_context,
+)
 
 
 def sequence_parallel_trailing_matmul(
@@ -282,5 +353,7 @@ def sequence_parallel_trailing_matmul(
     fuse: bool,
     process_group: torch.distributed.ProcessGroup,
 ) -> torch.Tensor:
-    o = _SequenceParallelTrailingMatmul.apply(fuse, process_group, x.flatten(0, -2), w)
+    o = sequence_parallel_trailing_matmul_fwd(
+        x.flatten(0, -2), w, fuse, process_group.group_name
+    )
     return o.view(-1, *x.shape[1:-1], w.shape[1])

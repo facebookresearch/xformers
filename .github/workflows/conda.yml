@@ -18,11 +18,11 @@ on:
 # https://github.com/actions/runner/issues/1182
 
 env:
-  # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: "5.0+PTX 6.0 6.1 7.0 7.5 8.0+PTX"
   MAX_JOBS: 3  # Avoids OOMs
   XFORMERS_BUILD_TYPE: "Release"
   XFORMERS_PACKAGE_FROM: "conda-${{ github.ref_name }}"
+  # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
 jobs:
   build:
@@ -33,13 +33,13 @@ jobs:
           - "3.9"
           - "3.10"
         config:
-          - torch_version: "2.3.0"
+          - torch_version: "2.4.0"
             torch_channel: "pytorch"
             cuda_version: "12.1.0"
             cuda_dep_runtime: ">=12.0,<13.0"
             cuda_short_version: "121"
 
-          - torch_version: "2.3.0"
+          - torch_version: "2.4.0"
             torch_channel: "pytorch"
             cuda_version: "11.8.0"
             cuda_dep_runtime: ">=11.7,<11.9"
@@ -53,6 +53,8 @@ jobs:
     env:
       # alias for the current python version
       PY: /opt/conda/bin/python
+      # you need at least cuda 5.0 for some of the stuff compiled here.
+      TORCH_CUDA_ARCH_LIST: ${{ join('6.0+PTX 7.0 7.5 8.0+PTX', fromJSON(inputs.cuda_short_version) >= 118 && ' 9.0a' || '') }}
 
     timeout-minutes: 360
     defaults:
@@ -75,19 +77,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "XFORMERS_CONDA_TAG=main" >> $GITHUB_ENV
       - run: echo "${XFORMERS_CONDA_TAG}"
-      - name: Add H100 if nvcc 11.08+
-        shell: python
-        run: |
-          import os
-          import sys
-          print(sys.version)
-          cuda_short_version = "${{ matrix.config.cuda_short_version }}"
-          arch_list = os.environ["TORCH_CUDA_ARCH_LIST"]
-          if cuda_short_version not in ["116", "117"]:
-            arch_list += " 9.0"
-          with open(os.environ['GITHUB_ENV'], "r+") as fp:
-            fp.write("TORCH_CUDA_ARCH_LIST=" + arch_list + "\n")
-      - run: echo "${TORCH_CUDA_ARCH_LIST}"
       - name: Free up disk space
         run: |
           df -h /
@@ -105,7 +94,8 @@ jobs:
           VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
-          git config --global --add safe.directory "*"
+          git config --global --add safe.directory "$(pwd)"
+          git rev-parse --short HEAD
           $PY -m pip install packaging
           version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}

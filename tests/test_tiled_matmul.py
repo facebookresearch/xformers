@@ -106,14 +106,23 @@ def make_operands(m, n, k, *, dtype):
 @cuda_sm70_only
 @pytest.mark.parametrize("shape", _test_shapes, ids=[str(x) for x in _test_shapes])
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
+@pytest.mark.parametrize(
+    "compile", [pytest.param(False, id="eager"), pytest.param(True, id="compile")]
+)
 def test_forward_backward(
     shape,
     dtype,
+    compile: bool,
 ):
+    if compile and dtype is torch.bfloat16 and compute_capability < (8, 0):
+        # https://fb.workplace.com/groups/1075192433118967/posts/1480158559289017
+        pytest.skip("Dynamo misbehaves on V100 or earlier when handling bf16")
+
     m_tiles, n_tiles, k_tiles = shape
     m, n, k = sum(m_tiles), sum(n_tiles), sum(k_tiles)
 
     torch.manual_seed(m * n * k)
+    torch._dynamo.reset_code_caches()  # avoids hitting recompilation limit
 
     a, b, c_reference = make_operands(m, n, k, dtype=dtype)
     a = a.cuda().requires_grad_()
@@ -129,7 +138,11 @@ def test_forward_backward(
     ]
     b_tiled = [[y for y in x.split(n_tiles, dim=1)] for x in b.split(k_tiles, dim=0)]
 
-    c_test_tiled = tiled_matmul(a_tiled, b_tiled)
+    tiled_matmul_compiled = torch.compile(
+        tiled_matmul, fullgraph=True, disable=not compile
+    )
+
+    c_test_tiled = tiled_matmul_compiled(a_tiled, b_tiled)
     c_test = torch.cat([torch.cat(x, dim=1) for x in c_test_tiled], dim=0)
 
     torch.testing.assert_close(c_test, c_reference)

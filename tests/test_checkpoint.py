@@ -29,11 +29,11 @@ if torch.cuda.is_available():
     cuda_cap = torch.cuda.get_device_capability(_devices[1])
 
 
-def _relu_policy(func, *args, **kwargs):
+def _relu_policy(ctx, func, *args, **kwargs):
     return func == torch.ops.aten.relu.default
 
 
-def _all_policy(func, *args, **kwargs):
+def _all_policy(ctx, func, *args, **kwargs):
     return True
 
 
@@ -43,12 +43,15 @@ def _all_policy(func, *args, **kwargs):
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("autocast", [True, False])
 def test_checkpoint(policy_fn, input_requires_grad, device, autocast):
-    module = nn.Sequential(
-        nn.Linear(10, 10),
-        nn.ReLU(),
-        nn.Linear(10, 10),
-        nn.ReLU(),
-    ).to(device)
+    def build_module():
+        return nn.Sequential(
+            nn.Linear(10, 10),
+            nn.ReLU(),
+            nn.Linear(10, 10),
+            nn.ReLU(),
+        ).to(device)
+
+    module = nn.ModuleList([build_module() for i in range(10)])
 
     # Run model with and without checkpointing and verify gradients are
     # equivalent, regardless of if inputs require grads or not.
@@ -62,8 +65,8 @@ def test_checkpoint(policy_fn, input_requires_grad, device, autocast):
     out_copy = inputs_copy
     with torch.autocast(device_type=device, enabled=autocast):
         for i in range(10):
-            out = checkpoint(module, out, policy_fn=policy_fn)
-            out_copy = module_copy(out_copy)
+            out = checkpoint(module[i], out, policy_fn=policy_fn)
+            out_copy = module_copy[i](out_copy)
 
     assert torch.allclose(out, out_copy)
     out.sum().backward()
@@ -328,7 +331,7 @@ def test_optimal_checkpoint_policy(
         torch.testing.assert_close(p.grad, p_ref.grad)
 
 
-@pytest.mark.skipif(torch.__version__ < "2.3", reason="Only new PyTorch supported")
+@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.skipif(True, reason="TODO[fmassa]: Broken on nightly")
 @cuda_only
 @pytest.mark.parametrize("no_grad", [False, True])

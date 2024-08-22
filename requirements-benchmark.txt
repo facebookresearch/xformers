@@ -4,7 +4,7 @@
 # Example requirement, can be anything that pip knows
 # install with `pip install -r requirements.txt`, and make sure that CI does the same
 tqdm == 4.59.0
-pandas == 1.2.4
-seaborn == 0.11.1
+pandas == 2.2.2
+seaborn == 0.13.2
 pytorch-lightning >= 1.3
 torchmetrics>=0.7.0, <0.10.1

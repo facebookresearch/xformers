@@ -13,8 +13,6 @@ import torch.distributed
 def all_reduce(
     x: torch.Tensor, *, process_group: torch.distributed.ProcessGroup
 ) -> None:
-    assert x.is_contiguous()
-
     mp_size = process_group.size()
     if mp_size == 1:
         return
@@ -27,7 +25,6 @@ def all_reduce(
 def gather_along_first_dim_async(
     input_: torch.Tensor, *, process_group: torch.distributed.ProcessGroup
 ) -> Tuple[torch.Tensor, Optional[torch.distributed.Work]]:
-    assert input_.is_contiguous()
     mp_size = process_group.size()
     if mp_size == 1:
         return input_, None
@@ -46,7 +43,6 @@ def gather_along_first_dim_async(
 def reduce_scatter_along_first_dim_async(
     input_: torch.Tensor, *, process_group: torch.distributed.ProcessGroup
 ) -> Tuple[torch.Tensor, Optional[torch.distributed.Work]]:
-    assert input_.is_contiguous()
     mp_size = process_group.size()
     if mp_size == 1:
         return input_, None

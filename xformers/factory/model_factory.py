@@ -62,7 +62,7 @@ class xFormerConfig:
                     },
                 },
                 "feedforward_config": {
-                    "name": "FusedMLP",  # Use MLP if Triton is not available
+                    "name": "MLP",
                     "dropout": MLP_DROP,
                     "activation": "gelu",
                     "hidden_layer_multiplier": MLP_MULTIPLIER,

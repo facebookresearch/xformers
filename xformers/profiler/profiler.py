@@ -59,6 +59,7 @@ class PyTorchProfiler:
 
     def __init__(self, main_profiler: "_Profiler") -> None:
         self.main_profiler = main_profiler
+        self.num_steps = 0
         self.pytorch_profiler = torch.profiler.profile(
             on_trace_ready=self._on_trace,
             profile_memory=True,
@@ -95,16 +96,18 @@ class PyTorchProfiler:
         if limits is not None:
             for dtype, tflops in limits.gemm_tflops.items():
                 hw_flops[dtype] = tflops * (1000**4)
-        total_flops = 0.0
-        total_hfu = 0.0
-        total_mfu = 0.0
-        for dtype in results.operations_per_dtype_fw.keys():
-            total_flops += results.compute_num_ops(dtype) / results.total_time_s
-            total_hfu += results.compute_hfu(hw_flops)
-            total_mfu += results.compute_mfu(hw_flops)
+        total_hfu = results.compute_hfu(hw_flops)
+        total_mfu = results.compute_mfu(hw_flops)
+        total_flop = sum(
+            results.compute_num_ops(dtype)
+            for dtype in results.operations_per_dtype_fw.keys()
+        )
         s = self.main_profiler.summary
-        s.append(("Step time (ms)", f"{int(results.total_time_s * 1000)}"))
-        s.append(("TFlops", f"{total_flops / (1000**4):0.1f}"))
+        s.append(
+            ("Step time (ms)", f"{int(results.total_time_s * 1000 / self.num_steps)}")
+        )
+        s.append(("TFlop/step", f"{total_flop / (self.num_steps * 1000**4):0.1f}"))
+        s.append(("TFlops", f"{total_flop / (results.total_time_s * 1000**4):0.1f}"))
         s.append(("HFU", f"{total_hfu:0.3f}"))
         s.append(("MFU", f"{total_mfu:0.3f}"))
 
@@ -118,6 +121,7 @@ class PyTorchProfiler:
 
     def step(self) -> None:
         self.pytorch_profiler.step()
+        self.num_steps += 1
 
 
 class PyTorchProfiler_CUDAOnly(PyTorchProfiler):
@@ -267,6 +271,9 @@ class _Profiler:
                     o = p.object
                     p.object = None
                     logging.info(f"Shutting down {p.cls.__name__} profiler...")
+                    # Make sure the profiler's `step` function is called
+                    # $N times when we do $N steps with this profiler.
+                    o.step()
                     o.__exit__(None, None, None)
 
     def _create_output_filename(self, filename: str) -> Path:

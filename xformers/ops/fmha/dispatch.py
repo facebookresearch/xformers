@@ -6,14 +6,27 @@
 
 import textwrap
 from collections import deque
-from typing import List, Sequence, Type, TypeVar
+from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar
 
 import torch
 
-from . import attn_bias, ck, cutlass, decoder, flash, small_k, triton_splitk
+from . import attn_bias, ck, cutlass, flash, flash3, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
+
+
+_USE_FLASH_ATTENTION_3 = False
+
+
+def _set_use_fa3(use_flash_attention3: bool) -> None:
+    global _USE_FLASH_ATTENTION_3
+    _USE_FLASH_ATTENTION_3 = use_flash_attention3
+
+
+def _get_use_fa3() -> bool:
+    global _USE_FLASH_ATTENTION_3
+    return _USE_FLASH_ATTENTION_3
 
 
 def _format_inputs_description(inp: Inputs) -> str:
@@ -39,7 +52,12 @@ def _format_not_supported_reasons(op, reasons: List[str]) -> str:
     return f"`{op.NAME}` is not supported because:\n    " + "\n    ".join(reasons)
 
 
-def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
+def _run_priority_list(
+    name: str,
+    priority_list: Sequence[T],
+    inp: Inputs,
+    extra_op_reasons: Optional[List[Tuple[Any, List[str]]]] = None,
+) -> T:
     not_supported_reasons: List[List[str]] = []
     for op in priority_list:
         not_supported = op.not_supported_reasons(inp)
@@ -52,6 +70,9 @@ def _run_priority_list(name: str, priority_list: Sequence[T], inp: Inputs) -> T:
 {textwrap.indent(_format_inputs_description(inp), '     ')}"""
     for op, not_supported in zip(priority_list, not_supported_reasons):
         msg += "\n" + _format_not_supported_reasons(op, not_supported)
+    if extra_op_reasons is not None:
+        for op, not_supported in extra_op_reasons:
+            msg += "\n" + _format_not_supported_reasons(op, not_supported)
     raise NotImplementedError(msg)
 
 
@@ -59,11 +80,12 @@ def _dispatch_fw_priority_list(
     inp: Inputs, needs_gradient: bool
 ) -> Sequence[Type[AttentionFwOpBase]]:
     if torch.version.cuda:
+        flash3_op = [flash3.FwOp] if _get_use_fa3() else []
         priority_list_ops = deque(
-            [
+            flash3_op
+            + [
                 flash.FwOp,
                 cutlass.FwOp,
-                small_k.FwOp,
             ]
         )
     else:
@@ -76,14 +98,6 @@ def _dispatch_fw_priority_list(
         mqa_or_gqa = (
             inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1
         )
-        if not mqa_or_gqa:
-            # With multiquery, cutlass is sometimes faster than decoder
-            # but it's not currently clear when.
-            if torch.version.cuda:
-                priority_list_ops.appendleft(decoder.FwOp)
-            # priority_list_ops.appendleft(
-            #     decoder.FwOp if torch.version.cuda else ck_decoder.FwOp
-            # )
         # Split-KV is useful with MQA
         # for short Q-seqlen / long K-seqlen
         if mqa_or_gqa and inp.query.shape[1] <= 32 and inp.key.shape[1] >= 256:
@@ -101,6 +115,8 @@ def _dispatch_fw_priority_list(
                 if torch.version.cuda and not isinstance(
                     inp.attn_bias, attn_bias.BlockDiagonalMask
                 ):
+                    if _get_use_fa3():
+                        priority_list_ops.remove(flash3.FwOp)
                     priority_list_ops.remove(flash.FwOp)
                     priority_list_ops.appendleft(flash.FwOp)
 
@@ -127,23 +143,41 @@ def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
     return False
 
 
-def _dispatch_bw(inp: Inputs, is_unpadded_lse: bool = False) -> Type[AttentionBwOpBase]:
+def _dispatch_bw(
+    inp: Inputs, varlen_lse_packed: Optional[bool]
+) -> Type[AttentionBwOpBase]:
     if torch.version.cuda:
         priority_list_ops: List[Type[AttentionBwOpBase]] = [
             flash.BwOp,
             cutlass.BwOp,
-            # CUDA illegal memory issues, race conditions etc..
-            # triton.BwOp,
-            # Deprecated
-            small_k.BwOp,
         ]
     else:
         priority_list_ops = [
             ck.BwOp,
         ]
 
-    if is_unpadded_lse:
-        priority_list_ops = [op for op in priority_list_ops if op.SUPPORTS_UNPADDED_LSE]
+    # NOTE: If we have a variable seqlen `attn_bias`, we need to get a BW pass
+    # that supports the LSE format
+    # *unless* we are in the case where both formats are the same (bs=1)
+    extra_op_reasons = []
+    if (
+        isinstance(inp.attn_bias, attn_bias.VARLEN_BIASES)
+        and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
+    ):
+        assert varlen_lse_packed is not None
+        for op in priority_list_ops:
+            if op.VARLEN_LSE_PACKED != varlen_lse_packed:
+                extra_op_reasons.append(
+                    (
+                        op,
+                        [
+                            f"LSE is in {'packed' if varlen_lse_packed else 'padded'} format"
+                        ],
+                    )
+                )
+        priority_list_ops = [
+            op for op in priority_list_ops if op.VARLEN_LSE_PACKED == varlen_lse_packed
+        ]
     if torch.version.cuda and _is_cutlassB_faster_than_flash(inp):
         priority_list_ops.remove(cutlass.BwOp)
         priority_list_ops.insert(0, cutlass.BwOp)
