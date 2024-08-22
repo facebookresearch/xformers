@@ -69,7 +69,8 @@ struct batched_infer_causalmask_bias_dropout_dispatch {
       const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
       const bool use_async_pipeline =
-          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
+          (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) &&
+           (MaxK <= 128));
 
       if (!use_async_pipeline) {
         BOOL_SWITCH_3(

@@ -63,7 +63,8 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
       bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
       bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
       const bool use_async_pipeline =
-          ((param.K % 8 == 0) && (param.Kv % 8 == 0) && (MaxK <= 128));
+          (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) &&
+           (MaxK <= 128));
 
       if (!use_async_pipeline) {
         BOOL_SWITCH_2(
@@ -196,7 +197,6 @@ struct grouped_infer_causalmask_bias_dropout_dispatch {
           0, // nhead_stride_randval
           0, // nhead_stride_lse
           param.out_strides[1],
-          0, // batch_stride_lse
           (param.window_size > 0) ? param.window_size - 1
                                   : -1, // window_left_size
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size

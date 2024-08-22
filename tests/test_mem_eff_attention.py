@@ -38,13 +38,16 @@ compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
 sm70_or_better_only = pytest.mark.skipif(
-    compute_capability < (7, 0), reason="requires sm70+"
+    torch.version.cuda is not None and compute_capability < (7, 0),
+    reason="requires sm70+",
 )
 sm75_or_better_only = pytest.mark.skipif(
-    compute_capability < (7, 5), reason="requires sm75+"
+    torch.version.cuda is not None and compute_capability < (7, 5),
+    reason="requires sm75+",
 )
 sm80_or_better_only = pytest.mark.skipif(
-    compute_capability < (8, 0), reason="requires sm80+"
+    torch.version.cuda is not None and compute_capability < (8, 0),
+    reason="requires sm80+",
 )
 sm90_or_better_only = pytest.mark.skipif(
     compute_capability < (9, 0), reason="requires sm90+"
@@ -670,16 +673,8 @@ def test_backward(
 
     if op_bw == fmha.ck.BwOp:
         op_fw = fmha.ck.FwOp
-        if dtype == torch.bfloat16:
-            pytest.skip(
-                "CK Fmha backward for bfloat16 currently is not very accurate for some cases!"
-            )
         if grad_out_contiguous is False:
             pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
-        if k % 2 != 0:
-            pytest.skip(
-                "CK Fmha currently requires the headdim size of query input be an even value!"
-            )
 
     qkv = None
 
@@ -1586,7 +1581,7 @@ def test_decoder(
     # kv_heads = 1: multiquery
     # kv_heads = None: neither MQA nor GQA
     # kv_heads > 1: BMGHK
-    if dtype == "bf16" and compute_capability < (8, 0):
+    if dtype == "bf16" and torch.version.cuda and compute_capability < (8, 0):
         raise pytest.skip("BF16 is only supported on SM80+")
     import triton
 

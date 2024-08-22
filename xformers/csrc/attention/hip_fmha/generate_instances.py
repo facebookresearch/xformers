@@ -6,11 +6,13 @@
 #
 
 import os
+import sys
 from pathlib import Path
+from typing import List
 
-FMHA_INSTANCE_HEADER = """
+FMHA_COPYRIGHT_HEADER = """
 /*
-  Copyright (c) 2023, Advanced Micro Devices, Inc. All rights reserved.
+  Copyright (c) 2024, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -19,11 +21,13 @@ FMHA_INSTANCE_HEADER = """
  */
 """
 
-FMHA_INFER_INSTANCE_TEMPLATE = """
+FMHA_INFER_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
 #include \"ck_tiled_fmha_{mode}_infer.h\"
+"""
 
-template void run_{mode}_infer_causalmask_bias_dropout_dispatch<
+FMHA_INFER_INSTANCE_TEMPLATE = """
+{extern}template void run_{mode}_infer_causalmask_bias_dropout_dispatch<
     {dtype},
     {has_causalmask},
     {has_bias},
@@ -36,11 +40,13 @@ FMHA_INFER_INSTANCE_FNAME = (
     "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
 )
 
-FMHA_FORWARD_INSTANCE_TEMPLATE = """
+FMHA_FORWARD_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
 #include \"ck_tiled_fmha_{mode}_forward.h\"
+"""
 
-template void run_{mode}_forward_causalmask_bias_dropout_dispatch<
+FMHA_FORWARD_INSTANCE_TEMPLATE = """
+{extern}template void run_{mode}_forward_causalmask_bias_dropout_dispatch<
     {dtype},
     {has_causalmask},
     {has_bias},
@@ -53,11 +59,13 @@ FMHA_FORWARD_INSTANCE_FNAME = (
     "{has_or_no_bias_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
 )
 
-FMHA_BACKWARD_INSTANCE_TEMPLATE = """
+FMHA_BACKWARD_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
 #include \"ck_tiled_fmha_{mode}_backward.h\"
+"""
 
-template void run_{mode}_backward_causalmask_bias_dropout_dispatch<
+FMHA_BACKWARD_INSTANCE_TEMPLATE = """
+{extern}template void run_{mode}_backward_causalmask_bias_dropout_dispatch<
     {dtype},
     {has_causalmask},
     {has_bias},
@@ -70,6 +78,8 @@ FMHA_BACKWARD_INSTANCE_FNAME = (
     "fmha_{mode}_backward_{dtype_str}_{has_or_no_causalmask_str}_"
     "{has_or_no_bias_str}_{has_or_no_biasgrad_str}_{has_or_no_dropout_str}_{max_k_str}.cpp"
 )
+
+FMHA_INSTANCE_REF_FNAME = "fmha_{mode}_{function}_{dtype}_instances_ref.h"
 
 BOOL_MAP = {True: "true", False: "false"}
 
@@ -116,13 +126,13 @@ MODE_NAME_MAP = {
 }
 
 
-def create_infer_instances(instance_dir: Path) -> None:
+def create_infer_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
                 for has_bias in [True, False]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128, 256]:
+                        for max_k in headdims:
                             fname = FMHA_INFER_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -133,9 +143,15 @@ def create_infer_instances(instance_dir: Path) -> None:
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
                             )
+                            infer_instance_inc = (
+                                FMHA_INFER_INSTANCE_TEMPLATE_INC.format(
+                                    mode=mode,
+                                    dtype_file=TYPE_FNAME_MAP[dtype],
+                                )
+                            )
                             infer_instance = FMHA_INFER_INSTANCE_TEMPLATE.format(
+                                extern="",
                                 mode=mode,
-                                dtype_file=TYPE_FNAME_MAP[dtype],
                                 dtype=TYPE_CTYPE_MAP[dtype],
                                 has_causalmask=BOOL_MAP[has_causalmask],
                                 has_bias=BOOL_MAP[has_bias],
@@ -144,17 +160,52 @@ def create_infer_instances(instance_dir: Path) -> None:
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
                             (instance_dir / fname).write_text(
-                                FMHA_INSTANCE_HEADER + infer_instance
+                                FMHA_COPYRIGHT_HEADER
+                                + infer_instance_inc
+                                + infer_instance
                             )
 
 
-def create_forward_instances(instance_dir: Path) -> None:
+def create_infer_instances_ref(instance_dir: Path, headdims: List) -> None:
+    for mode in ["batched", "grouped"]:
+        for dtype in ["fp16", "bf16"]:
+            ref_fname = FMHA_INSTANCE_REF_FNAME.format(
+                mode=mode,
+                function="infer",
+                dtype=dtype,
+            )
+            ref_fname_path = instance_dir / ref_fname
+            infer_instance_inc = FMHA_INFER_INSTANCE_TEMPLATE_INC.format(
+                mode=mode,
+                dtype_file=TYPE_FNAME_MAP[dtype],
+            )
+            with open(ref_fname_path, "a") as file:
+                file.write(FMHA_COPYRIGHT_HEADER)
+                file.write(infer_instance_inc)
+                for max_k in headdims:
+                    for has_bias in [True, False]:
+                        for has_dropout in [True, False]:
+                            for has_causalmask in [True, False]:
+                                infer_instance = FMHA_INFER_INSTANCE_TEMPLATE.format(
+                                    extern="extern ",
+                                    mode=mode,
+                                    dtype=TYPE_CTYPE_MAP[dtype],
+                                    has_causalmask=BOOL_MAP[has_causalmask],
+                                    has_bias=BOOL_MAP[has_bias],
+                                    has_dropout=BOOL_MAP[has_dropout],
+                                    max_k=max_k,
+                                    cap_mode=MODE_NAME_MAP[mode],
+                                )
+                                file.write(infer_instance)
+
+
+def create_forward_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
                 for has_bias in [True, False]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128, 256]:
+                        for max_k in headdims:
                             fname = FMHA_FORWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -165,9 +216,15 @@ def create_forward_instances(instance_dir: Path) -> None:
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
                             )
-                            infer_instance = FMHA_FORWARD_INSTANCE_TEMPLATE.format(
+                            forward_instance_inc = (
+                                FMHA_FORWARD_INSTANCE_TEMPLATE_INC.format(
+                                    mode=mode,
+                                    dtype_file=TYPE_FNAME_MAP[dtype],
+                                )
+                            )
+                            forward_instance = FMHA_FORWARD_INSTANCE_TEMPLATE.format(
+                                extern="",
                                 mode=mode,
-                                dtype_file=TYPE_FNAME_MAP[dtype],
                                 dtype=TYPE_CTYPE_MAP[dtype],
                                 has_causalmask=BOOL_MAP[has_causalmask],
                                 has_bias=BOOL_MAP[has_bias],
@@ -176,11 +233,48 @@ def create_forward_instances(instance_dir: Path) -> None:
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
                             (instance_dir / fname).write_text(
-                                FMHA_INSTANCE_HEADER + infer_instance
+                                FMHA_COPYRIGHT_HEADER
+                                + forward_instance_inc
+                                + forward_instance
                             )
 
 
-def create_backward_instances(instance_dir: Path) -> None:
+def create_forward_instances_ref(instance_dir: Path, headdims: List) -> None:
+    for mode in ["batched", "grouped"]:
+        for dtype in ["fp16", "bf16"]:
+            ref_fname = FMHA_INSTANCE_REF_FNAME.format(
+                mode=mode,
+                function="forward",
+                dtype=dtype,
+            )
+            ref_fname_path = instance_dir / ref_fname
+            forward_instance_inc = FMHA_FORWARD_INSTANCE_TEMPLATE_INC.format(
+                mode=mode,
+                dtype_file=TYPE_FNAME_MAP[dtype],
+            )
+            with open(ref_fname_path, "a") as file:
+                file.write(FMHA_COPYRIGHT_HEADER)
+                file.write(forward_instance_inc)
+                for max_k in headdims:
+                    for has_bias in [True, False]:
+                        for has_dropout in [True, False]:
+                            for has_causalmask in [True, False]:
+                                forward_instance = (
+                                    FMHA_FORWARD_INSTANCE_TEMPLATE.format(
+                                        extern="extern ",
+                                        mode=mode,
+                                        dtype=TYPE_CTYPE_MAP[dtype],
+                                        has_causalmask=BOOL_MAP[has_causalmask],
+                                        has_bias=BOOL_MAP[has_bias],
+                                        has_dropout=BOOL_MAP[has_dropout],
+                                        max_k=max_k,
+                                        cap_mode=MODE_NAME_MAP[mode],
+                                    )
+                                )
+                                file.write(forward_instance)
+
+
+def create_backward_instances(instance_dir: Path, headdims: List) -> None:
     for mode in ["batched", "grouped"]:
         for dtype in ["fp16", "bf16"]:
             for has_causalmask in [True, False]:
@@ -190,7 +284,7 @@ def create_backward_instances(instance_dir: Path) -> None:
                     [False, False],
                 ]:
                     for has_dropout in [True, False]:
-                        for max_k in [32, 64, 128]:
+                        for max_k in headdims:
                             fname = FMHA_BACKWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
@@ -202,9 +296,15 @@ def create_backward_instances(instance_dir: Path) -> None:
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
                             )
-                            infer_instance = FMHA_BACKWARD_INSTANCE_TEMPLATE.format(
+                            backward_instance_inc = (
+                                FMHA_BACKWARD_INSTANCE_TEMPLATE_INC.format(
+                                    mode=mode,
+                                    dtype_file=TYPE_FNAME_MAP[dtype],
+                                )
+                            )
+                            backward_instance = FMHA_BACKWARD_INSTANCE_TEMPLATE.format(
+                                extern="",
                                 mode=mode,
-                                dtype_file=TYPE_FNAME_MAP[dtype],
                                 dtype=TYPE_CTYPE_MAP[dtype],
                                 has_causalmask=BOOL_MAP[has_causalmask],
                                 has_bias=BOOL_MAP[has_bias],
@@ -214,14 +314,77 @@ def create_backward_instances(instance_dir: Path) -> None:
                                 cap_mode=MODE_NAME_MAP[mode],
                             )
                             (instance_dir / fname).write_text(
-                                FMHA_INSTANCE_HEADER + infer_instance
+                                FMHA_COPYRIGHT_HEADER
+                                + backward_instance_inc
+                                + backward_instance
                             )
 
 
+def create_backward_instances_ref(instance_dir: Path, headdims: List) -> None:
+    for mode in ["batched", "grouped"]:
+        for dtype in ["fp16", "bf16"]:
+            ref_fname = FMHA_INSTANCE_REF_FNAME.format(
+                mode=mode,
+                function="backward",
+                dtype=dtype,
+            )
+            ref_fname_path = instance_dir / ref_fname
+            backward_instance_inc = FMHA_BACKWARD_INSTANCE_TEMPLATE_INC.format(
+                mode=mode,
+                dtype_file=TYPE_FNAME_MAP[dtype],
+            )
+            with open(ref_fname_path, "a") as file:
+                file.write(FMHA_COPYRIGHT_HEADER)
+                file.write(backward_instance_inc)
+                for max_k in headdims:
+                    for has_bias, has_bias_grad in [
+                        [True, False],
+                        [True, True],
+                        [False, False],
+                    ]:
+                        for has_dropout in [True, False]:
+                            for has_causalmask in [True, False]:
+                                backward_instance = (
+                                    FMHA_BACKWARD_INSTANCE_TEMPLATE.format(
+                                        extern="extern ",
+                                        mode=mode,
+                                        dtype=TYPE_CTYPE_MAP[dtype],
+                                        has_causalmask=BOOL_MAP[has_causalmask],
+                                        has_bias=BOOL_MAP[has_bias],
+                                        has_bias_grad=BOOL_MAP[has_bias_grad],
+                                        has_dropout=BOOL_MAP[has_dropout],
+                                        max_k=max_k,
+                                        cap_mode=MODE_NAME_MAP[mode],
+                                    )
+                                )
+                                file.write(backward_instance)
+
+
 if __name__ == "__main__":
+    disable_hd256 = False
+
+    for arg in sys.argv:
+        if arg == "--ignore-hd256":
+            disable_hd256 = True
+
+    if disable_hd256:
+        headdims = [32, 64, 128]
+    else:
+        headdims = [32, 64, 128, 256]
+
     this_dir = os.path.dirname(__file__)
     output_dir = Path(this_dir) / "instances"
     output_dir.mkdir(parents=True, exist_ok=True)
-    create_infer_instances(output_dir)
-    create_forward_instances(output_dir)
-    create_backward_instances(output_dir)
+
+    # remove existing files in the directory
+    files = os.listdir(output_dir)
+    for ff in files:
+        file_path = os.path.join(output_dir, ff)
+        os.remove(file_path)
+
+    create_infer_instances(output_dir, headdims)
+    create_infer_instances_ref(output_dir, headdims)
+    create_forward_instances(output_dir, headdims)
+    create_forward_instances_ref(output_dir, headdims)
+    create_backward_instances(output_dir, headdims)
+    create_backward_instances_ref(output_dir, headdims)
