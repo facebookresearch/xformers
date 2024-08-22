@@ -22,7 +22,7 @@ try:
     custom_fwd = new_custom_fwd(device_type="cuda")
     custom_bwd = new_custom_bwd(device_type="cuda")
 except ImportError:
-    from torch.cuda.amp import custom_bwd, custom_fwd  # noqa: F401
+    from torch.cuda.amp import custom_bwd, custom_fwd  # type: ignore # noqa: F401
 
 
 Item = namedtuple("Item", ["constructor", "config"])

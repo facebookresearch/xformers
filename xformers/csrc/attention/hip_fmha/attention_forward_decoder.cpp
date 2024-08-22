@@ -57,7 +57,7 @@ template <
     int32_t ThreadsPerWavefront,
     int32_t WavefrontsPerBlock,
     int32_t KV_M_MAX = 8192,
-    int32_t K_MAX = 256>
+    int32_t K_MAX = K_MAX>
 at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
     const at::Tensor& XQ, // [B, 1, G, H, D]
     const at::Tensor& cache_K, // [B, KV_M_MAX, G, H or 1, D]

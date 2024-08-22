@@ -732,6 +732,46 @@ def fused_allgather_and_linear(
             for gos in gathered_output_shapes
         ]
 
+    torch.ops.xformers_python._fused_allgather_and_linear_impl(
+        scattered_input,
+        weights,
+        group.group_name,
+        gathered_outputs,
+        num_stripes=num_stripes,
+        timeout_s=timeout_s,
+        _wait=private_args_DO_NOT_USE.get("_wait", True),
+        _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
+        _triton=private_args_DO_NOT_USE.get("_triton", True),
+        scale_scattered_input=scale_scattered_input,
+        scales_weights=scales_weights,
+    )
+
+    if isinstance(weight, list):
+        return [go.flatten(0, 1) for go in gathered_outputs]
+    else:
+        return gathered_outputs[0].flatten(0, 1)
+
+
+@torch.library.custom_op(
+    "xformers_python::_fused_allgather_and_linear_impl",
+    mutates_args={"gathered_outputs"},
+    device_types="cuda",
+)
+def _fused_allgather_and_linear_custom_op(
+    scattered_input: torch.Tensor,
+    weights: List[torch.Tensor],
+    process_group_name: str,
+    gathered_outputs: List[torch.Tensor],
+    num_stripes: int,
+    timeout_s: int,
+    _wait: bool,
+    _memcpy: bool,
+    _triton: bool,
+    scale_scattered_input: torch.Tensor,
+    scales_weights: Sequence[Optional[torch.Tensor]],
+) -> None:
+    process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
+
     def my_matmul(
         inputs: List[torch.Tensor],
         src_rank: int,
@@ -755,22 +795,19 @@ def fused_allgather_and_linear(
     fused_allgather_and_anything(
         [scattered_input],
         my_matmul,
-        group=group,
+        group=process_group,
         num_stripes=num_stripes,
         timeout_s=timeout_s,
+        _wait=_wait,
+        _memcpy=_memcpy,
+        _triton=_triton,
         _is_regular_matmul=_is_regular_matmul,
         _extra_triton_args=dict(
             bs=[w.t() for w in weights],
             cs=[go.flatten(0, -2) for go in gathered_outputs],
             cs_my_shard=None,
         ),
-        **private_args_DO_NOT_USE,
     )
-
-    if isinstance(weight, list):
-        return [go.flatten(0, 1) for go in gathered_outputs]
-    else:
-        return gathered_outputs[0].flatten(0, 1)
 
 
 def fused_allgather_and_anything(
@@ -945,6 +982,46 @@ def fused_linear_and_reducescatter(
             for sos in scattered_output_shapes
         ]
 
+    torch.ops.xformers_python._fused_linear_and_reducescatter_impl(
+        gathered_input,
+        weights,
+        group.group_name,
+        scattered_outputs,
+        num_stripes=num_stripes,
+        timeout_s=timeout_s,
+        _wait=private_args_DO_NOT_USE.get("_wait", True),
+        _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
+        _triton=private_args_DO_NOT_USE.get("_triton", True),
+        scale_gathered_input=scale_gathered_input,
+        scales_weights=scales_weights,
+    )
+
+    if isinstance(weight, list):
+        return scattered_outputs
+    else:
+        return scattered_outputs[0]
+
+
+@torch.library.custom_op(
+    "xformers_python::_fused_linear_and_reducescatter_impl",
+    mutates_args={"scattered_outputs"},
+    device_types="cuda",
+)
+def _fused_linear_and_reducescatter_custom_op(
+    gathered_input: torch.Tensor,
+    weights: List[torch.Tensor],
+    process_group_name: str,
+    scattered_outputs: List[torch.Tensor],
+    num_stripes: int,
+    timeout_s: int,
+    _wait: bool,
+    _memcpy: bool,
+    _triton: bool,
+    scale_gathered_input: torch.Tensor,
+    scales_weights: Sequence[Optional[torch.Tensor]],
+) -> None:
+    process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
+
     def my_matmul(
         outputs: List[torch.Tensor],
         dst_rank: int,
@@ -968,22 +1045,19 @@ def fused_linear_and_reducescatter(
     fused_anything_and_reducescatter(
         my_matmul,
         scattered_outputs,
-        group=group,
+        group=process_group,
         num_stripes=num_stripes,
         timeout_s=timeout_s,
+        _wait=_wait,
+        _memcpy=_memcpy,
+        _triton=_triton,
         _is_regular_matmul=_is_regular_matmul,
         _extra_triton_args=dict(
             a_my_shard=None,
             a=gathered_input.flatten(0, -2),
             bs=[w.t() for w in weights],
         ),
-        **private_args_DO_NOT_USE,
     )
-
-    if isinstance(weight, list):
-        return scattered_outputs
-    else:
-        return scattered_outputs[0]
 
 
 def fused_anything_and_reducescatter(

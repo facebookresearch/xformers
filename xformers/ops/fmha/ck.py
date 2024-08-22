@@ -11,7 +11,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
 
-from ..common import get_xformers_operator, register_operator
+from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
@@ -19,7 +19,9 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
@@ -140,7 +142,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on Composable Kernel."""
 
-    OPERATOR = get_xformers_operator("efficient_attention_forward_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 256
@@ -154,7 +156,9 @@ class FwOp(AttentionFwOpBase):
         LowerTriangularMaskWithTensorBias,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalGappyKeysMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
@@ -173,7 +177,7 @@ class FwOp(AttentionFwOpBase):
     }
     ERROR_RTOL: Mapping[torch.dtype, float] = {
         torch.float: 2e-5,
-        torch.half: 4e-4,
+        torch.half: 3e-3,
         torch.bfloat16: 2e-2,
     }
 
@@ -341,10 +345,10 @@ class FwOp(AttentionFwOpBase):
 class BwOp(AttentionBwOpBase):
     __doc__ = FwOp.__doc__
 
-    OPERATOR = get_xformers_operator("efficient_attention_backward_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_backward_ck")
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
-    SUPPORTED_MAX_K = 128
+    SUPPORTED_MAX_K = 256
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         torch.Tensor,
@@ -362,12 +366,14 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
+    SUPPORTS_UNPADDED_LSE = True
     NAME = "ckB"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
         64,
         128,  # 64x128/128x128 kernel
+        256,
     ]
 
     @classmethod

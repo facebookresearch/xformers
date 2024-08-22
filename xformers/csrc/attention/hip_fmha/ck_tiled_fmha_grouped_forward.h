@@ -150,9 +150,8 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
           param.v_strides[1],
           param.attn_bias_strides[1],
           0, // nhead_stride_randval
-          param.lse_strides[1],
+          param.lse_strides[0],
           param.out_strides[1],
-          param.lse_strides[0], // batch_stride_lse
           (param.window_size > 0) ? param.window_size - 1
                                   : -1, // window_left_size
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size

@@ -8,6 +8,7 @@
 
 #include <ck_tile/core.hpp>
 #include <ck_tile/ops/fmha.hpp>
+#include <ck_tile/ops/fmha/block/block_dropout.hpp>
 
 template <typename DataType>
 struct FmhaFwdTypeConfig;

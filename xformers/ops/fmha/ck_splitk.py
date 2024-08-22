@@ -7,7 +7,7 @@ from typing import Any, Iterable, List, Optional, Tuple
 
 import torch
 
-from xformers.ops.common import get_xformers_operator, register_operator
+from xformers.ops.common import get_operator, register_operator
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
 from xformers.ops.fmha.common import (
     AttentionFwOpBase,
@@ -20,7 +20,7 @@ from xformers.ops.fmha.common import (
 @register_operator
 class FwOp(AttentionFwOpBase):
 
-    OPERATOR = get_xformers_operator("efficient_attention_forward_decoder_splitk_ck")
+    OPERATOR = get_operator("xformers", "efficient_attention_forward_decoder_splitk_ck")
     SUPPORTED_DEVICES = {"cuda"}
     SUPPORTED_DTYPES = {
         torch.half,

@@ -122,10 +122,6 @@ efficient_attention_backward_ck(
   int64_t K = query.size(3);
   int64_t Kv = value.size(3);
 
-  if (K % 2 != 0)
-    throw std::runtime_error(
-        "Currently CK Fmha requires the headdim of query/key be an even value!");
-
   auto opts = query.options();
 
   at::Tensor grad_q, grad_k, grad_v, grad_bias;
@@ -143,7 +139,6 @@ efficient_attention_backward_ck(
     grad_q = chunk.select(2, 0);
     grad_k = chunk.select(2, 1);
     grad_v = chunk.select(2, 2);
-    grad_q.fill_(0);
   } else if (
       key.size(3) == value.size(3) &&
       key.storage().is_alias_of(value.storage())) {
@@ -157,13 +152,23 @@ efficient_attention_backward_ck(
     grad_v = chunk.select(2, 1);
 
     grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
-    grad_q.fill_(0);
   } else {
     grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
     grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
     grad_v = at::empty_strided(value.sizes(), value.strides(), value.options());
-    grad_q.fill_(0);
   }
+
+  at::Tensor grad_q_f32;
+  const bool use_grad_q_f32 =
+      (query.scalar_type() == at::ScalarType::BFloat16 ||
+       query.scalar_type() == at::ScalarType::Half);
+
+  if (use_grad_q_f32) {
+    grad_q_f32 = at::empty(grad_q.sizes(), opts.dtype(at::kFloat));
+    grad_q_f32.fill_(0);
+  } else {
+    grad_q.fill_(0);
+  };
 
   // CK-FlashAttn requires q/k/v to have same shapes with dQ/dK/dV respectively
   TORCH_CHECK(query.sizes() == grad_q.sizes());
@@ -211,7 +216,7 @@ efficient_attention_backward_ck(
 
     TORCH_CHECK(p.B == logsumexp.size(0));
     TORCH_CHECK(p.Hq == logsumexp.size(1));
-    TORCH_CHECK(p.M <= logsumexp.size(2));
+    TORCH_CHECK(p.M == logsumexp.size(2));
 
     if (scale.has_value()) {
       p.scale = float(*scale);
@@ -228,6 +233,11 @@ efficient_attention_backward_ck(
     p.grad_q_ptr = grad_q.data_ptr();
     p.grad_k_ptr = is_mqa_gqa ? tmp_grad_k.data_ptr() : grad_k.data_ptr();
     p.grad_v_ptr = is_mqa_gqa ? tmp_grad_v.data_ptr() : grad_v.data_ptr();
+
+    if (use_grad_q_f32)
+      p.grad_q_f32_ptr = grad_q_f32.data_ptr();
+    else
+      p.grad_q_f32_ptr = nullptr;
 
     p.q_strides = {
         static_cast<int>(query.stride(0)),
@@ -259,6 +269,14 @@ efficient_attention_backward_ck(
         static_cast<int>(logsumexp.stride(0)),
         static_cast<int>(logsumexp.stride(1)),
         static_cast<int>(logsumexp.stride(2))};
+
+    if (use_grad_q_f32) {
+      p.grad_q_f32_strides = {
+          static_cast<int>(grad_q_f32.stride(0)),
+          static_cast<int>(grad_q_f32.stride(1)),
+          static_cast<int>(grad_q_f32.stride(2)),
+          static_cast<int>(grad_q_f32.stride(3))};
+    }
 
     if (is_mqa_gqa) {
       p.grad_k_strides = {
@@ -335,9 +353,9 @@ efficient_attention_backward_ck(
     p.max_seqlen_q = *max_seqlen_q_;
     p.max_seqlen_k = *max_seqlen_k_;
 
-    TORCH_CHECK(p.num_batches == logsumexp.size(0));
+    // unpadded lse layout required
     TORCH_CHECK(p.Hq == logsumexp.size(1));
-    TORCH_CHECK(p.max_seqlen_q <= logsumexp.size(2));
+    TORCH_CHECK(p.M == logsumexp.size(2));
 
     if (scale.has_value())
       p.scale = float(*scale);
@@ -366,9 +384,15 @@ efficient_attention_backward_ck(
         static_cast<int>(grad_out.stride(3))};
 
     p.lsed_strides = {
-        static_cast<int>(logsumexp.stride(0)),
         static_cast<int>(logsumexp.stride(1)),
         static_cast<int>(logsumexp.stride(2))};
+
+    if (use_grad_q_f32) {
+      p.grad_q_f32_strides = {
+          static_cast<int>(grad_q_f32.stride(1)),
+          static_cast<int>(grad_q_f32.stride(2)),
+          static_cast<int>(grad_q_f32.stride(3))};
+    }
 
     if (is_mqa_gqa) {
       p.grad_k_strides = {
@@ -480,6 +504,11 @@ efficient_attention_backward_ck(
     p.grad_k_ptr = is_mqa_gqa ? tmp_grad_k.data_ptr() : grad_k.data_ptr();
     p.grad_v_ptr = is_mqa_gqa ? tmp_grad_v.data_ptr() : grad_v.data_ptr();
     p.grad_bias_ptr = bias_requires_grad ? grad_bias.data_ptr() : nullptr;
+
+    if (use_grad_q_f32)
+      p.grad_q_f32_ptr = grad_q_f32.data_ptr();
+    else
+      p.grad_q_f32_ptr = nullptr;
   };
 
   auto inDataType = query.scalar_type();

@@ -423,3 +423,70 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
     out = ref_attention(T(q), T(k), T(v), attn_bias, scale=scale)
     out = out.reshape([q.shape[0], q.shape[2], q.shape[1], v.shape[3]])
     return out.permute((0, 2, 1, 3))
+
+
+def pack_kv_cache(
+    cache_k: torch.Tensor,
+    cache_v: torch.Tensor,
+    kv_seqlens: List[int],
+    BLOCK_N: int,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Create block tables and pages K/V cache for testing paged attention.
+    Args:
+        cache_k, cache_v: K/V caches, each of shape [B, MAX_T, H_kv, D].
+            Note that these tensors are unexpanded,
+            i.e. for multiquery case cache_k.shape[2] = 1
+        kv_seqlens: list of K/V sequence lengths
+        BLOCK_N: number of tokens per per paged attention block
+        B: batch size
+    Returns:
+        block_tables: [B, MAX_BLOCKS]
+        packed_cache_k: [1, total_len_rounded, H_kv, D]
+        packed_cache_v: [1, total_len_rounded, H_kv, D]
+    where total_len_rounded is a sum of K/V seqlens, each rounded up
+    to a multiple of BLOCK_N.
+    """
+
+    kv_seqlens_rounded = [(x + BLOCK_N - 1) // BLOCK_N * BLOCK_N for x in kv_seqlens]
+
+    total_len_rounded = sum(kv_seqlens_rounded)
+
+    B, MAX_T, H, D = cache_k.shape
+
+    packed_cache_k = torch.empty(
+        total_len_rounded, H, D, device=cache_k.device, dtype=cache_k.dtype
+    )
+    packed_cache_v = torch.empty(
+        total_len_rounded, H, D, device=cache_k.device, dtype=cache_k.dtype
+    )
+    seqstart = 0
+    for b in range(B):
+        packed_cache_k[seqstart : seqstart + kv_seqlens[b]] = cache_k[
+            b, : kv_seqlens[b]
+        ].clone()
+        packed_cache_v[seqstart : seqstart + kv_seqlens[b]] = cache_v[
+            b, : kv_seqlens[b]
+        ].clone()
+        seqstart += kv_seqlens_rounded[b]
+
+    num_blocks_per_row = (MAX_T + BLOCK_N - 1) // BLOCK_N
+    block_tables = (
+        torch.arange(num_blocks_per_row, device="cuda", dtype=torch.int32)
+        .unsqueeze(0)
+        .expand(B, num_blocks_per_row)
+    )
+    seqstarts = (
+        (
+            torch.tensor(kv_seqlens_rounded).cumsum(dim=0)
+            - torch.tensor(kv_seqlens_rounded)
+        )
+        .to(device="cuda")
+        .unsqueeze(1)
+    ) // BLOCK_N
+    block_tables = (block_tables + seqstarts).contiguous().to(dtype=torch.int32)
+    return (
+        block_tables,
+        packed_cache_k.unsqueeze(0),
+        packed_cache_v.unsqueeze(0),
+    )
