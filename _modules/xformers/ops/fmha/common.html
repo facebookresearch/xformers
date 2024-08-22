@@ -650,49 +650,6 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">attn_operator_flop</span><span class="p">(</span>
-        <span class="bp">cls</span><span class="p">,</span>
-        <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">seqstart_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">seqstart_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Computes total flops for the attention</span>
-<span class="sd">        Assumes inputs in format BMHK</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span>
-
-        <span class="k">if</span> <span class="n">seqstart_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="n">seqstart_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-        <span class="k">if</span> <span class="n">seqstart_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="n">seqstart_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-
-        <span class="n">total_flop</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">for</span> <span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-            <span class="n">seqstart_q_py</span><span class="p">,</span> <span class="n">seqstart_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">seqstart_k_py</span><span class="p">,</span> <span class="n">seqstart_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
-        <span class="p">):</span>
-            <span class="n">num_q</span> <span class="o">=</span> <span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span>
-            <span class="n">num_kv</span> <span class="o">=</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span>
-            <span class="c1"># (M,K) @ (K,N) GEMM needs M*N*K*2 flop</span>
-            <span class="c1"># Q @ K.transpose</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="c1"># (ignore softmax)</span>
-            <span class="c1"># attn @ V</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="mi">2</span>
-        <span class="c1"># Multiply by num_heads and batches</span>
-        <span class="n">total_flop</span> <span class="o">=</span> <span class="n">total_flop</span> <span class="o">*</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">causal</span><span class="p">:</span>
-            <span class="n">total_flop</span> <span class="o">//=</span> <span class="mi">2</span>
-        <span class="k">return</span> <span class="n">total_flop</span>
-
 
 <span class="k">class</span> <span class="nc">AttentionBwOpBase</span><span class="p">(</span><span class="n">AttentionOpBase</span><span class="p">):</span>
     <span class="c1"># NOTE on tolerances: These are tested for `scales =&gt; (1/32)**0.5`</span>
@@ -730,56 +687,6 @@
     <span class="nd">@classmethod</span>
     <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
-
-    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">attn_operator_flop</span><span class="p">(</span>
-        <span class="bp">cls</span><span class="p">,</span>
-        <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
-        <span class="n">seqstart_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-        <span class="n">seqstart_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Computes total flops for the attention</span>
-<span class="sd">        Assumes inputs in format BMHK</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">4</span>
-
-        <span class="k">if</span> <span class="n">seqstart_q</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="n">seqstart_q</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">seqstart_q_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-        <span class="k">if</span> <span class="n">seqstart_k</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="n">seqstart_k</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">seqstart_k_py</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]]</span>
-
-        <span class="n">total_flop</span> <span class="o">=</span> <span class="mi">0</span>
-        <span class="k">for</span> <span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">,</span> <span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
-            <span class="n">seqstart_q_py</span><span class="p">,</span> <span class="n">seqstart_q_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="n">seqstart_k_py</span><span class="p">,</span> <span class="n">seqstart_k_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:]</span>
-        <span class="p">):</span>
-            <span class="n">num_q</span> <span class="o">=</span> <span class="n">q_end</span> <span class="o">-</span> <span class="n">q_start</span>
-            <span class="n">num_kv</span> <span class="o">=</span> <span class="n">k_end</span> <span class="o">-</span> <span class="n">k_start</span>
-            <span class="n">Kqk</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-            <span class="n">Kv</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-            <span class="c1"># (M,K) @ (K,N) GEMM needs M*N*K*2 flop</span>
-            <span class="c1"># att = Q @ K.transpose</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="n">Kqk</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="c1"># att @ dO</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">Kv</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="c1"># dov = dO @ V</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">Kv</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="c1"># dov @ K</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">Kqk</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="mi">2</span>
-            <span class="c1"># dov @ Q</span>
-            <span class="n">total_flop</span> <span class="o">+=</span> <span class="n">num_q</span> <span class="o">*</span> <span class="n">Kqk</span> <span class="o">*</span> <span class="n">num_kv</span> <span class="o">*</span> <span class="mi">2</span>
-        <span class="c1"># Multiply by num_heads and batches</span>
-        <span class="n">total_flop</span> <span class="o">=</span> <span class="n">total_flop</span> <span class="o">*</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">*</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="k">if</span> <span class="n">causal</span><span class="p">:</span>
-            <span class="n">total_flop</span> <span class="o">//=</span> <span class="mi">2</span>
-        <span class="k">return</span> <span class="n">total_flop</span>
 
 
 <span class="n">AttentionOp</span> <span class="o">=</span> <span class="n">Tuple</span><span class="p">[</span>
