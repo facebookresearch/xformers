@@ -230,7 +230,7 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_xformers_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
 <span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">AttentionFwOpBase</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">Inputs</span>
 
@@ -242,7 +242,7 @@
 <span class="sd">    Tested to work on MI250x.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_forward_decoder_ck&quot;</span><span class="p">)</span>
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">,</span> <span class="s2">&quot;efficient_attention_forward_decoder_ck&quot;</span><span class="p">)</span>
     <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">}</span>
     <span class="n">SUPPORTED_MAX_K</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">256</span>

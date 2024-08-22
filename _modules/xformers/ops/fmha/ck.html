@@ -234,7 +234,7 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_xformers_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
@@ -365,7 +365,7 @@
 <span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;xFormers&#39; MHA kernel based on Composable Kernel.&quot;&quot;&quot;</span>
 
-    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_forward_ck&quot;</span><span class="p">)</span>
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">,</span> <span class="s2">&quot;efficient_attention_forward_ck&quot;</span><span class="p">)</span>
     <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
     <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">256</span>
@@ -400,7 +400,7 @@
     <span class="p">}</span>
     <span class="n">ERROR_RTOL</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">:</span> <span class="mf">2e-5</span><span class="p">,</span>
-        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">4e-4</span><span class="p">,</span>
+        <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">:</span> <span class="mf">3e-3</span><span class="p">,</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">:</span> <span class="mf">2e-2</span><span class="p">,</span>
     <span class="p">}</span>
 
@@ -568,10 +568,10 @@
 <span class="k">class</span> <span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
     <span class="vm">__doc__</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="vm">__doc__</span>
 
-    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_backward_ck&quot;</span><span class="p">)</span>
+    <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">,</span> <span class="s2">&quot;efficient_attention_backward_ck&quot;</span><span class="p">)</span>
     <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span>
     <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
-    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">128</span>
+    <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">256</span>
     <span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
         <span class="nb">type</span><span class="p">(</span><span class="kc">None</span><span class="p">),</span>
         <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -589,12 +589,14 @@
     <span class="n">SUPPORTS_DROPOUT</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DROPOUT</span>
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
+    <span class="n">SUPPORTS_UNPADDED_LSE</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;ckB&quot;</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
         <span class="mi">64</span><span class="p">,</span>
         <span class="mi">128</span><span class="p">,</span>  <span class="c1"># 64x128/128x128 kernel</span>
+        <span class="mi">256</span><span class="p">,</span>
     <span class="p">]</span>
 
     <span class="nd">@classmethod</span>
