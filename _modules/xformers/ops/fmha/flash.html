@@ -310,11 +310,11 @@
         <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">cu_seq_lens_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
-        <span class="n">cu_seq_lens_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">cu_seqlens_q</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">cu_seqlens_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
         <span class="n">seqused_k</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
-        <span class="n">max_seq_len_q</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">max_seq_len_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">max_seqlen_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">is_causal</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -335,10 +335,10 @@
                 <span class="n">query</span><span class="p">,</span>
                 <span class="n">key</span><span class="p">,</span>
                 <span class="n">value</span><span class="p">,</span>
-                <span class="n">cu_seq_lens_q</span><span class="p">,</span>  <span class="c1"># cum_seq_q</span>
-                <span class="n">cu_seq_lens_k</span><span class="p">,</span>  <span class="c1"># cum_seq_k</span>
-                <span class="n">max_seq_len_q</span><span class="p">,</span>  <span class="c1"># max_q</span>
-                <span class="n">max_seq_len_k</span><span class="p">,</span>  <span class="c1"># max_k</span>
+                <span class="n">cu_seqlens_q</span><span class="p">,</span>  <span class="c1"># cum_seq_q</span>
+                <span class="n">cu_seqlens_k</span><span class="p">,</span>  <span class="c1"># cum_seq_k</span>
+                <span class="n">max_seqlen_q</span><span class="p">,</span>  <span class="c1"># max_q</span>
+                <span class="n">max_seqlen_k</span><span class="p">,</span>  <span class="c1"># max_k</span>
                 <span class="n">p</span><span class="p">,</span>  <span class="c1"># dropout_p</span>
                 <span class="n">is_causal</span><span class="p">,</span>
                 <span class="n">return_debug_mask</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
@@ -351,8 +351,8 @@
             <span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">([</span><span class="n">philox_seed</span><span class="p">,</span> <span class="n">philox_offset</span><span class="p">])</span>
             <span class="k">return</span> <span class="n">attention</span><span class="p">,</span> <span class="n">logsumexp</span><span class="p">,</span> <span class="n">rng_state</span>
         <span class="k">else</span><span class="p">:</span>
-            <span class="k">if</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">assert</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="n">cu_seqlens_k</span> <span class="ow">is</span> <span class="kc">None</span>
                 <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
                 <span class="p">(</span>
                     <span class="n">out</span><span class="p">,</span>
@@ -393,14 +393,14 @@
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">value</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># out</span>
-                    <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-                    <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_q</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_k</span><span class="p">,</span>
                     <span class="n">seqused_k</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># leftpad_k_</span>
                     <span class="n">block_tables</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
-                    <span class="n">max_seq_len_q</span><span class="p">,</span>
-                    <span class="n">max_seq_len_k</span><span class="p">,</span>
+                    <span class="n">max_seqlen_q</span><span class="p">,</span>
+                    <span class="n">max_seqlen_k</span><span class="p">,</span>
                     <span class="n">p</span><span class="p">,</span>
                     <span class="n">softmax_scale</span><span class="p">,</span>
                     <span class="kc">False</span><span class="p">,</span>
@@ -418,11 +418,11 @@
         <span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="p">,</span>
         <span class="n">value</span><span class="p">,</span>
-        <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-        <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+        <span class="n">cu_seqlens_q</span><span class="p">,</span>
+        <span class="n">cu_seqlens_k</span><span class="p">,</span>
         <span class="n">seqused_k</span><span class="p">,</span>
-        <span class="n">max_seq_len_q</span><span class="p">,</span>
-        <span class="n">max_seq_len_k</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">,</span>
+        <span class="n">max_seqlen_k</span><span class="p">,</span>
         <span class="n">p</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">,</span>
         <span class="n">is_causal</span><span class="p">,</span>
@@ -432,16 +432,16 @@
         <span class="n">block_tables</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="n">out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">query</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span>
             <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">]</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">M</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span>
-            <span class="n">B</span> <span class="o">=</span> <span class="n">cu_seq_lens_q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
+            <span class="n">B</span> <span class="o">=</span> <span class="n">cu_seqlens_q</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span>
             <span class="k">if</span> <span class="n">VARLEN_LSE_PACKED</span><span class="p">:</span>
                 <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">]</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">max_seq_len_q</span><span class="p">]</span>
+                <span class="n">lse_shape</span> <span class="o">=</span> <span class="p">[</span><span class="n">B</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">]</span>
         <span class="n">softmax_lse</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="n">lse_shape</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
         <span class="n">rng_state</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">([</span><span class="mi">2</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">query</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int64</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
@@ -459,10 +459,10 @@
         <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">out</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">cu_seq_lens_q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">cu_seq_lens_k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
-        <span class="n">max_seq_len_q</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-        <span class="n">max_seq_len_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">cu_seqlens_q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">cu_seqlens_k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">max_seqlen_q</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">max_seqlen_k</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">p</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">softmax_scale</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">is_causal</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
@@ -485,10 +485,10 @@
                 <span class="n">value</span><span class="p">,</span>
                 <span class="n">out</span><span class="p">,</span>
                 <span class="n">lse</span><span class="p">,</span>
-                <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-                <span class="n">cu_seq_lens_k</span><span class="p">,</span>
-                <span class="n">max_seq_len_q</span><span class="p">,</span>
-                <span class="n">max_seq_len_k</span><span class="p">,</span>
+                <span class="n">cu_seqlens_q</span><span class="p">,</span>
+                <span class="n">cu_seqlens_k</span><span class="p">,</span>
+                <span class="n">max_seqlen_q</span><span class="p">,</span>
+                <span class="n">max_seqlen_k</span><span class="p">,</span>
                 <span class="n">p</span><span class="p">,</span>
                 <span class="n">is_causal</span><span class="p">,</span>
                 <span class="n">philox_seed</span><span class="p">,</span>
@@ -499,8 +499,8 @@
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span> <span class="o">=</span> <span class="n">_create_dq_dk_dv</span><span class="p">(</span><span class="n">grads_share_storage</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">cu_seq_lens_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-                <span class="k">assert</span> <span class="n">cu_seq_lens_q</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">if</span> <span class="n">cu_seqlens_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">assert</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span>
                 <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
                     <span class="n">grad</span><span class="p">,</span>
                     <span class="n">query</span><span class="p">,</span>
@@ -533,11 +533,11 @@
                     <span class="n">dq</span><span class="p">,</span>
                     <span class="n">dk</span><span class="p">,</span>
                     <span class="n">dv</span><span class="p">,</span>
-                    <span class="n">cu_seq_lens_q</span><span class="p">,</span>
-                    <span class="n">cu_seq_lens_k</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_q</span><span class="p">,</span>
+                    <span class="n">cu_seqlens_k</span><span class="p">,</span>
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># alibi_slopes</span>
-                    <span class="n">max_seq_len_q</span><span class="p">,</span>
-                    <span class="n">max_seq_len_k</span><span class="p">,</span>
+                    <span class="n">max_seqlen_q</span><span class="p">,</span>
+                    <span class="n">max_seqlen_k</span><span class="p">,</span>
                     <span class="n">p</span><span class="p">,</span>
                     <span class="n">softmax_scale</span><span class="p">,</span>
                     <span class="kc">False</span><span class="p">,</span>  <span class="c1"># zero_tensors</span>
