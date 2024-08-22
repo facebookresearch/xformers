@@ -9,8 +9,8 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.amp import custom_bwd, custom_fwd
 
-from ..utils import custom_bwd, custom_fwd
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .unbind import stack_or_none, unbind
 
@@ -110,7 +110,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     NAME = "fused.py"
 
     @classmethod
-    @custom_fwd
+    @custom_fwd(device_type="cuda")
     def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
         x1, x2, x4 = DualGemmSiluOp.OPERATOR(x, w1, b1, w2, b2)
 
@@ -131,7 +131,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         return dw, db
 
     @classmethod
-    @custom_bwd
+    @custom_bwd(device_type="cuda")
     def backward(cls, ctx, dx5):
         x, w1, w2, w3, x1, x2 = ctx.saved_tensors
         w1w2 = stack_or_none([w1, w2], dim=0)

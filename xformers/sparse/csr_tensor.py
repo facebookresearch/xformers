@@ -26,7 +26,6 @@ class SparseCSRTensor(torch.Tensor):
         kwargs["layout"] = values.layout
         kwargs["requires_grad"] = values.requires_grad
         assert len(shape) == 3
-        assert torch.__version__ > (1, 10), "SparseCSRTensor requires PyTorch 1.11+"
         return torch.Tensor._make_wrapper_subclass(cls, shape, **kwargs)
 
     def __init__(self, row_offsets, column_indices, values, shape):

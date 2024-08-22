@@ -20,8 +20,6 @@
 #include "cutlass/reduction/kernel/reduce_split_k.h"
 #include "cutlass/reduction/thread/reduction_operators.h"
 
-#include "autocast.h"
-
 namespace {
 template <typename scalar_t>
 void gemm_fused_operand_sum_(
@@ -245,7 +243,7 @@ std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum_autocast(
     at::Tensor& out_mm,
     at::Tensor& out_sum) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = xformers::get_autocast_cuda_dtype();
+  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
   return gemm_fused_operand_sum(
       at::autocast::cached_cast(exec_type, a),
       at::autocast::cached_cast(exec_type, b),

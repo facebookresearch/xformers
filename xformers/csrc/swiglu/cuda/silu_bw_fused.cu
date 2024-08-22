@@ -18,8 +18,6 @@
 #include <torch/library.h>
 #include <ATen/native/cuda/Loops.cuh>
 
-#include "autocast.h"
-
 namespace {
 /*
 Computes the following:
@@ -104,7 +102,7 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused_autocast(
     const at::Tensor& x2,
     const at::Tensor& dx4) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = xformers::get_autocast_cuda_dtype();
+  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
   return silu_bw_fused(
       at::autocast::cached_cast(exec_type, x1),
       at::autocast::cached_cast(exec_type, x2),

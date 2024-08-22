@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - fMHA: Removed `decoder` and `small_k` backends
 - profiler: Removed `DetectSlowOpsProfiler` profiler
+- Removed compatibility with PyTorch < 2.4
 
 ## [0.0.27.post2] - 2024-07-26
 Pre-built binary wheels require PyTorch 2.4.0
