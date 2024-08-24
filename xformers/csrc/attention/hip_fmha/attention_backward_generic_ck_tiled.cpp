@@ -547,10 +547,96 @@ efficient_attention_backward_ck(
   return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
 }
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+efficient_attention_backward_ck_meta(
+    const at::Tensor& grad_out,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const c10::optional<at::Tensor>& bias, // additive attention bias
+    // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
+    // position of the first query token for batch $b
+    const c10::optional<at::Tensor>& seqstart_q,
+    // (Mode 1MHK only) [b+1]: cu_seqlens_k[b] contains the
+    // position of the first key token for batch $b
+    const c10::optional<at::Tensor>& seqstart_k,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_k_,
+    const c10::optional<at::Tensor>& seqlen_k,
+    const at::Tensor& logsumexp,
+    const at::Tensor& out,
+    double dropout_p, // dropout probability
+    int64_t rng_seed, // seed using for generating random numbers for dropout
+    int64_t rng_offset, // offset into random number sequence
+    int64_t custom_mask_type,
+    const c10::optional<double> scale,
+    const c10::optional<int64_t> window_size) {
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t Hq = query.size(2);
+  int64_t Hkv = key.size(2);
+  int64_t K = query.size(3);
+  int64_t Kv = value.size(3);
+
+  auto opts = query.options();
+
+  at::Tensor grad_q, grad_k, grad_v, grad_bias;
+
+  if (query.size(1) == key.size(1) && query.size(3) == value.size(3) &&
+      query.size(2) == key.size(2) &&
+      query.storage().is_alias_of(key.storage()) &&
+      query.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk for grad_q, grad_k, grad_v
+    // This is because q, k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, M, 3, Hq, K}, opts);
+    grad_q = chunk.select(2, 0);
+    grad_k = chunk.select(2, 1);
+    grad_v = chunk.select(2, 2);
+  } else if (
+      key.size(3) == value.size(3) &&
+      key.storage().is_alias_of(value.storage())) {
+    // Create one big contiguous chunk for grad_k, grad_v
+    // This is because k and v usually come from a single
+    // output of a linear layer that is chunked.
+    // Creating the gradients with the right layout saves us
+    // a `torch.cat` call in the backward pass
+    at::Tensor chunk = at::empty({B, N, 2, Hkv, Kv}, opts);
+    grad_k = chunk.select(2, 0);
+    grad_v = chunk.select(2, 1);
+
+    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
+  } else {
+    grad_q = at::empty_strided(query.sizes(), query.strides(), query.options());
+    grad_k = at::empty_strided(key.sizes(), key.strides(), key.options());
+    grad_v = at::empty_strided(value.sizes(), value.strides(), value.options());
+  }
+
+  const bool bias_requires_grad = bias.has_value() && bias->requires_grad();
+  // even it is an output, the grad_bias is required to use the same data-type
+  // as bias in CK-FlashAttn
+  if (bias_requires_grad) {
+    grad_bias =
+        at::empty_strided(bias->sizes(), bias->strides(), bias->options());
+  }
+  return std::make_tuple(grad_q, grad_k, grad_v, grad_bias);
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_ck"),
       TORCH_FN(efficient_attention_backward_ck));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_backward_ck"),
+      TORCH_FN(efficient_attention_backward_ck_meta));
 }
