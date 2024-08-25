@@ -229,7 +229,7 @@ dtype = torch.float16
 causal_mask = torch.tril(torch.ones((SEQ, SEQ), device=torch.device("cuda"), dtype=dtype))
 
 blocks = SEQ // BLOCK_SIZE
-causal_layout = torch.tril(torch.ones([HEADS, blocks, blocks]))
+causal_layout = torch.tril(torch.ones([HEADS, blocks, blocks])).long()
 
 # Let's build our blocksparse attention. Please note that the layout can be
 # [SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE] or  [HEADS, SEQ//BLOCK_SIZE, SEQ//BLOCK_SIZE]
@@ -255,7 +255,7 @@ multi_head = (
 query = torch.randn((BATCH, SEQ, EMB), requires_grad=True, device=torch.device("cuda"), dtype=dtype)
 
 # Self attention in this particular example, no limitations really
-att_val = multi_head(query=query, key=query, value=query, att_mask=causal_mask)
+att_val = multi_head(query=query, key=query, value=query)
 
 #########################################
 # Bonus: compare the memory use vs dense:
@@ -281,7 +281,7 @@ pytorch_multihead = torch.nn.MultiheadAttention(
     EMB, HEADS, batch_first=True, device=torch.device("cuda"), dtype=torch.float16
 )
 
-mem_use(multi_head, {"query": query, "key": query, "value": query, "att_mask": causal_mask}, "Blocksparse")
+mem_use(multi_head, {"query": query, "key": query, "value": query}, "Blocksparse")
 mem_use(pytorch_multihead, {"query": query, "key": query, "value": query, "attn_mask": causal_mask}, "PyTorch")
 ```
 
