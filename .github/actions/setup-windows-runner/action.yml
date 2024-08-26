@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Install cuda
-      uses: okazunori2013/cuda-toolkit@v0.3.6
+      uses: Jimver/cuda-toolkit@v0.2.16
       with:
         cuda: ${{ inputs.cuda }}
         method: network

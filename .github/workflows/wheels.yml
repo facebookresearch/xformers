@@ -25,29 +25,48 @@ jobs:
       run: |
         import os
         import json
+        import itertools
         environ = os.environ
 
         PY_VERSIONS = ['3.8', '3.9', '3.10', '3.11', '3.12']
+        CU_VERSIONS = ['118', '121', '124']
+        ROCM_VERSIONS = ["6.0", "6.1"]
+        PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
+        PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
+        print("Full matrix PY_CU", PY_CU)
         if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
-          print("pull-request: only keeping 2 python versions")
-          PY_VERSIONS = [PY_VERSIONS[0], PY_VERSIONS[-1]]
+          print("pull-request: limiting matrix to save resources")
+          PY_CU = [(PY_VERSIONS[0], CU_VERSIONS[0])]
+          for cu in CU_VERSIONS[1:]:
+            PY_CU.append((PY_VERSIONS[-1], cu))
+          print("Limited matrix PY_CU", PY_CU)
+          PY_ROCM = [(PY_VERSIONS[-1], ROCM_VERSIONS[-1])]
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
-          for python in PY_VERSIONS:
-            for torch_version in ['2.4.0']:
-              for toolkit_type, toolkit_short_versions in {'cuda': ["118", "121"], 'rocm': ["6.0", "6.1"]}.items():
-                if os == 'windows-8-core' and toolkit_type == 'rocm':
-                  continue
-                for toolkit_short_version in toolkit_short_versions:
-                  include.append(dict(
-                    os=os,
-                    python=python,
-                    torch_version=torch_version,
-                    toolkit_type=toolkit_type,
-                    toolkit_short_version=toolkit_short_version,
-                  ))
-                  print(include[-1])
+          for torch_version in ['2.4.0']:
+            # CUDA builds
+            for python, cuda_short_version in PY_CU:
+              include.append(dict(
+                os=os,
+                python=python,
+                torch_version=torch_version,
+                toolkit_type="cuda",
+                toolkit_short_version=cuda_short_version,
+              ))
+              print(include[-1])
+            # ROCM builds
+            for python, rocm_short_version in PY_ROCM:
+              if os == 'windows-8-core':
+                continue
+              include.append(dict(
+                os=os,
+                python=python,
+                torch_version=torch_version,
+                toolkit_type="rocm",
+                toolkit_short_version=rocm_short_version,
+              ))
+              print(include[-1])
         matrix = {'include': include}
         print(json.dumps(matrix))
         with open(environ["GITHUB_OUTPUT"], "a") as fd:

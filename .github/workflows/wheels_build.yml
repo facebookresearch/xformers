@@ -66,14 +66,12 @@ jobs:
           import sys
           print(sys.version)
           cushort = "${{ inputs.toolkit_short_version }}"
-          TORCH_CUDA_DEFAULT = "121"  # pytorch 2.1.0
+          TORCH_CUDA_DEFAULT = "121"  # pytorch 2.4.0
           # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
           full_version, install_script = {
+            "124": ("12.4.1", "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_550.54.15_linux.run"),
             "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
             "118": ("11.8.0", "https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run"),
-            "117": ("11.7.1", "https://developer.download.nvidia.com/compute/cuda/11.7.1/local_installers/cuda_11.7.1_515.65.01_linux.run"),
-            "116": ("11.6.2", "https://developer.download.nvidia.com/compute/cuda/11.6.2/local_installers/cuda_11.6.2_510.47.03_linux.run"),
-
             "6.0": ("6.0.2", "https://repo.radeon.com/amdgpu-install/6.0.2/rhel/7.9/amdgpu-install-6.0.60002-1.el7.noarch.rpm"),
             "6.1": ("6.1.2", "https://repo.radeon.com/amdgpu-install/6.1.2/el/7/amdgpu-install-6.1.60102-1.el7.noarch.rpm"),
           }[cushort]
@@ -81,16 +79,10 @@ jobs:
             fp.write("CUDA_VERSION=" + full_version + "\n")
             if cushort == TORCH_CUDA_DEFAULT:
               fp.write("CUDA_VERSION_SUFFIX=\n")
-              fp.write("TORCH_ORG_S3_PATH=s3://pytorch/whl\n")
-              fp.write("PUBLISH_PYPI=1\n")
             else:
               fp.write("CUDA_VERSION_SUFFIX=+" + ("cu" if "cuda" == "${{ inputs.toolkit_type }}" else "rocm") + cushort + "\n")
-              fp.write("TORCH_ORG_S3_PATH=s3://pytorch/whl/" + cushort + "\n")
-              fp.write("PUBLISH_PYPI=0\n")
             fp.write("CUDA_INSTALL_SCRIPT=" + install_script + "\n")
       - run: echo "CUDA_VERSION_SUFFIX=${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}"
-      - run: echo "TORCH_ORG_S3_PATH=${{ steps.cuda_info.outputs.TORCH_ORG_S3_PATH }}"
-      - run: echo "PUBLISH_PYPI=${{ steps.cuda_info.outputs.PUBLISH_PYPI }}"
 
       - name: Recursive checkout
         uses: actions/checkout@v3
