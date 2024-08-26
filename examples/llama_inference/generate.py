@@ -78,7 +78,7 @@ class FastGen:
         torch.set_default_dtype(torch.bfloat16)
 
         model = fast.Transformer(model_args)
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
+        checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True)
         model.load_state_dict(checkpoint, strict=False)
         print(f"loaded model in {time.time() - start_time:.2f} seconds")
 
