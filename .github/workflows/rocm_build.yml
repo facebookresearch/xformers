@@ -1,0 +1,46 @@
+name: rocm-build
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    paths:
+      - "packaging/compute_wheel_version.sh"
+      - ".github/workflows/rocm_build.yml"
+      - ".github/workflows/wheels_build.yml"
+      - "setup.py"
+      - "requirements*.txt"
+      - "xformers/csrc/attention/hip_fmha/**"
+      - "third_party/composable_kernel_tiled/**"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix: 
+        os: ['ubuntu-alola']
+        python: ['3.11']
+        torch_version: ['2.4.0']
+        toolkit_type: ['rocm']
+        toolkit_short_version: ['6.0', '6.1']
+
+    uses: ./.github/workflows/wheels_build.yml
+    if: github.repository == 'rocm/xformers'
+    with:
+      os: ${{ matrix.os }}
+      python: ${{ matrix.python }}
+      torch_version: ${{ matrix.torch_version }}
+      toolkit_type: ${{ matrix.toolkit_type }}
+      toolkit_short_version: ${{ matrix.toolkit_short_version }}
+      artifact_tag: ${{ github.run_id }}
+
+  clean:
+    runs-on: 'ubuntu-alola'
+    if: ${{ needs.build.result != 'skipped' }}
+    needs: [build]
+    steps:
+      - name: Remove dangling Docker images
+        run: |
+          docker images -q -f dangling=true | xargs --no-run-if-empty docker rmi

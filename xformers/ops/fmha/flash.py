@@ -78,45 +78,28 @@ try:
             VARLEN_LSE_PACKED = False
             _USE_PT_FLASH_ATTN = True
 
-    # create library so that flash-attn goes through the PyTorch Dispatcher
-    torch.library.define(
+    @torch.library.custom_op(
         "xformers_flash::flash_fwd",
-        "(Tensor query, Tensor key, Tensor value, "
-        "Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, Tensor? seqused_k, "
-        "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, "
-        "bool is_causal, int window_left, "
-        "int window_right, bool return_softmax, Tensor? block_tables) -> (Tensor, Tensor, Tensor)",
+        mutates_args=(),
+        device_types=["cuda"],
     )
-
-    torch.library.define(
-        "xformers_flash::flash_bwd",
-        "(bool grads_share_storage, Tensor dout, Tensor query, Tensor key, Tensor value, "
-        "Tensor out, Tensor softmax_lse_, "
-        "Tensor cu_seqlens_q, Tensor cu_seqlens_k, "
-        "int max_seqlen_q, int max_seqlen_k, "
-        "float p, float softmax_scale, bool is_causal, "
-        "int window_left, int window_right, Tensor rng_state) -> (Tensor dq, Tensor dk, Tensor dv)",
-    )
-
-    @torch.library.impl("xformers_flash::flash_fwd", "default")
     def _flash_fwd(
-        query,
-        key,
-        value,
-        cu_seq_lens_q,
-        cu_seq_lens_k,
-        seqused_k,
-        max_seq_len_q,
-        max_seq_len_k,
-        p,
-        softmax_scale,
-        is_causal,
-        window_left,
-        window_right,
-        return_softmax,
-        block_tables,
-    ):
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        cu_seqlens_q: Optional[torch.Tensor],
+        cu_seqlens_k: Optional[torch.Tensor],
+        seqused_k: Optional[torch.Tensor],
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+        p: float,
+        softmax_scale: float,
+        is_causal: bool,
+        window_left: int,
+        window_right: int,
+        return_softmax: bool,
+        block_tables: Optional[torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
             (
@@ -129,10 +112,10 @@ try:
                 query,
                 key,
                 value,
-                cu_seq_lens_q,  # cum_seq_q
-                cu_seq_lens_k,  # cum_seq_k
-                max_seq_len_q,  # max_q
-                max_seq_len_k,  # max_k
+                cu_seqlens_q,  # cum_seq_q
+                cu_seqlens_k,  # cum_seq_k
+                max_seqlen_q,  # max_q
+                max_seqlen_k,  # max_k
                 p,  # dropout_p
                 is_causal,
                 return_debug_mask=False,
@@ -145,8 +128,8 @@ try:
             rng_state = torch.stack([philox_seed, philox_offset])
             return attention, logsumexp, rng_state
         else:
-            if cu_seq_lens_q is None:
-                assert cu_seq_lens_k is None
+            if cu_seqlens_q is None:
+                assert cu_seqlens_k is None
                 assert seqused_k is None
                 (
                     out,
@@ -187,14 +170,14 @@ try:
                     key,
                     value,
                     None,  # out
-                    cu_seq_lens_q,
-                    cu_seq_lens_k,
+                    cu_seqlens_q,
+                    cu_seqlens_k,
                     seqused_k,
                     None,  # leftpad_k_
                     block_tables,
                     None,  # alibi_slopes
-                    max_seq_len_q,
-                    max_seq_len_k,
+                    max_seqlen_q,
+                    max_seqlen_k,
                     p,
                     softmax_scale,
                     False,
@@ -207,16 +190,16 @@ try:
                 )
         return out, softmax_lse, rng_state
 
-    @torch.library.impl_abstract("xformers_flash::flash_fwd")
+    @torch.library.register_fake("xformers_flash::flash_fwd")
     def _flash_fwd_abstract(
         query,
         key,
         value,
-        cu_seq_lens_q,
-        cu_seq_lens_k,
+        cu_seqlens_q,
+        cu_seqlens_k,
         seqused_k,
-        max_seq_len_q,
-        max_seq_len_k,
+        max_seqlen_q,
+        max_seqlen_k,
         p,
         softmax_scale,
         is_causal,
@@ -226,40 +209,44 @@ try:
         block_tables,
     ):
         out = torch.empty_like(query)
-        if cu_seq_lens_q is None:
+        if cu_seqlens_q is None:
             B, M, H, K = query.shape
             lse_shape = [B, H, M]
         else:
             M, H, K = query.shape
-            B = cu_seq_lens_q.shape[0] - 1
+            B = cu_seqlens_q.shape[0] - 1
             if VARLEN_LSE_PACKED:
                 lse_shape = [H, M]
             else:
-                lse_shape = [B, H, max_seq_len_q]
+                lse_shape = [B, H, max_seqlen_q]
         softmax_lse = torch.empty(lse_shape, device=query.device, dtype=torch.float32)
         rng_state = torch.empty([2], device=query.device, dtype=torch.int64)
         return out, softmax_lse, rng_state
 
-    @torch.library.impl("xformers_flash::flash_bwd", "default")
+    @torch.library.custom_op(
+        "xformers_flash::flash_bwd",
+        mutates_args=(),
+        device_types=["cuda"],
+    )
     def _flash_bwd(
-        grads_share_storage,
-        grad,
-        query,
-        key,
-        value,
-        out,
-        lse,
-        cu_seq_lens_q,
-        cu_seq_lens_k,
-        max_seq_len_q,
-        max_seq_len_k,
-        p,
-        softmax_scale,
-        is_causal,
-        window_left,
-        window_right,
-        rng_state,
-    ):
+        grads_share_storage: bool,
+        grad: torch.Tensor,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        out: torch.Tensor,
+        lse: torch.Tensor,
+        cu_seqlens_q: torch.Tensor,
+        cu_seqlens_k: torch.Tensor,
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+        p: float,
+        softmax_scale: float,
+        is_causal: bool,
+        window_left: int,
+        window_right: int,
+        rng_state: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
             assert softcap == 0.0
@@ -275,10 +262,10 @@ try:
                 value,
                 out,
                 lse,
-                cu_seq_lens_q,
-                cu_seq_lens_k,
-                max_seq_len_q,
-                max_seq_len_k,
+                cu_seqlens_q,
+                cu_seqlens_k,
+                max_seqlen_q,
+                max_seqlen_k,
                 p,
                 is_causal,
                 philox_seed,
@@ -289,8 +276,8 @@ try:
             )
         else:
             dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
-            if cu_seq_lens_k is None:
-                assert cu_seq_lens_q is None
+            if cu_seqlens_k is None:
+                assert cu_seqlens_q is None
                 _C_flashattention.bwd(
                     grad,
                     query,
@@ -323,11 +310,11 @@ try:
                     dq,
                     dk,
                     dv,
-                    cu_seq_lens_q,
-                    cu_seq_lens_k,
+                    cu_seqlens_q,
+                    cu_seqlens_k,
                     None,  # alibi_slopes
-                    max_seq_len_q,
-                    max_seq_len_k,
+                    max_seqlen_q,
+                    max_seqlen_k,
                     p,
                     softmax_scale,
                     False,  # zero_tensors
@@ -341,7 +328,7 @@ try:
                 )
         return dq, dk, dv
 
-    @torch.library.impl_abstract("xformers_flash::flash_bwd")
+    @torch.library.register_fake("xformers_flash::flash_bwd")
     def _flash_bwd_abstract(
         grads_share_storage,
         grad,
@@ -719,31 +706,6 @@ class FwOp(AttentionFwOpBase):
             ctx.rng_state = rng_state
         return (out, ctx)
 
-    @classmethod
-    # type: ignore
-    def operator_flop(
-        cls,
-        query,
-        key,
-        value,
-        cu_seq_lens_q,
-        cu_seq_lens_k,
-        max_seq_len_q,
-        max_seq_len_k,
-        p,
-        softmax_scale,
-        causal,
-        return_softmax,
-    ) -> int:
-        return cls.attn_operator_flop(
-            query.unsqueeze(0),
-            key.unsqueeze(0),
-            value.unsqueeze(0),
-            causal=causal,
-            seqstart_k=cu_seq_lens_k,
-            seqstart_q=cu_seq_lens_q,
-        )
-
 
 @register_operator
 class BwOp(AttentionBwOpBase):
@@ -862,33 +824,3 @@ class BwOp(AttentionBwOpBase):
         grads.dk = grads.dk.reshape(dk_shape)
         grads.dv = grads.dv.reshape(dv_shape)
         return grads
-
-    @classmethod
-    # type: ignore
-    def operator_flop(
-        cls,
-        grad,
-        query,
-        key,
-        value,
-        out,
-        lse,
-        dq,
-        dk,
-        dv,
-        cu_seq_lens_q,
-        cu_seq_lens_k,
-        max_seq_len_q,
-        max_seq_len_k,
-        p,
-        softmax_scale,
-        causal,
-    ) -> int:
-        return cls.attn_operator_flop(
-            query.unsqueeze(0),
-            key.unsqueeze(0),
-            value.unsqueeze(0),
-            causal=causal,
-            seqstart_k=cu_seq_lens_k,
-            seqstart_q=cu_seq_lens_q,
-        )

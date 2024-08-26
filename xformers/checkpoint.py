@@ -474,10 +474,6 @@ class _OptimalPolicy:
 
 class SelectiveCheckpointWrapper(ActivationWrapper):
     def __init__(self, mod, memory_budget=None, policy_fn=None):
-        if torch.__version__ < (2, 1):
-            raise RuntimeError(
-                "SelectiveCheckpointWrapper only supported for torch >- 2.1"
-            )
         super().__init__(mod)
         if not ((memory_budget is None) ^ (policy_fn is None)):
             raise ValueError("Need to specify either policy_fn or memory_budget")

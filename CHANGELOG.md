@@ -6,14 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.28] - TBD
 ### Added
+- Added wheels for cuda 12.4
 ### Improved
 - Profiler: Fix computation of FLOPS for the attention when using xFormers
 - Profiler: Fix MFU/HFU calculation when multiple dtypes are used
+- Profiler: Trace analysis to compute MFU & HFU is now much faster
 - fMHA/splitK: Fixed `nan` in the output when using a `torch.Tensor` bias where a lot of consecutive keys are masked with `-inf`
 - Update Flash-Attention version to `v2.6.3` *when building from scratch*
 - When using the most recent version of Flash-Attention, it is no longer possible to mix it with the cutlass backend. In other words, it is no longer possible to use the cutlass Fw with the flash Bw.
 ### Removed
 - fMHA: Removed `decoder` and `small_k` backends
+- profiler: Removed `DetectSlowOpsProfiler` profiler
+- Removed compatibility with PyTorch < 2.4
 
 ## [0.0.27.post2] - 2024-07-26
 Pre-built binary wheels require PyTorch 2.4.0

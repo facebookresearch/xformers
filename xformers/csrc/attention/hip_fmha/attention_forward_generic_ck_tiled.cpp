@@ -374,10 +374,65 @@ efficient_attention_forward_ck(
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }
 
+/*
+  There are 2 modes for using this function.
+  (Mode BMHK) With all the heads having the same seqlen
+  (Mode 1MHK) `batch=1` with all tokens across batches concatenated
+*/
+std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+efficient_attention_forward_ck_meta(
+    const at::Tensor& query, // [b, seqlen, num_heads_q, K]
+    const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
+    const at::Tensor& value, // [b, seqlen, num_heads_kv, Kv]
+    const c10::optional<at::Tensor>& bias, // [b, num_heads_q, seqlen, seqlen]
+    // (Mode 1MHK only) [b+1]: cu_seqlens_q[b] contains the
+    // position of the first query token for batch $b
+    const c10::optional<at::Tensor>& seqstart_q,
+    // (Mode 1MHK only) [b+1]: cu_seqlen_k[b] contains the
+    // position of the first key token for batch $b
+    const c10::optional<at::Tensor>& seqstart_k,
+    // (Mode 1MHK only) Maximum sequence length across batches
+    const c10::optional<int64_t> max_seqlen_q_,
+    double dropout_p, // attention matrix dropout probability
+    bool compute_logsumexp,
+    int64_t custom_mask_type,
+    c10::optional<double> scale,
+    const c10::optional<at::Tensor>& seqlen_k,
+    const c10::optional<int64_t> window_size) {
+  int64_t B = query.size(0);
+  int64_t M = query.size(1);
+  int64_t N = key.size(1);
+  int64_t Hq = query.size(-2);
+  int64_t Hkv = key.size(-2);
+  int64_t K = query.size(-1);
+  int64_t Kv = value.size(-1);
+  auto opts = query.options();
+  at::Tensor logsumexp;
+  at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
+  int64_t philox_seed = 0;
+  int64_t philox_offset = 0;
+  if (!seqstart_q.has_value()) { // input is batched
+    if (compute_logsumexp) {
+      logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
+    }
+  } else {
+    if (compute_logsumexp) {
+      logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
+    }
+  }
+  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
+}
+
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_ck"),
       TORCH_FN(efficient_attention_forward_ck));
+}
+
+TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("xformers::efficient_attention_forward_ck"),
+      TORCH_FN(efficient_attention_forward_ck_meta));
 }

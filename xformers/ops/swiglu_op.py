@@ -9,8 +9,8 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.amp import custom_bwd, custom_fwd
 
-from ..utils import custom_bwd, custom_fwd
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .unbind import stack_or_none, unbind
 
@@ -42,27 +42,12 @@ class DualGemmSiluOp(BaseOperator):
     OPERATOR_CATEGORY = "swiglu"
     NAME = "dual_gemm_silu"
 
-    @classmethod
-    # type: ignore
-    def operator_flop(
-        cls, x: torch.Tensor, w1: torch.Tensor, b1, w2: torch.Tensor, b2
-    ) -> int:
-        """NOTE: we neglect the impact of biases / pointwises"""
-        M, N, K = x.shape[0], w1.shape[0], w1.shape[1]
-        return M * N * K * 2 * 2
-
 
 @register_operator
 class GemmFusedSumOp(BaseOperator):
     OPERATOR = get_xformers_operator("gemm_fused_operand_sum")
     OPERATOR_CATEGORY = "swiglu"
     NAME = "gemm_fused_operand_sum"
-
-    @classmethod
-    # type: ignore
-    def operator_flop(cls, a: torch.Tensor, b: torch.Tensor, out1, out2) -> int:
-        M, N, K = a.shape[0], b.shape[1], a.shape[1]
-        return M * N * K * 2
 
 
 class _SwiGLUDecomposedFunc(torch.autograd.Function):
@@ -125,7 +110,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     NAME = "fused.py"
 
     @classmethod
-    @custom_fwd
+    @custom_fwd(device_type="cuda")
     def forward(cls, ctx, x, w1, b1, w2, b2, w3, b3):
         x1, x2, x4 = DualGemmSiluOp.OPERATOR(x, w1, b1, w2, b2)
 
@@ -146,7 +131,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
         return dw, db
 
     @classmethod
-    @custom_bwd
+    @custom_bwd(device_type="cuda")
     def backward(cls, ctx, dx5):
         x, w1, w2, w3, x1, x2 = ctx.saved_tensors
         w1w2 = stack_or_none([w1, w2], dim=0)

@@ -13,8 +13,6 @@
 #include <torch/library.h>
 // clang-format on
 
-#include "autocast.h"
-
 namespace {
 // Kernels implemented in `cuda/`
 std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
@@ -198,7 +196,7 @@ at::Tensor swiglu_packedw_autocast(
     const at::Tensor w3,
     const std::optional<at::Tensor> b3) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = xformers::get_autocast_cuda_dtype();
+  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
   return SwiGLUPackedWeights::apply(
       at::autocast::cached_cast(exec_type, x),
       at::autocast::cached_cast(exec_type, w1w2),
