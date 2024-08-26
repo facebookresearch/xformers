@@ -3312,7 +3312,6 @@ def _merge_attentions_ref(attn_split, lse_split):
 
 
 @sm80_or_better_only
-@skip_if_rocm  # rocm doesn't support backward yet
 @pytest.mark.parametrize(
     "bias_t",
     [None, fmha.attn_bias.LowerTriangularMask, fmha.attn_bias.BlockDiagonalMask],
