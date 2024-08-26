@@ -6,7 +6,7 @@
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Sequence, Set, cast
+from typing import Any, Dict, List, Optional, Sequence, cast
 
 import torch
 
@@ -152,47 +152,47 @@ class AnalyzedTrace:
         return hfu_seconds / self.total_time_s
 
     @staticmethod
+    def _find_all_root_events_with_flops(
+        all_events: Sequence[torch._C._autograd._KinetoEvent],
+    ) -> Sequence[torch._C._autograd._KinetoEvent]:
+        # Filters-out non-dispatch ops
+        # Or operations without flop counted
+        all_ops_with_flops = [
+            e
+            for e in all_events
+            if (
+                e.device_type().name == "CPU"
+                and (e.dtypes() or e.shapes())
+                and e.flops() > 0
+            )
+        ]
+        events_per_group: Dict[
+            Any, List[torch._C._autograd._KinetoEvent]
+        ] = defaultdict(list)
+        for e in all_ops_with_flops:
+            events_per_group[(e.start_thread_id(), e.device_type())].append(e)
+        root_events: List[torch._C._autograd._KinetoEvent] = []
+        for events in events_per_group.values():
+            # We assume that 2 events are either non-overlapping,
+            # or one is contained entirely within the other
+            events.sort(key=lambda e: (e.start_ns(), -e.duration_ns()))
+            current_root: Optional[torch._C._autograd._KinetoEvent] = None
+            for e in events:
+                if (
+                    current_root is None
+                    or e.start_ns()
+                    > current_root.start_ns() + current_root.duration_ns()
+                ):
+                    current_root = e
+                    root_events.append(e)
+        return root_events
+
+    @staticmethod
     def from_profile(
         events: Sequence[torch._C._autograd._KinetoEvent],
     ) -> "AnalyzedTrace":
         events = [_replace_if_needed(e) for e in events]
-        # All dispatcher ops
-        all_ops = [
-            e
-            for e in events
-            if (
-                e.device_type().name == "CPU"
-                and (e.dtypes() or e.shapes() or e.flops() > 0)
-            )
-        ]
-
-        root_ops: Set[torch._C._autograd._KinetoEvent] = set()
-
-        def _find_parent_op(
-            e: torch._C._autograd._KinetoEvent,
-        ) -> torch._C._autograd._KinetoEvent:
-            e_range = [e.start_ns(), e.start_ns() + e.duration_ns()]
-            candidate = e
-            for parent in all_ops:
-                if parent.device_type() != e.device_type():
-                    continue
-                if parent.start_thread_id() != e.start_thread_id():
-                    continue
-                p_range = [parent.start_ns(), parent.start_ns() + parent.duration_ns()]
-                if not (p_range[0] < e_range[0] < e_range[1] < p_range[1]):
-                    continue
-                # We take the longest parent with flops
-                if (
-                    parent.flops() > 0
-                    and candidate.duration_ns() < parent.duration_ns()
-                ):
-                    candidate = parent
-            return candidate
-
-        for op in all_ops:
-            if op.flops() == 0:
-                continue
-            root_ops.add(_find_parent_op(op))
+        root_ops = AnalyzedTrace._find_all_root_events_with_flops(events)
 
         operations_per_dtype_fw: Dict[torch.dtype, float] = defaultdict(float)
         operations_per_dtype_bw: Dict[torch.dtype, float] = defaultdict(float)
