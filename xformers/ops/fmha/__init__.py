@@ -677,7 +677,7 @@ def merge_attentions(
             either as a list of tensors of shapes [B, G, H, M] or [B, H, M]
             or as a single tensor of shape [num_chunks, B, G, H, M] or [num_chunks, B, H, M]
         write_lse: whether to output LSE
-        out_dype: dtype of attn_out
+        output_dtype: dtype of attn_out
 
     Returns:
         attn_out: [B, M, G, H, Kq] or [B, M, H, Kq]
