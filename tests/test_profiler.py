@@ -165,20 +165,31 @@ def test_analyze_prof(dtype) -> None:
 
 
 @pytest.mark.parametrize("dtype", [torch.float16])
-@pytest.mark.parametrize("enable_flash", [True, False], ids=["flash", "noFlash"])
+@pytest.mark.parametrize(
+    "backend",
+    [
+        SDPBackend.EFFICIENT_ATTENTION,
+        SDPBackend.FLASH_ATTENTION,
+        SDPBackend.CUDNN_ATTENTION,
+    ],
+    ids=["mem-eff", "flash", "cudnn"],
+)
 @pytest.mark.parametrize("causal", [True, False], ids=["causal", ""])
 @cuda_only
-def test_analyze_prof_sdpa(dtype, enable_flash: bool, causal: bool) -> None:
-    B, M, H, K = 64, 256, 3, 128
+def test_analyze_prof_sdpa(dtype, backend, causal: bool) -> None:
+    B, M, H, K = 64, 1024, 3, 128
     x = torch.ones([B, H, M, K], dtype=dtype, device="cuda", requires_grad=True)
     fw_flops = 2 * 2 * M * M * K
     fw_flops *= B * H
     if causal:
         fw_flops //= 2
-    with sdpa_kernel(
-        [SDPBackend.EFFICIENT_ATTENTION]
-        + ([SDPBackend.FLASH_ATTENTION] if enable_flash else [])
-    ):
+    device_sm = torch.cuda.get_device_capability(x.device)
+    if backend in [
+        SDPBackend.CUDNN_ATTENTION,
+        SDPBackend.FLASH_ATTENTION,
+    ] and device_sm not in ((8, 0), (9, 0)):
+        pytest.skip("not available")
+    with sdpa_kernel(backend):
         with assert_flops("SDPA", match=fw_flops):
             x = nn.functional.scaled_dot_product_attention(x, x, x, is_causal=causal)
         with assert_flops("SDPA BW", match=fw_flops * 5 // 2):

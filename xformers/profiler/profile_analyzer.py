@@ -89,6 +89,7 @@ def _replace_if_needed(
                 FMT_BMHK,
             ),
             (torch.ops.aten, "_efficient_attention_backward", True, FMT_BMHK),
+            (torch.ops.aten, "_scaled_dot_product_cudnn_attention_backward", True, {}),
         ]
         if hasattr(lib, op)
     }
