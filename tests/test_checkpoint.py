@@ -37,7 +37,6 @@ def _all_policy(ctx, func, *args, **kwargs):
     return True
 
 
-@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.parametrize("policy_fn", [None, [], _relu_policy, _all_policy])
 @pytest.mark.parametrize("input_requires_grad", [True, False])
 @pytest.mark.parametrize("device", _devices)
@@ -75,7 +74,6 @@ def test_checkpoint(policy_fn, input_requires_grad, device, autocast):
         assert torch.allclose(p.grad, p_copy.grad)
 
 
-@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.parametrize("policy_fn", [None, [], _relu_policy, _all_policy])
 @pytest.mark.parametrize("input_requires_grad", [True, False])
 @pytest.mark.parametrize("grad_mode", [True, False])
@@ -105,7 +103,6 @@ def test_checkpoint_with_grad(policy_fn, input_requires_grad, grad_mode):
     assert torch.allclose(out, out_copy)
 
 
-@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @cuda_only
 @pytest.mark.parametrize("policy_fn", [None, [], _relu_policy, _all_policy])
 @pytest.mark.parametrize("input_requires_grad", [True, False])
@@ -290,7 +287,6 @@ class _Model(torch.nn.Module):
         return x
 
 
-@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @cuda_only
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("memory_budget", [0, 0.03, 0.05, 0.1, 0.3, 0.5, 0.8, 1.0])
@@ -331,7 +327,6 @@ def test_optimal_checkpoint_policy(
         torch.testing.assert_close(p.grad, p_ref.grad)
 
 
-@pytest.mark.skipif(torch.__version__ < "2.2", reason="Only new PyTorch supported")
 @pytest.mark.skipif(True, reason="TODO[fmassa]: Broken on nightly")
 @cuda_only
 @pytest.mark.parametrize("no_grad", [False, True])

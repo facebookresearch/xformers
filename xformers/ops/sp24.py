@@ -475,9 +475,8 @@ class Sparse24TensorCuSparseLt(Sparse24Tensor):
         )
 
 
-if torch.__version__ >= "2.1.0":
-    torch._dynamo.allow_in_graph(Sparse24TensorCuSparseLt)
-    torch._dynamo.allow_in_graph(Sparse24TensorCutlass)
+torch._dynamo.allow_in_graph(Sparse24TensorCuSparseLt)
+torch._dynamo.allow_in_graph(Sparse24TensorCutlass)
 
 GRADIENT_SP24 = "24sparse"
 GRADIENT_DENSE = "24dense"

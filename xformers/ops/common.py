@@ -39,11 +39,6 @@ class BaseOperator:
             return False
         return True
 
-    @classmethod
-    def operator_flop(cls, *inputs) -> int:
-        """Calculate number of FLOP given inputs to `OPERATOR`"""
-        return -1
-
 
 OPERATORS_REGISTRY: List[Type[BaseOperator]] = []
 FUNC_TO_XFORMERS_OPERATOR: Dict[Any, Type[BaseOperator]] = {}

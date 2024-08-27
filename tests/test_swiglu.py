@@ -25,11 +25,6 @@ else:
     _devices = []
     _is_sm80 = False
 cuda_sm80_only = pytest.mark.skipif(not _is_sm80, reason="requires sm80+")
-
-torch_compile_tests = pytest.mark.skipif(
-    torch.__version__ < "2.2.0.dev20231122", reason="requires PyTorch 2.2+"
-)
-
 disable_on_rocm = pytest.mark.skipif(
     not not torch.version.hip, reason="could not be done on ROCM"
 )
@@ -249,7 +244,6 @@ def test_forward_backward(
         assert gout.norm(2) > BACKWARD_ATOL[dtype] / BACKWARD_RTOL[dtype]
 
 
-@torch_compile_tests
 @cuda_sm80_only
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
@@ -346,7 +340,6 @@ def test_swiglu_compile(
 
 @disable_tf32
 @torch.inference_mode()
-@torch_compile_tests
 @cuda_sm80_only
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
@@ -388,7 +381,6 @@ def test_dual_gemm_silu_identity_mul_compile(dtype, device, bias) -> None:
 @disable_tf32
 @torch.inference_mode()
 @cuda_sm80_only
-@torch_compile_tests
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
@@ -420,7 +412,6 @@ def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
 
 @disable_tf32
 @torch.inference_mode()
-@torch_compile_tests
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 def test_silu_bw_fused_compile(dtype, device) -> None:

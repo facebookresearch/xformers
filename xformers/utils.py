@@ -13,18 +13,6 @@ from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
-# PyTorch 2.4 introduced new functions and immediately marked the old ones as
-# deprecated, causing a lot of log spew. Let's use the new ones if available.
-try:
-    from torch.amp import custom_bwd as new_custom_bwd  # type: ignore[attr-defined]
-    from torch.amp import custom_fwd as new_custom_fwd  # type: ignore[attr-defined]
-
-    custom_fwd = new_custom_fwd(device_type="cuda")
-    custom_bwd = new_custom_bwd(device_type="cuda")
-except ImportError:
-    from torch.cuda.amp import custom_bwd, custom_fwd  # type: ignore # noqa: F401
-
-
 Item = namedtuple("Item", ["constructor", "config"])
 
 

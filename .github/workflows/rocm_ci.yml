@@ -1,4 +1,4 @@
-name: ROCM_CI
+name: rocm-ci
 
 on: 
   pull_request:

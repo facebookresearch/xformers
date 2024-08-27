@@ -15,8 +15,6 @@
 #include <45_dual_gemm/device/dual_gemm.h>
 #include <45_dual_gemm/thread/left_silu_and_mul.h>
 
-#include "autocast.h"
-
 namespace {
 
 template <typename scalar_t>
@@ -205,7 +203,7 @@ dual_gemm_silu_identity_mul_autocast(
     const at::Tensor& w1,
     const std::optional<at::Tensor>& b1) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = xformers::get_autocast_cuda_dtype();
+  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
   return dual_gemm_silu_identity_mul(
       at::autocast::cached_cast(exec_type, x),
       at::autocast::cached_cast(exec_type, w0),

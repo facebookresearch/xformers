@@ -23,9 +23,6 @@ compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
 
-torch_compile_tests = pytest.mark.skipif(
-    torch.__version__ < "2.2.0.dev20231122", reason="requires PyTorch 2.2+"
-)
 requires_sp24 = pytest.mark.skipif(compute_capability < (8, 0), reason="requires sm80+")
 requires_sp24_gemm = pytest.mark.skipif(
     compute_capability != (8, 0), reason="requires sm80"
@@ -897,7 +894,6 @@ def test_linear_dispatch_inference_mode(backend: str, with_bias: bool) -> None:
     assert_allclose(out, out_ref, msg="output", **atol_rtol_kw[x.dtype])
 
 
-@torch_compile_tests
 @cuda_only
 def test_sp24_meta() -> None:
     x = torch.randn([1024, 512], device="meta", dtype=torch.float16)
@@ -907,7 +903,6 @@ def test_sp24_meta() -> None:
     assert x_s_t.shape == x.t().shape
 
 
-@torch_compile_tests
 @requires_sp24_gemm
 @parametrize_backend
 def test_sp24_compile(backend) -> None:
@@ -952,7 +947,6 @@ class _TransformerFFN(nn.Module):
 
 
 @requires_sp24_gemm
-@torch_compile_tests
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 def test_linearw24_block_compile() -> None:
     # TODO: Parametrize on `dtype` when torch.compile gets faster
