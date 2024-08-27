@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import warnings
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Union
@@ -23,6 +24,14 @@ from .residual import PreNorm  # noqa
 from .residual import RequiresWrappedInputs  # noqa
 from .residual import Residual  # noqa
 from .residual import ResidualNormStyle  # noqa
+
+warnings.warn(
+    "xformers.components is deprecated and is not maintained anymore. "
+    "It might be removed in a future version of xFormers ",
+    FutureWarning,
+    stacklevel=2,
+)
+
 
 # automatically import any Python files in the directory
 import_all_modules(str(Path(__file__).parent), "xformers.components")

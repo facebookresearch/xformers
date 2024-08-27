@@ -9,6 +9,8 @@ from enum import Enum
 
 import torch
 
+from xformers._deprecation_warning import deprecated_function
+
 
 class PoolType(str, Enum):
     Conv2D = "CONV_2D"
@@ -39,6 +41,7 @@ class PatchEmbeddingConfig:
 class ConditionalReshape(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        deprecated_function(self)
 
     def forward(self, x):
         if x.ndim == 3:
@@ -54,6 +57,7 @@ class ConditionalReshape(torch.nn.Module):
 class PatchToSequence(torch.nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        deprecated_function(self)
 
     def forward(self, x):
         return x.flatten(2, 3).transpose(1, 2).contiguous()  # B HW C

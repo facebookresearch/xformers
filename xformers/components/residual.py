@@ -11,6 +11,8 @@ from typing import List, Optional, Tuple
 import torch
 import torch.nn as nn
 
+from xformers._deprecation_warning import deprecated_function
+
 
 class ResidualNormStyle(str, Enum):
     """Support different residual path and norm styles.
@@ -34,6 +36,7 @@ def get_normalization_layer(normalization_type: NormalizationType):
     class Skip(nn.Module):
         def __init__(self, *_, **__) -> None:
             super().__init__()
+            deprecated_function(self)
 
         def forward(self, x: torch.Tensor, **_):
             return x
@@ -64,6 +67,7 @@ class Residual(nn.Module, RequiresWrappedInputs):
 
     def __init__(self, layer: nn.Module, scale: Optional[float] = None):
         super().__init__()
+        deprecated_function(self)
         self.layer = layer
         self.scale = scale
 
@@ -97,6 +101,7 @@ class PreNorm(nn.Module, RequiresWrappedInputs):
     ):
 
         super().__init__()
+        deprecated_function(self)
         self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer
@@ -132,6 +137,7 @@ class PostNorm(nn.Module, RequiresWrappedInputs):
         use_triton: bool = True,
     ):
         super().__init__()
+        deprecated_function(self)
         self.norm = get_normalization_layer(normalization)(d_norm)
 
         self.sublayer = sublayer

@@ -11,6 +11,7 @@ from typing import Optional, Type, TypeVar
 import torch
 import torch.nn as nn
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components.attention import AttentionMask
 
 
@@ -36,6 +37,7 @@ class Attention(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(self, dropout: Optional[float] = None, *args, **kwargs):
         super().__init__()
+        deprecated_function(self)
 
         # Requires the inputs to be projected
         self.requires_input_projection = True

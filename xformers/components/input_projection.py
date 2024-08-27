@@ -14,6 +14,8 @@ from typing import Optional, Tuple
 import torch
 from torch import nn
 
+from xformers._deprecation_warning import deprecated_function
+
 logger = logging.getLogger("xformers")
 
 
@@ -38,6 +40,7 @@ class InputProjection(nn.Module):
     ):
 
         super().__init__()
+        deprecated_function(self)
 
         self.out_features = query_proj_params.out_features
 
