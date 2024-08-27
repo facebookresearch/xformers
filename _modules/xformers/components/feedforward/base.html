@@ -233,6 +233,7 @@
 
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 
+<span class="kn">from</span> <span class="nn">xformers._deprecation_warning</span> <span class="kn">import</span> <span class="n">deprecated_function</span>
 <span class="kn">from</span> <span class="nn">xformers.components</span> <span class="kn">import</span> <span class="n">Activation</span>
 
 <span class="n">Self</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;Self&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">&quot;Feedforward&quot;</span><span class="p">)</span>
@@ -258,6 +259,7 @@
         <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
     <span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="n">deprecated_function</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
         <span class="c1"># This feedforward requires a CUDA accelerator</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_cuda</span> <span class="o">=</span> <span class="kc">False</span>

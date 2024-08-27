@@ -234,6 +234,7 @@
 <span class="kn">import</span> <span class="nn">torch</span>
 <span class="kn">import</span> <span class="nn">torch.nn</span> <span class="k">as</span> <span class="nn">nn</span>
 
+<span class="kn">from</span> <span class="nn">xformers._deprecation_warning</span> <span class="kn">import</span> <span class="n">deprecated_function</span>
 <span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">AttentionMask</span>
 
 
@@ -259,6 +260,7 @@
     <span class="nd">@abstractmethod</span>
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">dropout</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
+        <span class="n">deprecated_function</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
 
         <span class="c1"># Requires the inputs to be projected</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">requires_input_projection</span> <span class="o">=</span> <span class="kc">True</span>
