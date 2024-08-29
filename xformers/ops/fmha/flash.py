@@ -42,6 +42,7 @@ from .torch_attention_compat import is_pt_flash_compatible
 
 FLASH_VERSION = "0.0.0"
 VARLEN_LSE_PACKED = False
+_TRY_PT_FLASH_ATTN = torch.version.hip is None
 _USE_PT_FLASH_ATTN = False
 
 try:
@@ -73,6 +74,8 @@ try:
                 )
             VARLEN_LSE_PACKED = True
         except ImportError:
+            if not _TRY_PT_FLASH_ATTN:
+                raise
             assert is_pt_flash_compatible(force=True)
             FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
             VARLEN_LSE_PACKED = False
