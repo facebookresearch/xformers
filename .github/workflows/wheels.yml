@@ -60,7 +60,7 @@ jobs:
               if os == 'windows-8-core':
                 continue
               include.append(dict(
-                os=os,
+                os="16-core-ubuntu",
                 python=python,
                 torch_version=torch_version,
                 toolkit_type="rocm",
