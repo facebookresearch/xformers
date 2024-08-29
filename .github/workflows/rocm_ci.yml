@@ -98,7 +98,7 @@ jobs:
 
   clean:
     runs-on: self-hosted
-    if: ${{ always() }}
+    if: ${{ needs.build.result != 'skipped' }}
     needs: [build]
     steps:
       - name: Remove dangling Docker images
