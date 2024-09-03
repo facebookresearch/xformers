@@ -865,6 +865,7 @@ ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
 ALL_BW_OPS: List[Type[AttentionBwOpBase]] = [
     cutlass.BwOp if torch.version.cuda else ck.BwOp,
     flash.BwOp,
+    flash3.BwOp,
 ]
 
 __all__ = [
