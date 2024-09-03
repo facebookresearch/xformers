@@ -153,7 +153,7 @@ jobs:
           amdgpu-install -y --usecase=rocm --no-dkms
           echo "ROCM_PATH=/opt/rocm" >> ${GITHUB_ENV}
           echo "PATH=$PATH:/opt/rocm/bin" >> ${GITHUB_ENV}
-          echo "MAX_JOBS=12" >> ${GITHUB_ENV}
+          echo "MAX_JOBS=15" >> ${GITHUB_ENV}
 
       - name: Install dependencies
         run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url $PYTORCH_INDEX_URL
