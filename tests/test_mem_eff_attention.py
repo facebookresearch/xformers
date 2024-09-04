@@ -208,6 +208,7 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                         }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq) + 2
                         elif bias_type in {
+                            fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask,
                             fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask,
                             fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
                             fmha.attn_bias.BlockDiagonalPaddedKeysMask,

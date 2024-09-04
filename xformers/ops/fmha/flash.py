@@ -17,6 +17,7 @@ from .attn_bias import (
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -470,6 +471,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             BlockDiagonalCausalWithOffsetGappyKeysMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -494,6 +496,7 @@ def _window_size(
         (
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             LowerTriangularFromBottomRightLocalAttentionMask,
         ),
     ):
@@ -597,6 +600,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalMask,
         BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         BlockDiagonalCausalFromBottomRightMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -722,6 +726,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = tuple(
         set(FwOp.SUPPORTED_ATTN_BIAS_TYPES).difference(
             {
+                BlockDiagonalCausalLocalAttentionPaddedKeysMask,
                 BlockDiagonalCausalWithOffsetGappyKeysMask,
                 BlockDiagonalCausalWithOffsetPaddedKeysMask,
                 BlockDiagonalGappyKeysMask,
