@@ -1310,6 +1310,53 @@
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div></div>
 
 
+<div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
+<span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Like :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask`,</span>
+<span class="sd">    except with a window size.</span>
+
+<span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
+<span class="sd">    nor one which is not in use (i.e. in the padded area),</span>
+<span class="sd">    nor one which is nearer to the final key in block i</span>
+<span class="sd">    than Q is to the final query in block i, nor one that is more than</span>
+<span class="sd">    window_size further from the final key in block i than Q is</span>
+<span class="sd">    to the final query in block i.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span>
+
+    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
+        <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+        <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_materialize_causal_mask</span><span class="p">(</span>
+            <span class="n">shape</span><span class="o">=</span><span class="n">shape</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="p">,</span>
+            <span class="n">from_bottomright</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">from_seqlens_local</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">kv_padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+        <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
+        <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionPaddedKeysMask&quot;</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="n">kv_seqlen</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">len</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">),</span> <span class="p">(</span>
+            <span class="n">q_seqlen</span><span class="p">,</span>
+            <span class="n">kv_seqlen</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">q_seqinfo</span> <span class="o">=</span> <span class="n">_SeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens</span><span class="p">(</span><span class="n">q_seqlen</span><span class="p">)</span>
+        <span class="n">k_seqinfo</span> <span class="o">=</span> <span class="n">_PaddedSeqLenInfo</span><span class="o">.</span><span class="n">from_seqlens_padded</span><span class="p">(</span><span class="n">kv_seqlen</span><span class="p">,</span> <span class="n">kv_padding</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">,</span> <span class="n">_window_size</span><span class="o">=</span><span class="n">window_size</span><span class="p">)</span></div>
+
+
 <div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
 <span class="k">class</span> <span class="nc">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
