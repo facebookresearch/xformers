@@ -40,7 +40,7 @@ jobs:
           for cu in CU_VERSIONS[1:]:
             PY_CU.append((PY_VERSIONS[-1], cu))
           print("Limited matrix PY_CU", PY_CU)
-          PY_ROCM = [(PY_VERSIONS[-1], rocm_v) for rocm_v in ROCM_VERSIONS]
+          PY_ROCM = [(PY_VERSIONS[-1], ROCM_VERSIONS[-1])]
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
@@ -60,7 +60,7 @@ jobs:
               if os == 'windows-8-core':
                 continue
               include.append(dict(
-                os="16-core-ubuntu",
+                os="16-core-ubuntu",  # use for ROCm wheels only to avoid CI timeouts
                 python=python,
                 torch_version=torch_version,
                 toolkit_type="rocm",
