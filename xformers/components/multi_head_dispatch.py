@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from torch.nn.init import constant_
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components.attention import Attention
 from xformers.components.input_projection import InputProjection, InputProjectionConfig
 from xformers.components.positional_embedding import RotaryEmbedding
@@ -90,6 +91,7 @@ class MultiHeadDispatch(nn.Module):
         **kwargs,
     ):
         super().__init__()
+        deprecated_function(self)
 
         if isinstance(bias, bool):
             logger.warning(

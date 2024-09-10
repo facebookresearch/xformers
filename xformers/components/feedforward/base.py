@@ -10,6 +10,7 @@ from typing import Optional, Type, TypeVar
 
 import torch.nn as nn
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components import Activation
 
 Self = TypeVar("Self", bound="Feedforward")
@@ -35,6 +36,7 @@ class Feedforward(nn.Module, metaclass=ABCMeta):
         **kwargs,
     ):
         super().__init__()
+        deprecated_function(self)
 
         # This feedforward requires a CUDA accelerator
         self.requires_cuda = False

@@ -156,6 +156,7 @@ def create_attn_bias(
         return block_diag
     if bias_type in [
         fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+        fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
         fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
         fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -167,11 +168,19 @@ def create_attn_bias(
             if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask)
             else bias_type
         )
-        g_block_diag = block_diag_type.from_seqlens(
-            q_seqlen=q,
-            kv_padding=kv_len,
-            kv_seqlen=k,
-        )
+        if bias_type is fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask:
+            g_block_diag = block_diag_type.from_seqlens_local(
+                q_seqlen=q,
+                kv_padding=kv_len,
+                kv_seqlen=k,
+                window_size=min(window_size, min(k)),
+            )
+        else:
+            g_block_diag = block_diag_type.from_seqlens(
+                q_seqlen=q,
+                kv_padding=kv_len,
+                kv_seqlen=k,
+            )
         if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask):
             assert page_size is not None
             pages_per_row = (kv_len + page_size - 1) // page_size

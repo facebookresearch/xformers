@@ -3,17 +3,15 @@ name: rocm-ci
 on: 
   pull_request:
     types: [labeled, synchronize, reopened]
-  workflow_dispatch:
-    inputs:
-      logLevel:
-        description: 'Log level'     
-        required: true
-        default: 'warning'
-  schedule:
-    - cron: "15 1 * * *"
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+      - develop
 
 jobs:
   build:
+    if: github.repository == 'rocm/xformers'
     runs-on: self-hosted
     container:
       image: 'rocm/pytorch-nightly:latest'
@@ -82,7 +80,7 @@ jobs:
       run: |
         export PATH=/opt/conda/envs/xformers/bin:$PATH
         
-        python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py -k "not flshatt"
+        python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py
     
     - name: Archive logs
       if: '!cancelled()'
@@ -100,7 +98,7 @@ jobs:
 
   clean:
     runs-on: self-hosted
-    if: ${{ always() }}
+    if: ${{ needs.build.result != 'skipped' }}
     needs: [build]
     steps:
       - name: Remove dangling Docker images

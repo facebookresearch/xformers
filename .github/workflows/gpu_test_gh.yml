@@ -27,6 +27,8 @@ jobs:
       fail-fast: false
       matrix:
         gpu:
+          - runner: "h100"
+            sm: "9.0a"
           - runner: "4-core-ubuntu-gpu-t4"
             sm: "7.5"
         pytorch:

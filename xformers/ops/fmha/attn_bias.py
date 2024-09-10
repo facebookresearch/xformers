@@ -1088,6 +1088,53 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
 
 
 @dataclass
+class BlockDiagonalCausalLocalAttentionPaddedKeysMask(BlockDiagonalPaddedKeysMask):
+    """
+    Like :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask`,
+    except with a window size.
+
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is not in use (i.e. in the padded area),
+    nor one which is nearer to the final key in block i
+    than Q is to the final query in block i, nor one that is more than
+    window_size further from the final key in block i than Q is
+    to the final query in block i.
+    """
+
+    _window_size: int
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(
+            shape=shape,
+            dtype=dtype,
+            device=device,
+            window_size=self._window_size,
+            from_bottomright=True,
+        )
+
+    @classmethod
+    def from_seqlens_local(
+        cls,
+        q_seqlen: Sequence[int],
+        kv_padding: int,
+        kv_seqlen: Sequence[int],
+        window_size: int,
+    ) -> "BlockDiagonalCausalLocalAttentionPaddedKeysMask":
+        assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen), (
+            q_seqlen,
+            kv_seqlen,
+        )
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        return cls(q_seqinfo=q_seqinfo, k_seqinfo=k_seqinfo, _window_size=window_size)
+
+
+@dataclass
 class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
     """
     Same as BlockDiagonalPaddedKeysMask, but for paged attention.

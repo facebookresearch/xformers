@@ -10,6 +10,8 @@ from typing import Type, TypeVar
 
 import torch.nn as nn
 
+from xformers._deprecation_warning import deprecated_function
+
 Self = TypeVar("Self", bound="PositionEmbedding")
 
 
@@ -24,6 +26,7 @@ class PositionEmbedding(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def __init__(self, *args, **kwargs) -> None:
         super().__init__()
+        deprecated_function(self)
 
     @classmethod
     def from_config(cls: Type[Self], config: PositionEmbeddingConfig) -> Self:

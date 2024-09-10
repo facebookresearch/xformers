@@ -10,6 +10,8 @@ from typing import Optional
 import torch
 from torch import nn
 
+from xformers._deprecation_warning import deprecated_function
+
 
 class Activation(str, Enum):
     SquaredReLU = "squared_relu"
@@ -24,6 +26,7 @@ class Activation(str, Enum):
 class SquaredReLU(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        deprecated_function(self)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_ = torch.nn.functional.relu(x)
@@ -33,6 +36,7 @@ class SquaredReLU(nn.Module):
 class StarReLU(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        deprecated_function(self)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_ = torch.nn.functional.relu(x)
@@ -43,6 +47,7 @@ class SmeLU(nn.Module):
     def __init__(self, beta: float = 2.0) -> None:
         super().__init__()
         self.beta = beta
+        deprecated_function(self)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         relu = torch.where(

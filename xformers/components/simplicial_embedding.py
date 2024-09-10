@@ -8,6 +8,8 @@ from typing import Optional, Type, TypeVar
 
 import torch
 
+from xformers._deprecation_warning import deprecated_function
+
 Self = TypeVar("Self", bound="SimplicialEmbedding")
 
 
@@ -32,6 +34,7 @@ class SimplicialEmbedding(torch.nn.Module):
 
     def __init__(self, L: int, temperature: Optional[float] = None) -> None:
         super().__init__()
+        deprecated_function(self)
         self.L = L
         self.temperature = temperature
 

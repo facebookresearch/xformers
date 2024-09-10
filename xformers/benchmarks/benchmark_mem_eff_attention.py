@@ -72,7 +72,7 @@ LLM_SHAPES = [
 OPS = [
     (xformers.ops.fmha.cutlass.FwOp, xformers.ops.fmha.cutlass.BwOp),
     (xformers.ops.fmha.flash.FwOp, xformers.ops.fmha.flash.BwOp),
-    (xformers.ops.fmha.flash3.FwOp, xformers.ops.fmha.flash.BwOp),
+    (xformers.ops.fmha.flash3.FwOp, xformers.ops.fmha.flash3.BwOp),
     (xformers.ops.fmha.ck.FwOp, xformers.ops.fmha.ck.BwOp),
 ]
 

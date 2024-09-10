@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch.autograd.function import Function
 from torch.utils.checkpoint import get_device_states, set_device_states
 
+from xformers._deprecation_warning import deprecated_function
 from xformers.components import RequiresWrappedInputs
 
 # CREDITS: Code adapted from
@@ -23,6 +24,7 @@ from xformers.components import RequiresWrappedInputs
 class Deterministic(nn.Module):
     def __init__(self, net: nn.Module):
         super().__init__()
+        deprecated_function(self)
         self.net = net
         self.cpu_state: torch.Tensor = torch.get_rng_state()
         self.cuda_in_fwd: bool = False
@@ -146,6 +148,7 @@ class _ReversibleFunction(Function):
 class ReversibleSequence(nn.Module):
     def __init__(self, blocks: nn.ModuleList):
         super().__init__()
+        deprecated_function(self)
 
         # pyre-fixme[23]: Unable to unpack `torch.nn.Module` into 2 values.
         self.blocks = nn.ModuleList([ReversibleBlock(f, g) for f, g in blocks])
