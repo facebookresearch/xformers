@@ -453,7 +453,7 @@ def get_extensions():
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
         if use_rtn_bf16_convert == "1":
-            cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=0"]
+            cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=3"]
 
         arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
 
@@ -471,6 +471,12 @@ def get_extensions():
                 "-Woverloaded-virtual",
                 "-mllvm",
                 "-enable-post-misched=0",
+                "-mllvm",
+                "-amdgpu-early-inline-all=true",
+                "-mllvm",
+                "-amdgpu-function-calls=false",
+                "-mllvm",
+                "-greedy-reverse-local-assignment=1",
             ]
             + generator_flag
             + cc_flag,
