@@ -476,7 +476,7 @@ def get_extensions():
                 "-mllvm",
                 "-amdgpu-function-calls=false",
                 "-mllvm",
-                "-greedy-reverse-local-assignment=1"
+                "-greedy-reverse-local-assignment=1",
             ]
             + generator_flag
             + cc_flag,
