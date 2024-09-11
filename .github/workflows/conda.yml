@@ -49,24 +49,24 @@ jobs:
     runs-on: 8-core-ubuntu  # 32GB RAM, 8 vCPUs
 
     container:
-      image: pytorch/conda-builder:cuda${{ matrix.config.cuda_short_version }}
+      image: quay.io/pypa/manylinux_2_28_x86_64
     env:
-      # alias for the current python version
-      PY: /opt/conda/bin/python
       # you need at least cuda 5.0 for some of the stuff compiled here.
-      TORCH_CUDA_ARCH_LIST: ${{ join('6.0+PTX 7.0 7.5 8.0+PTX', fromJSON(inputs.cuda_short_version) >= 118 && ' 9.0a' || '') }}
+      TORCH_CUDA_ARCH_LIST: '6.0+PTX 7.0 7.5 8.0+PTX'
 
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     steps:
+      - if: fromJSON(matrix.config.cuda_short_version) >= 120
+        run: |
+          echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST 9.0a" >> ${GITHUB_ENV}
       - name: System info
         run: |
           pwd
           df -h
           ldd --version
-          $PY --version
           echo "Memory and swap:"
           free -h
           echo
@@ -77,35 +77,55 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: echo "XFORMERS_CONDA_TAG=main" >> $GITHUB_ENV
       - run: echo "${XFORMERS_CONDA_TAG}"
-      - name: Free up disk space
-        run: |
-          df -h /
-          sudo rm -rf /__t/Python /__t/CodeQL /__t/go /__t/Python /__t/PyPy /__t/node
-          sudo rm -rf /opt/conda/pkgs
-          df -h /
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
+      - name: Install micromamba
+        shell: bash -l {0}
+        run: |
+          set -ex
+          curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+          echo "eval \"\$($(pwd)/bin/micromamba shell hook --shell bash)\"" >> ~/.profile
+      - run: |
+          micromamba config set channel_priority strict
+          micromamba create --name env -y conda-build python=${{ matrix.python }} -c anaconda
+        shell: bash -l {0}
+      - name: Activate environment
+        shell: bash -l {0}
+        run: |
+          echo "micromamba activate env" >> ~/.profile
+          echo "==== .profile ====="
+          cat ~/.profile
+      - run: which python; which gcc
+        shell: bash -l {0}
+      - name: Setup Runner
+        uses: ./.github/actions/setup-build-cuda
+        with:
+          toolkit_type: cuda
+          toolkit_short_version: ${{ matrix.config.cuda_short_version }}
+          python: ${{ matrix.python }}
       - name: Define version
+        shell: bash -l {0}
         env:
           VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev'  }}
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "$(pwd)"
           git rev-parse --short HEAD
-          $PY -m pip install packaging
-          version=`$PY packaging/compute_wheel_version.py --source $VERSION_SOURCE`
+          python -m pip install packaging
+          version=`python packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
           cat ${GITHUB_ENV}
       - name: Build & store/upload
+        shell: bash -l {0}
         env:
           # NOTE: Ternary operator: ${{ cond && 'trueVal' || 'falseVal' }}
           STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
         run: |
-          $PY packaging/build_conda.py \
+          python packaging/build_conda.py \
           --cuda ${{ matrix.config.cuda_version }} \
           --python ${{ matrix.python }} \
           --pytorch ${{ matrix.config.torch_version }} \
@@ -113,6 +133,7 @@ jobs:
           --cuda-dep-runtime "${{ matrix.config.cuda_dep_runtime }}" \
           --store $STORE_PT_PACKAGE
       - name: Upload
+        shell: bash -l {0}
         if: github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' && matrix.config.torch_channel == 'pytorch'
         env:
           ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}

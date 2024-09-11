@@ -30,16 +30,13 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && join('6.0+PTX 7.0 7.5 8.0+PTX', fromJSON(inputs.toolkit_short_version) >= 118 && ' 9.0a' || '') || '' }}
+  TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && '6.0+PTX 7.0 7.5 8.0+PTX' || '' }}
   HIP_ARCHITECTURES: ${{ contains(inputs.toolkit_type, 'rocm') && 'gfx90a gfx942' || '' }}
   MAX_JOBS: 4
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
   XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
-  # https://github.blog/changelog/2024-03-07-github-actions-all-actions-will-run-on-node20-instead-of-node16-by-default/
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
-  PYTORCH_INDEX_URL: "https://download.pytorch.org/whl/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
 
 jobs:
   build:
@@ -50,56 +47,44 @@ jobs:
       # windows does not have per version binary, it is just 'python3'
       PY: python${{ contains(inputs.os, 'ubuntu') && inputs.python || '3' }}
 
-    container: ${{ contains(inputs.os, 'ubuntu') && 'quay.io/pypa/manylinux2014_x86_64' || null }}
+    container: ${{ contains(inputs.os, 'ubuntu') && 'quay.io/pypa/manylinux_2_28_x86_64' || null }}
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     steps:
-      - if: runner.os == 'Windows'
-        name: Support longpaths
-        run: git config --system core.longpaths true
-      - id: cuda_info
-        shell: python
+      - if: contains(inputs.toolkit_type, 'cuda') && fromJSON(inputs.toolkit_short_version) >= 120
         run: |
-          import os
-          import sys
-          print(sys.version)
-          cushort = "${{ inputs.toolkit_short_version }}"
-          TORCH_CUDA_DEFAULT = "121"  # pytorch 2.4.0
-          # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
-          full_version, install_script = {
-            "124": ("12.4.1", "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_550.54.15_linux.run"),
-            "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
-            "118": ("11.8.0", "https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run"),
-            "6.0": ("6.0.2", "https://repo.radeon.com/amdgpu-install/6.0.2/rhel/7.9/amdgpu-install-6.0.60002-1.el7.noarch.rpm"),
-            "6.1": ("6.1.2", "https://repo.radeon.com/amdgpu-install/6.1.2/el/7/amdgpu-install-6.1.60102-1.el7.noarch.rpm"),
-          }[cushort]
-          with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
-            fp.write("CUDA_VERSION=" + full_version + "\n")
-            if cushort == TORCH_CUDA_DEFAULT:
-              fp.write("CUDA_VERSION_SUFFIX=\n")
-            else:
-              fp.write("CUDA_VERSION_SUFFIX=+" + ("cu" if "cuda" == "${{ inputs.toolkit_type }}" else "rocm") + cushort + "\n")
-            fp.write("CUDA_INSTALL_SCRIPT=" + install_script + "\n")
-      - run: echo "CUDA_VERSION_SUFFIX=${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}"
+          echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST 9.0a" >> ${GITHUB_ENV}
 
+      - if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
       - name: Recursive checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
+      - name: Setup Runner
+        uses: ./.github/actions/setup-build-cuda
+        with:
+          toolkit_type: ${{ inputs.toolkit_type }}
+          toolkit_short_version: ${{ inputs.toolkit_short_version }}
+          python: ${{ inputs.python }}
+      - if: runner.os == 'Linux'
+        run: printenv
 
       - if: runner.os != 'Windows'
         name: (Linux) Setup venv for linux
+        shell: bash -l {0}
         run: |
           $PY -m venv venv
           . ./venv/bin/activate
           which pip
           echo "PY=$(which python)" >> ${GITHUB_ENV}
           echo "PATH=$PATH" >> ${GITHUB_ENV}
-          echo "MAX_JOBS=3" >> ${GITHUB_ENV}
+          git config --global --add safe.directory "*"
+          pip install packaging ninja wheel setuptools twine
 
       - name: Define version
         id: xformers_version
@@ -108,7 +93,6 @@ jobs:
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
-          pip install packaging ninja
           version=`python packaging/compute_wheel_version.py --source $VERSION_SOURCE`
           echo $version > version.txt
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
@@ -125,44 +109,17 @@ jobs:
           echo "torch == ${{ inputs.torch_version }}" >> ./requirements.txt
           cat ./requirements.txt
 
-      - if: runner.os == 'Windows'
-        name: (Windows) Setup Runner
-        uses: ./.github/actions/setup-windows-runner
-        with:
-          cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
-          python: ${{ inputs.python }}
-
-      - if: runner.os == 'Linux'
-        name: (Linux) list installed packages
+      - name: Install corresponding PyTorch
         run: |
-          yum list installed
-
-      - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda')
-        name: (Linux) install cuda
-        run: >
-          yum install wget git prename -y &&
-          wget -q "${{ steps.cuda_info.outputs.CUDA_INSTALL_SCRIPT }}" -O cuda.run &&
-          sh ./cuda.run --silent --toolkit &&
-          rm ./cuda.run
-
-      - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'rocm')
-        name: (Linux) install rocm
-        run: |
-          yum install -y libzstd
-          yum install -y ${{ steps.cuda_info.outputs.CUDA_INSTALL_SCRIPT }}
-          amdgpu-install -y --usecase=rocm --no-dkms
-          echo "ROCM_PATH=/opt/rocm" >> ${GITHUB_ENV}
-          echo "PATH=$PATH:/opt/rocm/bin" >> ${GITHUB_ENV}
-          echo "MAX_JOBS=15" >> ${GITHUB_ENV}
-
-      - name: Install dependencies
-        run: $PY -m pip install wheel setuptools twine -r requirements.txt --extra-index-url $PYTORCH_INDEX_URL
+          PYTORCH_INDEX_URL="https://download.pytorch.org/whl/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
+          $PY -m pip install -r requirements.txt --extra-index-url $PYTORCH_INDEX_URL
 
       - name: Build wheel
+        shell: bash -l {0}
         run: |
           $PY setup.py bdist_wheel -d dist/ -k $PLAT_ARG
         env:
-          PLAT_ARG: ${{ contains(inputs.os, 'ubuntu') && '--plat-name manylinux2014_x86_64' || '' }}
+          PLAT_ARG: ${{ contains(inputs.os, 'ubuntu') && '--plat-name manylinux_2_28_x86_64' || '' }}
 
       - run: du -h dist/*
       - uses: actions/upload-artifact@v3

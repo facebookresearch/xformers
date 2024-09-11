@@ -5,7 +5,7 @@ on:
     paths:
       - "packaging/compute_wheel_version.sh"
       - ".github/workflows/wheel*"
-      - ".github/actions/setup-windows-runner/action.yml"
+      - ".github/actions/setup-build-cuda/action.yml"
       - "setup.py"
       - "requirements*.txt"
   push:
@@ -47,6 +47,9 @@ jobs:
           for torch_version in ['2.4.0']:
             # CUDA builds
             for python, cuda_short_version in PY_CU:
+              if cuda_short_version != "124" and "windows" in os:
+                print("Windows builder no longer compatible with cu<124")
+                continue
               include.append(dict(
                 os=os,
                 python=python,
