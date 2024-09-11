@@ -79,6 +79,7 @@ try:
                 raise
             assert is_pt_flash_compatible(force=True)
             FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
+            FLASH_VERSION = f"v{FLASH_VERSION}"
             VARLEN_LSE_PACKED = False
             _USE_PT_FLASH_ATTN = True
 
@@ -551,6 +552,7 @@ def _post_process_lse(
     lse: torch.Tensor,
     inp: Inputs,
     original_query_shape: Tuple[int, ...],
+    varlen_lse_packed: bool = VARLEN_LSE_PACKED,
 ) -> torch.Tensor:
     # Easy case: no varlen
     if not isinstance(inp.attn_bias, VARLEN_BIASES):
@@ -560,7 +562,7 @@ def _post_process_lse(
         return lse
 
     # Already packed: just bring back the batch dimension
-    if VARLEN_LSE_PACKED:
+    if varlen_lse_packed:
         if len(original_query_shape) == 5:
             # (1, G, H, total_q)
             return lse.unflatten(0, original_query_shape[2:4]).unsqueeze(0)

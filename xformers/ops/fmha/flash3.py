@@ -80,7 +80,7 @@ if _C_flashattention3 is not None:
                 softmax_lse,
                 p,
             ) = _C_flashattention3.fwd(
-                query, key, value, None, softmax_scale, is_causal
+                query, key, value, None, softmax_scale, None, None, None, is_causal
             )
         else:
             out, q, k, v, out_padded, softmax_lse = _C_flashattention3.varlen_fwd(
@@ -316,7 +316,9 @@ class FwOp(AttentionFwOpBase):
             return out, None
         ctx = Context(
             out=out,
-            lse=_post_process_lse(softmax_lse, inp, tuple(original_query_shape)),
+            lse=_post_process_lse(
+                softmax_lse, inp, tuple(original_query_shape), varlen_lse_packed=True
+            ),
         )
         return (out, ctx)
 
