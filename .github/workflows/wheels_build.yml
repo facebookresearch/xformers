@@ -122,7 +122,7 @@ jobs:
           PLAT_ARG: ${{ contains(inputs.os, 'ubuntu') && '--plat-name manylinux_2_28_x86_64' || '' }}
 
       - run: du -h dist/*
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.os }}-py${{ inputs.python }}-torch${{ inputs.torch_version }}+${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}_${{ inputs.artifact_tag }}
           path: dist/*.whl

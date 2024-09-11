@@ -145,9 +145,9 @@ jobs:
               echo "Attempt $i"
               anaconda upload --user xformers --label ${XFORMERS_CONDA_TAG} packages/* && break
           done
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         if: success() || failure()
         with:
-          name: linux-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}
+          name: linux-py${{ matrix.python }}-torch${{ matrix.config.torch_version }}-cu${{ matrix.config.cuda_short_version }}
           path: packages
 # Note: it might be helpful to have additional steps that test if the built wheels actually work

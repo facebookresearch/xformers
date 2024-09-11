@@ -56,7 +56,7 @@ jobs:
           echo "${{ inputs.pypirc }}" > ~/.pypirc
           cat ~/.pypirc
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           path: dist
 
