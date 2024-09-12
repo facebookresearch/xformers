@@ -5,8 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.28] - TBD
+Pre-built binary wheels require PyTorch 2.4.1
 ### Added
 - Added wheels for cuda 12.4
+- Added conda builds for python 3.11
+- Added wheels for rocm 6.1
 ### Improved
 - Profiler: Fix computation of FLOPS for the attention when using xFormers
 - Profiler: Fix MFU/HFU calculation when multiple dtypes are used
@@ -18,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fMHA: Removed `decoder` and `small_k` backends
 - profiler: Removed `DetectSlowOpsProfiler` profiler
 - Removed compatibility with PyTorch < 2.4
+- Removed conda builds for python 3.11
+- Removed windows pip wheels for cuda 12.1 and 11.8
 
 ## [0.0.27.post2] - 2024-07-26
 Pre-built binary wheels require PyTorch 2.4.0

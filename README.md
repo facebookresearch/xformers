@@ -28,19 +28,24 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 2.4.0 installed with conda](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 2.4.1 installed with conda](https://pytorch.org/get-started/locally/)
 
 ```bash
+# (python 3.10/3.11 only)
 conda install xformers -c xformers
 ```
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.4.0](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.4.1](https://pytorch.org/get-started/locally/)
 
 ```bash
-# cuda 11.8 version
+# [linux only] cuda 11.8 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
-# cuda 12.1 version
+# [linux only] cuda 12.1 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
+# [linux & win] cuda 12.4 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124
+# [linux only] (EXPERIMENTAL) rocm 6.1 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.1
 ```
 
 * **Development binaries**:
