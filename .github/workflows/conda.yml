@@ -91,7 +91,7 @@ jobs:
           echo "eval \"\$($(pwd)/bin/micromamba shell hook --shell bash)\"" >> ~/.profile
       - run: |
           micromamba config set channel_priority strict
-          micromamba create --name env -y conda-build python=${{ matrix.python }} -c anaconda
+          micromamba create --name env -y anaconda-client conda-build python=${{ matrix.python }} -c anaconda
         shell: bash -l {0}
       - name: Activate environment
         shell: bash -l {0}
@@ -125,6 +125,7 @@ jobs:
           # NOTE: Ternary operator: ${{ cond && 'trueVal' || 'falseVal' }}
           STORE_PT_PACKAGE: ${{ matrix.config.torch_channel != 'pytorch' && '--store-pytorch-package' || '' }}
         run: |
+          anaconda upload --help
           python packaging/build_conda.py \
           --cuda ${{ matrix.config.cuda_version }} \
           --python ${{ matrix.python }} \

@@ -30,7 +30,7 @@ jobs:
 
         PY_VERSIONS = ['3.8', '3.9', '3.10', '3.11', '3.12']
         CU_VERSIONS = ['118', '121', '124']
-        ROCM_VERSIONS = ["6.0", "6.1"]
+        ROCM_VERSIONS = ["6.1"] # <- 6.0 broken in `manylinux_2_28`
         PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
         PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
         print("Full matrix PY_CU", PY_CU)
@@ -119,15 +119,15 @@ jobs:
       filter: "*torch2.4.0+cu121*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
 
-  upload_pt_rocm6_0:
-    needs: build
-    uses: ./.github/workflows/wheels_upload_s3.yml
-    with:
-      aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
-      s3_path: s3://pytorch/whl/rocm6.0/
-      aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.4.0+rocm6.0*"
-      execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
+  # upload_pt_rocm6_0:
+  #   needs: build
+  #   uses: ./.github/workflows/wheels_upload_s3.yml
+  #   with:
+  #     aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
+  #     s3_path: s3://pytorch/whl/rocm6.0/
+  #     aws_s3_cp_extra_args: --acl public-read
+  #     filter: "*torch2.4.0+rocm6.0*"
+  #     execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
 
   upload_pt_rocm6_1:
     needs: build
