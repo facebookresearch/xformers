@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    if: github.repository == 'rocm/xformers'
+    if: github.repository == 'rocm/xformers' || github.repository == 'facebookresearch/xformers'
     runs-on: self-hosted
     container:
       image: 'rocm/pytorch-nightly:latest'
