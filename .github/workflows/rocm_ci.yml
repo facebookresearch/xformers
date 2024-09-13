@@ -12,7 +12,7 @@ on:
 jobs:
   build:
     if: github.repository == 'rocm/xformers' || github.repository == 'facebookresearch/xformers'
-    runs-on: self-hosted
+    runs-on: rocm
     container:
       image: 'rocm/pytorch-nightly:latest'
       options: ' --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --device=/dev/kfd --device=/dev/dri --group-add video --ipc=host --shm-size 8G '
