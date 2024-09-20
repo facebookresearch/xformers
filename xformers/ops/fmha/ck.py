@@ -23,6 +23,7 @@ from .attn_bias import (
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
@@ -48,7 +49,8 @@ def _get_seqlen_info(
 ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
     attn_bias = inp.attn_bias
     if isinstance(
-        attn_bias, (BlockDiagonalMask, BlockDiagonalCausalWithOffsetPaddedKeysMask)
+        attn_bias,
+        (BlockDiagonalMask, BlockDiagonalPaddedKeysMask, BlockDiagonalGappyKeysMask),
     ):
         attn_bias.k_seqinfo.to(inp.query.device)
         attn_bias.q_seqinfo.to(inp.query.device)
@@ -159,6 +161,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
+        BlockDiagonalPaddedKeysMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
@@ -167,6 +170,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = True
     SUPPORTS_CUSTOM_SCALE = True
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
+    SUPPORTS_PARTIAL = True
     SUPPORTS_BMGHK = True
     NAME = "ckF"
 
@@ -273,7 +277,11 @@ class FwOp(AttentionFwOpBase):
             seqlen_k=(
                 inp.attn_bias.k_seqinfo.seqlen
                 if isinstance(
-                    inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+                    inp.attn_bias,
+                    (
+                        BlockDiagonalGappyKeysMask,
+                        BlockDiagonalPaddedKeysMask,
+                    ),
                 )
                 else None
             ),
@@ -417,7 +425,11 @@ class BwOp(AttentionBwOpBase):
             seqlen_k=(
                 inp.attn_bias.k_seqinfo.seqlen
                 if isinstance(
-                    inp.attn_bias, BlockDiagonalCausalWithOffsetPaddedKeysMask
+                    inp.attn_bias,
+                    (
+                        BlockDiagonalGappyKeysMask,
+                        BlockDiagonalPaddedKeysMask,
+                    ),
                 )
                 else None
             ),
