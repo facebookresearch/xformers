@@ -59,8 +59,7 @@ at::Tensor rand_uniform_int(
 
   {
     // only work for batched mode
-    using FmhaRandUniformKernel_ =
-        FmhaRandUniformKernel<128, 64, 32, uint8_t, false>;
+    using FmhaRandUniformKernel_ = FmhaRandUniformKernel<uint8_t, false>;
 
     const auto kargs = FmhaRandUniformKernel_::MakeKargs(
         randvals.data_ptr(),
