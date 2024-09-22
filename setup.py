@@ -281,11 +281,12 @@ def get_extensions():
     ]
 
     source_hip = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
+        os.path.join(extensions_dir, "attention", "hip_*", "**", "*.cpp"),
         recursive=True,
     )
+
     source_hip_generated = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"),
+        os.path.join(extensions_dir, "attention", "hip_*", "**", "*.cu"),
         recursive=True,
     )
     # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
@@ -439,7 +440,8 @@ def get_extensions():
         extension = CUDAExtension
         sources += source_hip_cu
         include_dirs += [
-            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha"
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha", 
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_decoder"
         ]
 
         include_dirs += [
