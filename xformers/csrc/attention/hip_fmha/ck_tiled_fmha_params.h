@@ -92,7 +92,6 @@ struct GroupedInferParams {
 };
 
 struct GroupedForwardParams : public GroupedInferParams {
-  bool use_dropout;
   bool compute_logsumexp;
 
   float dropout_prob;
