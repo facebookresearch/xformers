@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ck_tiled_fmha_batched_infer_dispatch.h"
+#include "ck_tiled_fmha_batched_infer_splitkv_dispatch.h"
 
 template <
     typename ScalarType,
@@ -17,10 +18,17 @@ template <
 void run_batched_infer_causalmask_bias_dropout_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  batched_infer_causalmask_bias_dropout_dispatch<
-      ScalarType,
-      kHasCausalMask,
-      kHasBias,
-      kHasDropout,
-      MaxK>::Run(param, stream);
+  if (!param.use_split_kv)
+    batched_infer_causalmask_bias_dropout_dispatch<
+        ScalarType,
+        kHasCausalMask,
+        kHasBias,
+        kHasDropout,
+        MaxK>::Run(param, stream);
+  else
+    batched_infer_splitkv_causalmask_bias_dropout_dispatch<
+        ScalarType,
+        kHasCausalMask,
+        kHasBias,
+        MaxK>::Run(param, stream);
 };

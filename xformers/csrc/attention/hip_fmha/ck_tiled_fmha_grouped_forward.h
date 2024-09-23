@@ -7,6 +7,7 @@
 #pragma once
 
 #include "ck_tiled_fmha_grouped_forward_dispatch.h"
+#include "ck_tiled_fmha_grouped_forward_splitkv_dispatch.h"
 
 template <
     typename ScalarType,
@@ -17,10 +18,17 @@ template <
 void run_grouped_forward_causalmask_bias_dropout_dispatch(
     GroupedForwardParams& param,
     hipStream_t stream) {
-  grouped_forward_causalmask_bias_dropout_dispatch<
-      ScalarType,
-      kHasCausalMask,
-      kHasBias,
-      kHasDropout,
-      MaxK>::Run(param, stream);
+  if (!param.use_split_kv)
+    grouped_forward_causalmask_bias_dropout_dispatch<
+        ScalarType,
+        kHasCausalMask,
+        kHasBias,
+        kHasDropout,
+        MaxK>::Run(param, stream);
+  else
+    grouped_forward_splitkv_causalmask_bias_dropout_dispatch<
+        ScalarType,
+        kHasCausalMask,
+        kHasBias,
+        MaxK>::Run(param, stream);
 };

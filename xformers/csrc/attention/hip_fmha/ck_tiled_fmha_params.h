@@ -51,6 +51,20 @@ struct BatchedForwardParams : public BatchedInferParams {
 
   // completely contiguous
   void* logsumexp_ptr;
+
+  // used by the splitkv forward kernel
+  int num_kv_splits;
+
+  bool use_split_kv;
+
+  // PBHM mode strides, completely contiguous
+  std::array<int, 4> lse_acc_strides;
+
+  // PBMHK mode strides
+  std::array<int, 5> out_acc_strides;
+
+  void* logsumexp_acc_ptr;
+  void* out_acc_ptr;
 };
 
 struct GroupedInferParams {
@@ -104,6 +118,21 @@ struct GroupedForwardParams : public GroupedInferParams {
 
   // completely contiguous
   void* logsumexp_ptr;
+
+  // used by the splitkv forward kernel
+  int num_kv_splits;
+
+  bool use_split_kv;
+
+  // PHM mode strides, completely contiguous, unpadded layout where M is
+  // concatten total seqlen_q for all batches
+  std::array<int, 3> lse_acc_strides;
+
+  // PMHK mode strides, last-dim contiguous
+  std::array<int, 4> out_acc_strides;
+
+  void* logsumexp_acc_ptr;
+  void* out_acc_ptr;
 };
 
 struct BatchedBackwardParams {

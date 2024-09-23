@@ -19,6 +19,7 @@
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include "ck_fmha_util.h"
+#include "ck_tiled_fmha_fwd_splitkv_selector.h"
 #include "ck_tiled_fmha_params.h"
 
 extern void batched_forward_fp16(
@@ -120,6 +121,9 @@ efficient_attention_forward_ck(
   at::Tensor logsumexp;
 
   at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
+
+  at::Tensor logsumexp_acc;
+  at::Tensor out_acc;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   int64_t philox_seed;
@@ -225,6 +229,34 @@ efficient_attention_forward_ck(
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0, 0};
     }
+
+    // added for support split_kv
+    p.num_kv_splits =
+        get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 128);
+
+    // fmha fwd split-kv kernel does not support dropout
+    p.use_split_kv = (!use_dropout && (p.num_kv_splits > 1)) ? true : false;
+
+    if (p.use_split_kv) {
+      out_acc =
+          at::empty({p.num_kv_splits, B, M, Hq, Kv}, opts.dtype(at::kFloat));
+      p.out_acc_ptr = out_acc.data_ptr();
+      p.out_acc_strides = {
+          static_cast<int>(out_acc.stride(0)),
+          static_cast<int>(out_acc.stride(1)),
+          static_cast<int>(out_acc.stride(2)),
+          static_cast<int>(out_acc.stride(3)),
+          static_cast<int>(out_acc.stride(4))};
+
+      logsumexp_acc =
+          at::empty({p.num_kv_splits, B, Hq, M}, opts.dtype(at::kFloat));
+      p.logsumexp_acc_ptr = logsumexp_acc.data_ptr();
+      p.lse_acc_strides = {
+          static_cast<int>(logsumexp_acc.stride(0)),
+          static_cast<int>(logsumexp_acc.stride(1)),
+          static_cast<int>(logsumexp_acc.stride(2)),
+          static_cast<int>(logsumexp_acc.stride(3))};
+    }
   };
 
   auto set_grouped_forward_params = [&](GroupedForwardParams& p) {
@@ -325,6 +357,31 @@ efficient_attention_forward_ck(
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0};
     }
+
+    // added for support split_kv
+    p.num_kv_splits = get_num_kv_splits_heuristic(
+        p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 128);
+
+    // fmha fwd split-kv kernel does not support dropout
+    p.use_split_kv = (!use_dropout && (p.num_kv_splits > 1)) ? true : false;
+
+    if (p.use_split_kv) {
+      out_acc = at::empty({p.num_kv_splits, M, Hq, Kv}, opts.dtype(at::kFloat));
+      p.out_acc_ptr = out_acc.data_ptr();
+      p.out_acc_strides = {
+          static_cast<int>(out_acc.stride(0)),
+          static_cast<int>(out_acc.stride(1)),
+          static_cast<int>(out_acc.stride(2)),
+          static_cast<int>(out_acc.stride(3))};
+
+      logsumexp_acc =
+          at::empty({p.num_kv_splits, 1, Hq, M}, opts.dtype(at::kFloat));
+      p.logsumexp_acc_ptr = logsumexp_acc.data_ptr();
+      p.lse_acc_strides = {
+          static_cast<int>(logsumexp_acc.stride(0)),
+          static_cast<int>(logsumexp_acc.stride(2)),
+          static_cast<int>(logsumexp_acc.stride(3))};
+    }
   };
 
   auto inDataType = query.scalar_type();
@@ -333,6 +390,11 @@ efficient_attention_forward_ck(
     BatchedForwardParams batched_forward_params;
 
     set_batched_forward_params(batched_forward_params);
+
+    if (batched_forward_params.use_split_kv)
+      std::cout << "Batched mode using split-kv kernel! num_splts = " << batched_forward_params.num_kv_splits << std::endl;
+    else
+      std::cout << "Batched mode using normal kernel! num_splts = " << batched_forward_params.num_kv_splits << std::endl;
 
     if (!batched_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
@@ -353,6 +415,11 @@ efficient_attention_forward_ck(
     GroupedForwardParams grouped_forward_params;
 
     set_grouped_forward_params(grouped_forward_params);
+
+    if (grouped_forward_params.use_split_kv)
+      std::cout << "Grouped mode using split-kv kernel! num_splts = " << grouped_forward_params.num_kv_splits << std::endl;
+    else
+      std::cout << "Grouped mode using normal kernel! num_splts = " << grouped_forward_params.num_kv_splits << std::endl;
 
     if (!grouped_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
