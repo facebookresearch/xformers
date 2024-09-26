@@ -440,8 +440,8 @@ def get_extensions():
         extension = CUDAExtension
         sources += source_hip_cu
         include_dirs += [
-            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha", 
-            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_decoder"
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha",
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_decoder",
         ]
 
         include_dirs += [
