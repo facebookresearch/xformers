@@ -297,8 +297,6 @@ class _FusedSequenceParallel:
                     for bs, si in zip(buddys_stagings[dst_rank], scattered_inputs):
                         bs.copy_(si)
 
-            self.write_stream.wait_stream(self.memcpy_stream)
-
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with the wait in Triton
             # or with wait [A] below).
@@ -306,7 +304,7 @@ class _FusedSequenceParallel:
                 Memset32bAsync.OPERATOR(
                     self.num_writes_into_buddys_staging[dst_rank],
                     seq_num,
-                    self.write_stream,
+                    self.memcpy_stream,
                 )
 
         # If we're doing a regular matmul, we have a faster fused Triton kernel!
@@ -484,15 +482,20 @@ class _FusedSequenceParallel:
 
                 my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
 
+                # Deduce which stream contains the last kernel launched.
+                final_stream = [current_stream, self.second_stream][
+                    (self.next_stream_idx - 1) % 2
+                ]
+                final_stream.wait_stream(current_stream)
+                final_stream.wait_stream(self.second_stream)
+
                 # Signal to buddy that we have written into the data so it can
                 # read from it (this write matches up with wait [1] below).
                 if _wait:
-                    self.write_stream.wait_stream(current_stream)
-                    self.write_stream.wait_stream(self.second_stream)
                     Memset32bAsync.OPERATOR(
                         self.num_writes_into_my_staging[dst_rank],
                         seq_num,
-                        self.write_stream,
+                        final_stream,
                     )
 
             my_matmul(
