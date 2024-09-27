@@ -143,9 +143,9 @@ class _FusedSequenceParallel:
         # tends to run the matmul first and delay the memcpy, which causes a
         # domino effect. We thus "encourage" it to prioritize the memcpy.
         self.memcpy_stream = torch.cuda.Stream(priority=-1)
-        # Use dedicated streams to parallelize other operations.
-        self.wait_stream = torch.cuda.Stream(priority=-1)
-        self.write_stream = torch.cuda.Stream(priority=-1)
+        # Use dedicated streams to run the wait kernels in the background.
+        self.compute_wait_stream = torch.cuda.Stream(priority=-1)
+        self.memcpy_wait_stream = torch.cuda.Stream(priority=-1)
 
         self.next_stream_idx = 0
 
@@ -240,24 +240,25 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
-
-        self.memcpy_stream.wait_stream(current_stream)
-
-        # Wait for buddy to signal that it read from the data before we
-        # overwrite it (this wait matches up with write [B] below).
-        if _wait:
-            WaitValues.OPERATOR(
-                [
-                    self.op_finished_consume[(self.my_rank + iter_) % self.world_size]
-                    for iter_ in range(1, self.world_size)
-                ],
-                prev_seq_num,
-                self.memcpy_stream,
-                timeout_s,
-            )
+        self.second_stream.wait_stream(current_stream)
+        self.compute_wait_stream.wait_stream(current_stream)
+        self.memcpy_wait_stream.wait_stream(current_stream)
+        stream_factory = self.make_stream_factory(current_stream)
 
         for iter_ in range(1, self.world_size):
             dst_rank = (self.my_rank + iter_) % self.world_size
+
+            # Wait for buddy to signal that it read from the data before we
+            # overwrite it (this wait matches up with write [B] below).
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.op_finished_consume[dst_rank]],
+                    prev_seq_num,
+                    self.memcpy_wait_stream,
+                    timeout_s,
+                )
+
+            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
@@ -273,13 +274,6 @@ class _FusedSequenceParallel:
                     self.memcpy_stream,
                 )
 
-        # Not needed, but it prevents the waits from starting much earlier
-        # than the rest of the op, which is confusing when profiling.
-        self.wait_stream.wait_stream(current_stream)
-
-        self.second_stream.wait_stream(current_stream)
-        stream_factory = self.make_stream_factory(current_stream)
-
         my_matmul(scattered_inputs, self.my_rank, stream_factory)
 
         for iter_ in range(1, self.world_size):
@@ -291,15 +285,17 @@ class _FusedSequenceParallel:
                 WaitValues.OPERATOR(
                     [self.comms_ready_consume[src_rank]],
                     seq_num,
-                    self.wait_stream,
+                    self.compute_wait_stream,
                     timeout_s,
                 )
-                current_stream.wait_stream(self.wait_stream)
-                self.second_stream.wait_stream(self.wait_stream)
+
+            current_stream.wait_stream(self.compute_wait_stream)
+            self.second_stream.wait_stream(self.compute_wait_stream)
 
             my_matmul([s[src_rank] for s in stagings], src_rank, stream_factory)
 
         current_stream.wait_stream(self.second_stream)
+        current_stream.wait_stream(self.memcpy_stream)
 
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [B] above).
@@ -364,27 +360,26 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
-
-        self.wait_stream.wait_stream(current_stream)
-
-        # Wait for buddy to signal that it read from the data before we
-        # overwrite it (this wait matches up with write [2] below).
-        if _wait:
-            WaitValues.OPERATOR(
-                [
-                    self.op_finished_consume[(self.my_rank + iter_) % self.world_size]
-                    for iter_ in range(1, self.world_size)
-                ],
-                prev_seq_num,
-                current_stream,
-                timeout_s,
-            )
-
         self.second_stream.wait_stream(current_stream)
+        self.compute_wait_stream.wait_stream(current_stream)
+        self.memcpy_wait_stream.wait_stream(current_stream)
         stream_factory = self.make_stream_factory(current_stream)
 
         for iter_ in range(1, self.world_size):
             dst_rank = (self.my_rank + iter_) % self.world_size
+
+            # Wait for buddy to signal that it read from the data before we
+            # overwrite it (this wait matches up with write [2] below).
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.op_finished_consume[dst_rank]],
+                    prev_seq_num,
+                    self.compute_wait_stream,
+                    timeout_s,
+                )
+
+            current_stream.wait_stream(self.compute_wait_stream)
+            self.second_stream.wait_stream(self.compute_wait_stream)
 
             my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
 
@@ -410,8 +405,6 @@ class _FusedSequenceParallel:
             stream_factory,
         )
 
-        current_stream.wait_stream(self.second_stream)
-
         for iter_ in range(1, self.world_size):
             src_rank = (self.my_rank - iter_) % self.world_size
 
@@ -421,17 +414,18 @@ class _FusedSequenceParallel:
                 WaitValues.OPERATOR(
                     [self.comms_ready_consume[src_rank]],
                     seq_num,
-                    self.wait_stream,
+                    self.memcpy_wait_stream,
                     timeout_s,
                 )
 
-            self.memcpy_stream.wait_stream(self.wait_stream)
+            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
                     for go, bs in zip(gathered_outputs, buddys_stagings[src_rank]):
                         go[src_rank].copy_(bs)
 
+        current_stream.wait_stream(self.second_stream)
         current_stream.wait_stream(self.memcpy_stream)
 
         for go, so in zip(gathered_outputs, scattered_outputs):
