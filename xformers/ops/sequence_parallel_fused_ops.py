@@ -4,23 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
-    overload,
-)
+from typing import Callable, Dict, List, Optional, Sequence, Union, overload
 
 import torch
 import torch.distributed as dist
 import torch.multiprocessing.reductions
 
-from .. import _is_triton_available
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .ipc import init_ipc
 
@@ -112,7 +101,6 @@ class _FusedSequenceParallel:
         self.my_device = device
         self.my_rank = group.rank()
         self.world_size = group.size()
-        self.my_device_capability = torch.cuda.get_device_capability(self.my_device)
 
         self.p2p_comms = init_ipc(group, self.my_device)
 
@@ -190,22 +178,6 @@ class _FusedSequenceParallel:
                 for rank, conn in enumerate(self.p2p_comms)
             ]
 
-    def _should_use_triton(self, _triton: bool):
-        if not int(os.getenv("XFORMERS_FUSED_SEQPAR_ENABLE_TRITON", "1")):
-            return False
-        if not _is_triton_available():
-            return False
-        # Triton seems to be having issues on P100 and V100 GPUs, such as
-        # https://github.com/openai/triton/issues/1609
-        # https://github.com/openai/triton/issues/1610
-        # https://github.com/openai/triton/issues/1257#issuecomment-1532616965
-        # and, in recent Triton versions (Jan 2024), returning wrong values.
-        if self.my_device_capability < (8, 0):
-            return False
-        if not _triton:
-            return False
-        return True
-
     def make_stream_factory(
         self, current_stream: torch.cuda.Stream
     ) -> Callable[[], torch.cuda.Stream]:
@@ -226,9 +198,6 @@ class _FusedSequenceParallel:
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
-        _triton: bool = True,
-        _is_regular_matmul: bool = False,
-        _extra_triton_args: Mapping[str, Any] = {},
     ):
         """Perform a fused all-gather followed by a linear layer"""
 
@@ -298,8 +267,7 @@ class _FusedSequenceParallel:
                         bs.copy_(si)
 
             # Signal to buddy that we have written into the data so it can
-            # read from it (this write matches up with the wait in Triton
-            # or with wait [A] below).
+            # read from it (this write matches up with wait [A] below).
             if _wait:
                 Memset32bAsync.OPERATOR(
                     self.num_writes_into_buddys_staging[dst_rank],
@@ -307,57 +275,33 @@ class _FusedSequenceParallel:
                     self.memcpy_stream,
                 )
 
-        # If we're doing a regular matmul, we have a faster fused Triton kernel!
-        if _is_regular_matmul and self._should_use_triton(_triton):
-            from ._triton.sequence_parallel_fused_kernels import (
-                BACKWARDS_WITH_ME_FIRST,
-                _launch_triton_matmul,
-            )
+        # Not needed, but it prevents the waits from starting much earlier
+        # than the rest of the op, which is confusing when profiling.
+        self.wait_stream.wait_stream(current_stream)
+
+        self.second_stream.wait_stream(current_stream)
+        stream_factory = self.make_stream_factory(current_stream)
+
+        my_matmul(scattered_inputs, self.my_rank, stream_factory)
+
+        for iter_ in range(1, self.world_size):
+            src_rank = (self.my_rank - iter_) % self.world_size
 
             # Wait for buddy to signal that it wrote into the data before we
             # read from it (this wait matches up with write [A] above).
-            _launch_triton_matmul(
-                a_my_shard=scattered_inputs[0].flatten(0, -2),
-                a=stagings[0].flatten(0, -2),
-                my_rank=self.my_rank,
-                world_size=self.world_size,
-                wait_counters=self.num_writes_into_my_staging,
-                write_counters=None,
-                direction=BACKWARDS_WITH_ME_FIRST,
-                seq_num=seq_num,
-                timeout_s=timeout_s,
-                _wait=_wait,
-                **_extra_triton_args,
-            )
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.num_writes_into_my_staging[src_rank]],
+                    seq_num,
+                    self.wait_stream,
+                    timeout_s,
+                )
+                current_stream.wait_stream(self.wait_stream)
+                self.second_stream.wait_stream(self.wait_stream)
 
-        else:
-            # Not needed, but it prevents the waits from starting much earlier
-            # than the rest of the op, which is confusing when profiling.
-            self.wait_stream.wait_stream(current_stream)
+            my_matmul([s[src_rank] for s in stagings], src_rank, stream_factory)
 
-            self.second_stream.wait_stream(current_stream)
-            stream_factory = self.make_stream_factory(current_stream)
-
-            my_matmul(scattered_inputs, self.my_rank, stream_factory)
-
-            for iter_ in range(1, self.world_size):
-                src_rank = (self.my_rank - iter_) % self.world_size
-
-                # Wait for buddy to signal that it wrote into the data before we
-                # read from it (this wait matches up with write [A] above).
-                if _wait:
-                    WaitValues.OPERATOR(
-                        [self.num_writes_into_my_staging[src_rank]],
-                        seq_num,
-                        self.wait_stream,
-                        timeout_s,
-                    )
-                    current_stream.wait_stream(self.wait_stream)
-                    self.second_stream.wait_stream(self.wait_stream)
-
-                my_matmul([s[src_rank] for s in stagings], src_rank, stream_factory)
-
-            current_stream.wait_stream(self.second_stream)
+        current_stream.wait_stream(self.second_stream)
 
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [B] above).
@@ -383,9 +327,6 @@ class _FusedSequenceParallel:
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
-        _triton: bool = True,
-        _is_regular_matmul: bool = False,
-        _extra_triton_args: Mapping[str, Any] = {},
     ):
         """Perform a fused linear layer followed by a reduce-scatter"""
 
@@ -448,70 +389,43 @@ class _FusedSequenceParallel:
                 timeout_s,
             )
 
-        # If we're doing a regular matmul, we have a faster fused Triton kernel!
-        if _is_regular_matmul and self._should_use_triton(_triton):
-            from ._triton.sequence_parallel_fused_kernels import (
-                FORWARDS_WITH_ME_LAST,
-                _launch_triton_matmul,
-            )
+        self.second_stream.wait_stream(current_stream)
+        stream_factory = self.make_stream_factory(current_stream)
+
+        for iter_ in range(1, self.world_size):
+            dst_rank = (self.my_rank + iter_) % self.world_size
+
+            my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
+
+            # Deduce which stream contains the last kernel launched.
+            final_stream = [current_stream, self.second_stream][
+                (self.next_stream_idx - 1) % 2
+            ]
+            final_stream.wait_stream(current_stream)
+            final_stream.wait_stream(self.second_stream)
 
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [1] below).
-            _launch_triton_matmul(
-                cs=[s.flatten(0, -2) for s in stagings],
-                cs_my_shard=[
-                    go[self.my_rank].flatten(0, -2) for go in gathered_outputs
-                ],
-                my_rank=self.my_rank,
-                world_size=self.world_size,
-                wait_counters=None,
-                write_counters=self.num_writes_into_my_staging,
-                direction=FORWARDS_WITH_ME_LAST,
-                seq_num=seq_num,
-                timeout_s=timeout_s,
-                _wait=_wait,
-                **_extra_triton_args,
-            )
+            if _wait:
+                Memset32bAsync.OPERATOR(
+                    self.num_writes_into_my_staging[dst_rank],
+                    seq_num,
+                    final_stream,
+                )
 
-        else:
-            self.second_stream.wait_stream(current_stream)
-            stream_factory = self.make_stream_factory(current_stream)
+        my_matmul(
+            [o[self.my_rank] for o in gathered_outputs],
+            self.my_rank,
+            stream_factory,
+        )
 
-            for iter_ in range(1, self.world_size):
-                dst_rank = (self.my_rank + iter_) % self.world_size
-
-                my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
-
-                # Deduce which stream contains the last kernel launched.
-                final_stream = [current_stream, self.second_stream][
-                    (self.next_stream_idx - 1) % 2
-                ]
-                final_stream.wait_stream(current_stream)
-                final_stream.wait_stream(self.second_stream)
-
-                # Signal to buddy that we have written into the data so it can
-                # read from it (this write matches up with wait [1] below).
-                if _wait:
-                    Memset32bAsync.OPERATOR(
-                        self.num_writes_into_my_staging[dst_rank],
-                        seq_num,
-                        final_stream,
-                    )
-
-            my_matmul(
-                [o[self.my_rank] for o in gathered_outputs],
-                self.my_rank,
-                stream_factory,
-            )
-
-            current_stream.wait_stream(self.second_stream)
+        current_stream.wait_stream(self.second_stream)
 
         for iter_ in range(1, self.world_size):
             src_rank = (self.my_rank - iter_) % self.world_size
 
             # Wait for buddy to signal that it wrote into the data before we
-            # read from it (this wait matches up with the write in Triton
-            # or with write [1] above).
+            # read from it (this wait matches up with write [1] above).
             if _wait:
                 WaitValues.OPERATOR(
                     [self.num_writes_into_buddys_staging[src_rank]],
@@ -720,7 +634,6 @@ def fused_allgather_and_linear(
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-        _triton=private_args_DO_NOT_USE.get("_triton", True),
         scale_scattered_input=scale_scattered_input,
         scales_weights=scales_weights,
     )
@@ -744,7 +657,6 @@ def _fused_allgather_and_linear_custom_op(
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
-    _triton: bool,
     scale_scattered_input: torch.Tensor,
     scales_weights: Sequence[Optional[torch.Tensor]],
 ) -> None:
@@ -769,7 +681,6 @@ def _fused_allgather_and_linear_custom_op(
                 else:
                     torch.matmul(inputs[0], w.t(), out=go[src_rank])
 
-    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_allgather_and_anything(
         [scattered_input],
         my_matmul,
@@ -777,13 +688,6 @@ def _fused_allgather_and_linear_custom_op(
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
-        _triton=_triton,
-        _is_regular_matmul=_is_regular_matmul,
-        _extra_triton_args=dict(
-            bs=[w.t() for w in weights],
-            cs=[go.flatten(0, -2) for go in gathered_outputs],
-            cs_my_shard=None,
-        ),
     )
 
 
@@ -839,9 +743,6 @@ def fused_allgather_and_anything(
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
             _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-            _triton=private_args_DO_NOT_USE.get("_triton", True),
-            _is_regular_matmul=private_args_DO_NOT_USE.get("_is_regular_matmul", False),
-            _extra_triton_args=private_args_DO_NOT_USE.get("_extra_triton_args", {}),
         )
 
 
@@ -962,7 +863,6 @@ def fused_linear_and_reducescatter(
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-        _triton=private_args_DO_NOT_USE.get("_triton", True),
         scale_gathered_input=scale_gathered_input,
         scales_weights=scales_weights,
     )
@@ -986,7 +886,6 @@ def _fused_linear_and_reducescatter_custom_op(
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
-    _triton: bool,
     scale_gathered_input: torch.Tensor,
     scales_weights: Sequence[Optional[torch.Tensor]],
 ) -> None:
@@ -1011,7 +910,6 @@ def _fused_linear_and_reducescatter_custom_op(
                 else:
                     torch.matmul(gathered_input[dst_rank], w.t(), out=o)
 
-    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_anything_and_reducescatter(
         my_matmul,
         scattered_outputs,
@@ -1019,13 +917,6 @@ def _fused_linear_and_reducescatter_custom_op(
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
-        _triton=_triton,
-        _is_regular_matmul=_is_regular_matmul,
-        _extra_triton_args=dict(
-            a_my_shard=None,
-            a=gathered_input.flatten(0, -2),
-            bs=[w.t() for w in weights],
-        ),
     )
 
 
@@ -1085,7 +976,4 @@ def fused_anything_and_reducescatter(
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
             _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-            _triton=private_args_DO_NOT_USE.get("_triton", True),
-            _is_regular_matmul=private_args_DO_NOT_USE.get("_is_regular_matmul", False),
-            _extra_triton_args=private_args_DO_NOT_USE.get("_extra_triton_args", {}),
         )
