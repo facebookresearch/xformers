@@ -361,8 +361,6 @@ class _FusedSequenceParallel:
 
             current_stream.wait_stream(self.second_stream)
 
-        self.write_stream.wait_stream(current_stream)
-
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [B] above).
         if _wait:
@@ -374,7 +372,7 @@ class _FusedSequenceParallel:
                     for iter_ in range(1, self.world_size)
                 ],
                 seq_num,
-                self.write_stream,
+                current_stream,
             )
 
     def linear_and_reducescatter(
@@ -531,8 +529,6 @@ class _FusedSequenceParallel:
         for go, so in zip(gathered_outputs, scattered_outputs):
             torch.sum(go, dim=0, out=so)
 
-        self.write_stream.wait_stream(current_stream)
-
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [2] above).
         if _wait:
@@ -544,7 +540,7 @@ class _FusedSequenceParallel:
                     for iter_ in range(1, self.world_size)
                 ],
                 seq_num,
-                self.write_stream,
+                current_stream,
             )
 
 
