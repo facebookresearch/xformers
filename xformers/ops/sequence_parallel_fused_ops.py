@@ -182,7 +182,7 @@ class _FusedSequenceParallel:
                 dtype=torch.uint8,
             )
             if random_init:
-                self.staging.normal_()
+                self.staging.view(torch.bfloat16).normal_()
             for rank, conn in enumerate(self.p2p_comms):
                 if conn is not None:
                     conn.send(self.staging[:, rank])
