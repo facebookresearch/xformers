@@ -489,8 +489,8 @@ class _FusedSequenceParallel:
                 if _wait:
                     self.write_stream.wait_stream(current_stream)
                     self.write_stream.wait_stream(self.second_stream)
-                    WriteValues.OPERATOR(
-                        [self.num_writes_into_my_staging[dst_rank]],
+                    Memset32bAsync.OPERATOR(
+                        self.num_writes_into_my_staging[dst_rank],
                         seq_num,
                         self.write_stream,
                     )
