@@ -108,18 +108,15 @@ class _FusedSequenceParallel:
         self,
         device: torch.device,
         group: dist.ProcessGroup,
-        num_stripes: int,
     ):
         self.my_device = device
         self.my_rank = group.rank()
         self.world_size = group.size()
-        self.num_stripes = num_stripes
         self.my_device_capability = torch.cuda.get_device_capability(self.my_device)
 
         self.p2p_comms = init_ipc(group, self.my_device)
 
-        self.next_stripe = 0
-        self.next_seq_nums = [1] * self.num_stripes
+        self.next_seq_num = 1
 
         # My staging buffers
         self.staging = torch.empty((0,), device=self.my_device)
@@ -131,10 +128,10 @@ class _FusedSequenceParallel:
 
         # Allocate buffers for my inboxes
         self.num_writes_into_my_staging = torch.zeros(
-            (self.world_size, self.num_stripes), dtype=torch.int, device=self.my_device
+            (self.world_size,), dtype=torch.int, device=self.my_device
         )
         self.num_reads_from_buddys_staging = torch.zeros(
-            (self.world_size, self.num_stripes), dtype=torch.int, device=self.my_device
+            (self.world_size,), dtype=torch.int, device=self.my_device
         )
 
         # Send my handles to buddies
@@ -177,7 +174,7 @@ class _FusedSequenceParallel:
             # ensure that the staging buffer doesn't contain all zeroes as that
             # makes the matmuls go faster (better L2 compression or something).
             self.staging = torch.empty(
-                (self.num_stripes, self.world_size, total_num_bytes),
+                (self.world_size, total_num_bytes),
                 device=self.my_device,
                 dtype=torch.uint8,
             )
@@ -185,7 +182,7 @@ class _FusedSequenceParallel:
                 self.staging.view(torch.bfloat16).normal_()
             for rank, conn in enumerate(self.p2p_comms):
                 if conn is not None:
-                    conn.send(self.staging[:, rank])
+                    conn.send(self.staging[rank])
             self.buddys_staging = [
                 torch.empty((0,), device=self.my_device)
                 if conn is None
@@ -245,17 +242,14 @@ class _FusedSequenceParallel:
             total_scattered_input_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        stripe = self.next_stripe % self.num_stripes
-        self.next_stripe += 1
-
-        seq_num = self.next_seq_nums[stripe] % SEQ_NUM_WRAP_AROUND
+        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
         prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_nums[stripe] += 1
+        self.next_seq_num += 1
 
         stagings = [
             s.view((self.world_size,) + si.shape)
             for s, si in zip(
-                self.staging.view(dtype)[stripe, :, :total_scattered_input_numel].split(
+                self.staging.view(dtype)[:, :total_scattered_input_numel].split(
                     scattered_input_numels, dim=-1
                 ),
                 scattered_inputs,
@@ -267,7 +261,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(si.shape)
                 for s, si in zip(
-                    bs.view(dtype)[stripe, :total_scattered_input_numel].split(
+                    bs.view(dtype)[:total_scattered_input_numel].split(
                         scattered_input_numels, dim=-1
                     ),
                     scattered_inputs,
@@ -286,7 +280,7 @@ class _FusedSequenceParallel:
             WaitValues.OPERATOR(
                 [
                     self.num_reads_from_buddys_staging[
-                        (self.my_rank + iter_) % self.world_size, stripe
+                        (self.my_rank + iter_) % self.world_size
                     ]
                     for iter_ in range(1, self.world_size)
                 ],
@@ -310,7 +304,7 @@ class _FusedSequenceParallel:
             # or with wait [A] below).
             if _wait:
                 Memset32bAsync.OPERATOR(
-                    self.num_writes_into_buddys_staging[dst_rank][stripe],
+                    self.num_writes_into_buddys_staging[dst_rank],
                     seq_num,
                     self.write_stream,
                 )
@@ -332,9 +326,7 @@ class _FusedSequenceParallel:
                 wait_counters=self.num_writes_into_my_staging,
                 write_counters=None,
                 direction=BACKWARDS_WITH_ME_FIRST,
-                stripe=stripe,
                 seq_num=seq_num,
-                num_stripes=self.num_stripes,
                 timeout_s=timeout_s,
                 _wait=_wait,
                 **_extra_triton_args,
@@ -357,7 +349,7 @@ class _FusedSequenceParallel:
                 # read from it (this wait matches up with write [A] above).
                 if _wait:
                     WaitValues.OPERATOR(
-                        [self.num_writes_into_my_staging[src_rank, stripe]],
+                        [self.num_writes_into_my_staging[src_rank]],
                         seq_num,
                         self.wait_stream,
                         timeout_s,
@@ -378,7 +370,7 @@ class _FusedSequenceParallel:
                 [
                     self.num_reads_from_my_staging[
                         (self.my_rank - iter_) % self.world_size
-                    ][stripe]
+                    ]
                     for iter_ in range(1, self.world_size)
                 ],
                 seq_num,
@@ -413,19 +405,16 @@ class _FusedSequenceParallel:
             total_scattered_output_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        stripe = self.next_stripe % self.num_stripes
-        self.next_stripe += 1
-
-        seq_num = self.next_seq_nums[stripe] % SEQ_NUM_WRAP_AROUND
+        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
         prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_nums[stripe] += 1
+        self.next_seq_num += 1
 
         stagings = [
             s.view((self.world_size,) + so.shape)
             for s, so in zip(
-                self.staging.view(dtype)[
-                    stripe, :, :total_scattered_output_numel
-                ].split(scattered_output_numels, dim=-1),
+                self.staging.view(dtype)[:, :total_scattered_output_numel].split(
+                    scattered_output_numels, dim=-1
+                ),
                 scattered_outputs,
             )
         ]
@@ -435,7 +424,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(so.shape)
                 for s, so in zip(
-                    bs.view(dtype)[stripe, :total_scattered_output_numel].split(
+                    bs.view(dtype)[:total_scattered_output_numel].split(
                         scattered_output_numels, dim=-1
                     ),
                     scattered_outputs,
@@ -455,7 +444,7 @@ class _FusedSequenceParallel:
                 [
                     self.num_reads_from_my_staging[
                         (self.my_rank + iter_) % self.world_size
-                    ][stripe]
+                    ]
                     for iter_ in range(1, self.world_size)
                 ],
                 prev_seq_num,
@@ -482,9 +471,7 @@ class _FusedSequenceParallel:
                 wait_counters=None,
                 write_counters=self.num_writes_into_my_staging,
                 direction=FORWARDS_WITH_ME_LAST,
-                stripe=stripe,
                 seq_num=seq_num,
-                num_stripes=self.num_stripes,
                 timeout_s=timeout_s,
                 _wait=_wait,
                 **_extra_triton_args,
@@ -505,7 +492,7 @@ class _FusedSequenceParallel:
                     self.write_stream.wait_stream(current_stream)
                     self.write_stream.wait_stream(self.second_stream)
                     WriteValues.OPERATOR(
-                        [self.num_writes_into_my_staging[dst_rank, stripe]],
+                        [self.num_writes_into_my_staging[dst_rank]],
                         seq_num,
                         self.write_stream,
                     )
@@ -526,7 +513,7 @@ class _FusedSequenceParallel:
             # or with write [1] above).
             if _wait:
                 WaitValues.OPERATOR(
-                    [self.num_writes_into_buddys_staging[src_rank][stripe]],
+                    [self.num_writes_into_buddys_staging[src_rank]],
                     seq_num,
                     self.wait_stream,
                     timeout_s,
@@ -552,7 +539,7 @@ class _FusedSequenceParallel:
             WriteValues.OPERATOR(
                 [
                     self.num_reads_from_buddys_staging[
-                        (self.my_rank - iter_) % self.world_size, stripe
+                        (self.my_rank - iter_) % self.world_size
                     ]
                     for iter_ in range(1, self.world_size)
                 ],
@@ -581,7 +568,7 @@ def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> b
 
 
 def _lazy_init(
-    device: torch.device, group: dist.ProcessGroup, num_stripes: int
+    device: torch.device, group: dist.ProcessGroup
 ) -> Optional[_FusedSequenceParallel]:
     world_size = group.size()
     try:
@@ -594,7 +581,7 @@ def _lazy_init(
         elif not _can_ranks_communicate_all_to_all_over_nvlink(group):
             obj = None
         else:
-            obj = _FusedSequenceParallel(device, group, num_stripes)
+            obj = _FusedSequenceParallel(device, group)
         CACHE[id(group)] = obj
     return obj
 
@@ -610,7 +597,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[torch.Tensor] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -627,7 +613,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[List[torch.Tensor]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -643,7 +628,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -676,10 +660,7 @@ def fused_allgather_and_linear(
     buffer will be the maximum needed by any of them. Each call, when it starts,
     must first wait for the previous call to finish using the staging buffer. In
     normal conditions, where there's some other operation between two calls,
-    this isn't an issue. However, when doing back-to-back calls (like in
-    benchmarks) it can introduce artificial delays. To hide them, we allow using
-    more than one staging buffer, which will be cycled through, thus trading
-    memory for speed. This can be controlled using the num_stripes argument.
+    this isn't an issue.
 
     Supports FP8 gemm for tensor-wise quantized weight and input tensors.
     To enable FP8 gemm:
@@ -737,7 +718,6 @@ def fused_allgather_and_linear(
         weights,
         group.group_name,
         gathered_outputs,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
@@ -762,7 +742,6 @@ def _fused_allgather_and_linear_custom_op(
     weights: List[torch.Tensor],
     process_group_name: str,
     gathered_outputs: List[torch.Tensor],
-    num_stripes: int,
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
@@ -796,7 +775,6 @@ def _fused_allgather_and_linear_custom_op(
         [scattered_input],
         my_matmul,
         group=process_group,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
@@ -817,7 +795,6 @@ def fused_allgather_and_anything(
     ],
     *,
     group: dist.ProcessGroup,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
@@ -834,7 +811,7 @@ def fused_allgather_and_anything(
 
     gathered_input_shapes = [(world_size,) + si.shape for si in scattered_inputs]
 
-    obj = _lazy_init(scattered_inputs[0].device, group, num_stripes)
+    obj = _lazy_init(scattered_inputs[0].device, group)
 
     if world_size == 1:
         my_matmul(scattered_inputs, 0, _default_stream_factory)
@@ -857,7 +834,6 @@ def fused_allgather_and_anything(
     # Fast path
     else:
         assert scattered_inputs[0].device == obj.my_device
-        assert obj.num_stripes == num_stripes
         obj.allgather_and_linear(
             scattered_inputs,
             my_matmul,
@@ -877,7 +853,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[torch.Tensor] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -894,7 +869,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[List[torch.Tensor]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -910,7 +884,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -987,7 +960,6 @@ def fused_linear_and_reducescatter(
         weights,
         group.group_name,
         scattered_outputs,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
@@ -1012,7 +984,6 @@ def _fused_linear_and_reducescatter_custom_op(
     weights: List[torch.Tensor],
     process_group_name: str,
     scattered_outputs: List[torch.Tensor],
-    num_stripes: int,
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
@@ -1046,7 +1017,6 @@ def _fused_linear_and_reducescatter_custom_op(
         my_matmul,
         scattered_outputs,
         group=process_group,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
@@ -1067,7 +1037,6 @@ def fused_anything_and_reducescatter(
     scattered_outputs: List[torch.Tensor],
     *,
     group: dist.ProcessGroup,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
@@ -1084,7 +1053,7 @@ def fused_anything_and_reducescatter(
 
     gathered_output_shapes = [(world_size,) + so.shape for so in scattered_outputs]
 
-    obj = _lazy_init(scattered_outputs[0].device, group, num_stripes)
+    obj = _lazy_init(scattered_outputs[0].device, group)
 
     if world_size == 1:
         my_matmul(scattered_outputs, 0, _default_stream_factory)
@@ -1107,7 +1076,6 @@ def fused_anything_and_reducescatter(
     # Fast path
     else:
         assert scattered_outputs[0].device == obj.my_device
-        assert obj.num_stripes == num_stripes
         gathered_outputs = [
             scattered_outputs[0].new_empty(gos) for gos in gathered_output_shapes
         ]

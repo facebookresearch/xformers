@@ -241,14 +241,12 @@ def wait_for_recv(
     wait_counters,
     other_rank,
     my_rank,
-    stripe,
-    num_stripes,
     _wait,
     do_wait,
     timeout_ns,
 ):
     if (_wait and do_wait) and other_rank != my_rank:
-        wait_counter = wait_counters + other_rank * num_stripes + stripe
+        wait_counter = wait_counters + other_rank
         start_time_ns = tl.extra.cuda.globaltimer()
         num_spins = 0
         # There's no atomic_load, hence we simulate it with a CAS.
@@ -331,8 +329,6 @@ def trigger_send(
     write_counters,
     other_rank,
     my_rank,
-    num_stripes,
-    stripe,
     num_blocks_3d,
     _wait,
     do_write,
@@ -347,7 +343,7 @@ def trigger_send(
             + 1
         )
         tl.atomic_xchg(
-            write_counters + other_rank * num_stripes + stripe + tl.arange(0, 1),
+            write_counters + other_rank + tl.arange(0, 1),
             seq_num,
             mask=num_blocks_done == num_blocks_3d,
             sem="release",
@@ -390,9 +386,7 @@ def our_estimate_matmul_time(B1, C1, N1, N2, N3, **kwargs):
         "do_wait",
         "do_write",
         "direction",
-        "stripe",
         "seq_num",
-        "num_stripes",
         "_wait",
         "my_rank",
         "world_size",
@@ -437,9 +431,7 @@ def _xformers_seqpar_matmul_kernel(
     do_wait,
     do_write,
     direction,
-    stripe,
     seq_num,
-    num_stripes,
     _wait,
     my_rank,
     world_size,
@@ -509,8 +501,6 @@ def _xformers_seqpar_matmul_kernel(
         wait_counters,
         other_rank,
         my_rank,
-        stripe,
-        num_stripes,
         _wait,
         do_wait,
         timeout_ns,
@@ -546,8 +536,6 @@ def _xformers_seqpar_matmul_kernel(
         write_counters,
         other_rank,
         my_rank,
-        num_stripes,
-        stripe,
         num_blocks_2d * SPLIT_K,
         _wait,
         do_write,
@@ -575,15 +563,13 @@ def _launch_triton_matmul(
     wait_counters: Optional[torch.Tensor],
     write_counters: Optional[torch.Tensor],
     direction: int,
-    stripe: int,
     seq_num: int,
-    num_stripes: int,
     timeout_s: int,
     _wait: bool = True,
 ) -> None:
     # checks constraints
     assert 0 <= my_rank < world_size
-    assert 0 <= stripe < num_stripes and 0 <= seq_num < 2**8
+    assert 0 <= seq_num < 2**8
     assert direction in (BACKWARDS_WITH_ME_FIRST, FORWARDS_WITH_ME_LAST)
 
     assert len(bs) == len(cs)
@@ -629,7 +615,7 @@ def _launch_triton_matmul(
         cs_my_shard = [c.tensor_split(world_size)[my_rank] for c in cs]
 
     if wait_counters is not None:
-        assert wait_counters.shape == (world_size, num_stripes)
+        assert wait_counters.shape == (world_size,)
         assert wait_counters.dtype is torch.int
         assert wait_counters.is_contiguous()
         do_wait = True
@@ -638,7 +624,7 @@ def _launch_triton_matmul(
         wait_counters = torch.empty((0,), dtype=torch.int, device=a.device)
 
     if write_counters is not None:
-        assert write_counters.shape == (world_size, num_stripes)
+        assert write_counters.shape == (world_size,)
         assert write_counters.dtype is torch.int
         assert write_counters.is_contiguous()
         do_write = True
@@ -720,9 +706,7 @@ def _launch_triton_matmul(
         do_wait=do_wait,
         do_write=do_write,
         direction=direction,
-        stripe=stripe,
         seq_num=seq_num,
-        num_stripes=num_stripes,
         _wait=_wait,
         my_rank=my_rank,
         world_size=world_size,
