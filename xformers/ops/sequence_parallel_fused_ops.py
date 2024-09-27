@@ -114,26 +114,26 @@ class _FusedSequenceParallel:
             torch.empty((0,), device=self.my_device)
         ] * self.world_size
 
-        # Allocate buffers for my inboxes
-        self.num_writes_into_my_staging = torch.zeros(
-            (self.world_size,), dtype=torch.int, device=self.my_device
+        # Allocate buffers for locally-hosted counters
+        self.op_finished_produce = torch.zeros(
+            (), dtype=torch.int, device=self.my_device
         )
-        self.num_reads_from_buddys_staging = torch.zeros(
+        self.comms_ready_consume = torch.zeros(
             (self.world_size,), dtype=torch.int, device=self.my_device
         )
 
         # Send my handles to buddies
         for rank, conn in enumerate(self.p2p_comms):
             if conn is not None:
-                conn.send(self.num_writes_into_my_staging[rank])
-                conn.send(self.num_reads_from_buddys_staging[rank])
+                conn.send(self.op_finished_produce)
+                conn.send(self.comms_ready_consume[rank])
 
         # Open buddies' inboxes as my outboxes
-        self.num_writes_into_buddys_staging = [
+        self.op_finished_consume = [
             torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
             for conn in self.p2p_comms
         ]
-        self.num_reads_from_my_staging = [
+        self.comms_ready_produce = [
             torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
             for conn in self.p2p_comms
         ]
@@ -248,9 +248,7 @@ class _FusedSequenceParallel:
         if _wait:
             WaitValues.OPERATOR(
                 [
-                    self.num_reads_from_buddys_staging[
-                        (self.my_rank + iter_) % self.world_size
-                    ]
+                    self.op_finished_consume[(self.my_rank + iter_) % self.world_size]
                     for iter_ in range(1, self.world_size)
                 ],
                 prev_seq_num,
@@ -270,7 +268,7 @@ class _FusedSequenceParallel:
             # read from it (this write matches up with wait [A] below).
             if _wait:
                 Memset32bAsync.OPERATOR(
-                    self.num_writes_into_buddys_staging[dst_rank],
+                    self.comms_ready_produce[dst_rank],
                     seq_num,
                     self.memcpy_stream,
                 )
@@ -291,7 +289,7 @@ class _FusedSequenceParallel:
             # read from it (this wait matches up with write [A] above).
             if _wait:
                 WaitValues.OPERATOR(
-                    [self.num_writes_into_my_staging[src_rank]],
+                    [self.comms_ready_consume[src_rank]],
                     seq_num,
                     self.wait_stream,
                     timeout_s,
@@ -307,12 +305,7 @@ class _FusedSequenceParallel:
         # overwrite it (this write matches up with wait [B] above).
         if _wait:
             WriteValues.OPERATOR(
-                [
-                    self.num_reads_from_my_staging[
-                        (self.my_rank - iter_) % self.world_size
-                    ]
-                    for iter_ in range(1, self.world_size)
-                ],
+                [self.op_finished_produce],
                 seq_num,
                 current_stream,
             )
@@ -379,9 +372,7 @@ class _FusedSequenceParallel:
         if _wait:
             WaitValues.OPERATOR(
                 [
-                    self.num_reads_from_my_staging[
-                        (self.my_rank + iter_) % self.world_size
-                    ]
+                    self.op_finished_consume[(self.my_rank + iter_) % self.world_size]
                     for iter_ in range(1, self.world_size)
                 ],
                 prev_seq_num,
@@ -408,7 +399,7 @@ class _FusedSequenceParallel:
             # read from it (this write matches up with wait [1] below).
             if _wait:
                 Memset32bAsync.OPERATOR(
-                    self.num_writes_into_my_staging[dst_rank],
+                    self.comms_ready_produce[dst_rank],
                     seq_num,
                     final_stream,
                 )
@@ -428,7 +419,7 @@ class _FusedSequenceParallel:
             # read from it (this wait matches up with write [1] above).
             if _wait:
                 WaitValues.OPERATOR(
-                    [self.num_writes_into_buddys_staging[src_rank]],
+                    [self.comms_ready_consume[src_rank]],
                     seq_num,
                     self.wait_stream,
                     timeout_s,
@@ -450,12 +441,7 @@ class _FusedSequenceParallel:
         # overwrite it (this write matches up with wait [2] above).
         if _wait:
             WriteValues.OPERATOR(
-                [
-                    self.num_reads_from_buddys_staging[
-                        (self.my_rank - iter_) % self.world_size
-                    ]
-                    for iter_ in range(1, self.world_size)
-                ],
+                [self.op_finished_produce],
                 seq_num,
                 current_stream,
             )
