@@ -18,17 +18,27 @@ template <
 void run_batched_infer_causalmask_bias_dropout_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  if (!param.use_split_kv)
+  // currently split-kv implementation does not support dropout
+  if constexpr (!kHasDropout) {
+    if (!param.use_split_kv)
+      batched_infer_causalmask_bias_dropout_dispatch<
+          ScalarType,
+          kHasCausalMask,
+          kHasBias,
+          kHasDropout,
+          MaxK>::Run(param, stream);
+    else
+      batched_infer_splitkv_causalmask_bias_dropout_dispatch<
+          ScalarType,
+          kHasCausalMask,
+          kHasBias,
+          MaxK>::Run(param, stream);
+  } else {
     batched_infer_causalmask_bias_dropout_dispatch<
         ScalarType,
         kHasCausalMask,
         kHasBias,
         kHasDropout,
         MaxK>::Run(param, stream);
-  else
-    batched_infer_splitkv_causalmask_bias_dropout_dispatch<
-        ScalarType,
-        kHasCausalMask,
-        kHasBias,
-        MaxK>::Run(param, stream);
+  }
 };
