@@ -18,12 +18,13 @@ RUN set -ex && \
   source .venv/bin/activate
 
 RUN set -ex && \
+  cd /opt && \
   git clone --recursive https://github.com/rocm/xformers && \
   cd xformers && \
   git log -1 
 
 RUN set -ex && \
-  cd xformers && \
+  cd /opt/xformers && \
   uv pip install ninja && \
   uv pip install -r requirements.txt --extra-index-url=https://download.pytorch.org/whl/nightly/rocm6.2 && \
   uv pip install -r requirements-test.txt && \
@@ -35,6 +36,10 @@ ENV MAX_JOBS=${XFORMERS_COMPILE_JOBS}
 ARG HIP_ARCHITECTURES
 ENV HIP_ARCHITECTURES=${HIP_ARCHITECTURES} 
 RUN set -ex && \
-  cd xformers && \
-  uv pip install -e . --no-build-isolation --verbose && \
+  cd /opt/xformers && \
+  uv build . --wheel --no-build-isolation --verbose --offline && \
+  uv pip install dist/*.whl && \
+  cd / && \
   uv run -- python -m xformers.info
+
+ENV PATH="/.venv/bin:${PATH}"
