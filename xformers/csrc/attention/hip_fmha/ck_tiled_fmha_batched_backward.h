@@ -7,7 +7,8 @@
 #pragma once
 
 #include <ck_tile/core/numeric/integer.hpp>
-#include <ck_tile/host.hpp>
+#include <ck_tile/host/kernel_launch.hpp>
+#include <ck_tile/host/stream_config.hpp>
 #include <ck_tile/ops/epilogue.hpp>
 #include <ck_tile/ops/fmha.hpp>
 
