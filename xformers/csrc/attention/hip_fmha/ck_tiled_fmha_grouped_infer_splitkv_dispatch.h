@@ -121,7 +121,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
 
     {
       constexpr ck_tile::index_t kM0 = FmhaFwdShape<MaxK>::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaFwdShape<MaxK>::kN1;
+      constexpr ck_tile::index_t kN1 = FmhaFwdShape<MaxK>::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
