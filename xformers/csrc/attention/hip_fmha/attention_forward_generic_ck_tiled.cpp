@@ -232,7 +232,7 @@ efficient_attention_forward_ck(
 
     // added for support split_kv
     p.num_kv_splits =
-        get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 128);
+        get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 64);
 
     // fmha fwd split-kv kernel does not support dropout
     p.use_split_kv = (!use_dropout && (p.num_kv_splits > 1)) ? true : false;
@@ -360,7 +360,7 @@ efficient_attention_forward_ck(
 
     // added for support split_kv
     p.num_kv_splits = get_num_kv_splits_heuristic(
-        p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 128);
+        p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 64);
 
     // fmha fwd split-kv kernel does not support dropout
     p.use_split_kv = (!use_dropout && (p.num_kv_splits > 1)) ? true : false;
