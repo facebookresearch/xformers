@@ -391,11 +391,6 @@ efficient_attention_forward_ck(
 
     set_batched_forward_params(batched_forward_params);
 
-    if (batched_forward_params.use_split_kv)
-      std::cout << "Batched mode using split-kv kernel! num_splts = " << batched_forward_params.num_kv_splits << std::endl;
-    else
-      std::cout << "Batched mode using normal kernel! num_splts = " << batched_forward_params.num_kv_splits << std::endl;
-
     if (!batched_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
         batched_infer_fp16(batched_forward_params, stream);
@@ -415,11 +410,6 @@ efficient_attention_forward_ck(
     GroupedForwardParams grouped_forward_params;
 
     set_grouped_forward_params(grouped_forward_params);
-
-    if (grouped_forward_params.use_split_kv)
-      std::cout << "Grouped mode using split-kv kernel! num_splts = " << grouped_forward_params.num_kv_splits << std::endl;
-    else
-      std::cout << "Grouped mode using normal kernel! num_splts = " << grouped_forward_params.num_kv_splits << std::endl;
 
     if (!grouped_forward_params.compute_logsumexp) {
       if (inDataType == at::ScalarType::Half) {
