@@ -25,3 +25,4 @@ jobs:
           push: true
           tags: rocm/xformers:latest
           file: Dockerfile.rocm
+          
