@@ -38,9 +38,11 @@ conda install xformers -c xformers
 
 ```bash
 # cuda 11.8 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
+python -m pip install -U xformers --index-url https://download.pytorch.org/whl/cu118
 # cuda 12.1 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
+python -m pip install -U xformers --index-url https://download.pytorch.org/whl/cu121
+# rocm 6.1 version (linux only)
+python -m pip install -U xformers --index-url https://download.pytorch.org/whl/rocm6.1
 ```
 
 * **Development binaries**:
