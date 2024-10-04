@@ -20,18 +20,20 @@ void run_batched_forward_causalmask_bias_dropout_dispatch(
     hipStream_t stream) {
   // currently split-kv implementation does not support dropout
   if constexpr (!kHasDropout) {
-    if (!param.use_split_kv)
+#ifndef FMHA_FWD_SPLITKV_NOT_USED
+    if (param.use_split_kv)
+      batched_forward_splitkv_causalmask_bias_dropout_dispatch<
+          ScalarType,
+          kHasCausalMask,
+          kHasBias,
+          MaxK>::Run(param, stream);
+    else
+#endif
       batched_forward_causalmask_bias_dropout_dispatch<
           ScalarType,
           kHasCausalMask,
           kHasBias,
           kHasDropout,
-          MaxK>::Run(param, stream);
-    else
-      batched_forward_splitkv_causalmask_bias_dropout_dispatch<
-          ScalarType,
-          kHasCausalMask,
-          kHasBias,
           MaxK>::Run(param, stream);
   } else {
     batched_forward_causalmask_bias_dropout_dispatch<

@@ -457,6 +457,10 @@ def get_extensions():
         if use_rtn_bf16_convert == "1":
             cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=3"]
 
+        disable_fmha_fwd_splitkv = os.getenv("DISABLE_HIP_FMHA_FWD_SPLITKV", "0")
+        if disable_fmha_fwd_splitkv == "1":
+            cc_flag += ["-DFMHA_FWD_SPLITKV_NOT_USED"]
+
         arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
 
         extra_compile_args = {
