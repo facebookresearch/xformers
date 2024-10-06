@@ -199,7 +199,7 @@ struct batched_infer_causalmask_bias_dropout_dispatch {
           param.custom_mask_type,
           param.dropout_prob, // dropout ratio
           false, // is_store_randval
-          {param.philox_seed, param.philox_offset});
+          std::make_pair(param.philox_seed, param.philox_offset));
     }();
 
     dim3 kGridSize = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
