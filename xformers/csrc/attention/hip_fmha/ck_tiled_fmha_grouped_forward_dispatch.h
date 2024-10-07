@@ -7,7 +7,8 @@
 #pragma once
 
 #include <ck_tile/core/numeric/integer.hpp>
-#include <ck_tile/host.hpp>
+#include <ck_tile/host/kernel_launch.hpp>
+#include <ck_tile/host/stream_config.hpp>
 #include <ck_tile/ops/epilogue.hpp>
 #include <ck_tile/ops/fmha.hpp>
 
@@ -158,7 +159,7 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
           param.custom_mask_type,
           param.dropout_prob,
           false, // is_store_randval
-          {param.philox_seed, param.philox_offset});
+          std::make_pair(param.philox_seed, param.philox_offset));
     }();
 
     dim3 kGridSize = FmhaFwdKernel::GridSize(
