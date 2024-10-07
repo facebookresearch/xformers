@@ -84,18 +84,17 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
 
         const bool has_uneven_splits =
             !(param.N % (param.num_kv_splits * FmhaShape::kN0) == 0);
-        const bool pad_seqlen_k = (param.N == 0) || has_uneven_splits;
 
-        BOOL_SWITCH_4(
+        BOOL_SWITCH_3(
             pad_seqlen_q,
             kPadSeqLenQ,
-            pad_seqlen_k,
-            kPadSeqLenK,
             pad_headdim,
             kPadHeadDim,
             has_uneven_splits,
             kHasUnevenSplits,
             [&] {
+              constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
+
               using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
