@@ -96,7 +96,7 @@ at::Tensor& efficient_attention_forward_decoder_ck_out_impl(
   int32_t smem_output = K_MAX * sizeof(float) *
       threads.y; // 4 * threadsPerBlock * sizeof(float) == sizeof(O[b][0][h][:])
   const size_t lds_bytes = max(smem_softmax, smem_output);
-  auto stream = at::cuda::getCurrentHIPStream().stream();
+  auto stream = at::hip::getCurrentHIPStream().stream();
 
   AT_DISPATCH_SWITCH_3(
       at::ScalarType::Half,
