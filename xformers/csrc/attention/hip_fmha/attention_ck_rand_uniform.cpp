@@ -33,8 +33,7 @@ at::Tensor rand_uniform_int(
   int M = out_pattern.size(2);
   int N = out_pattern.size(3);
 
-  // at::cuda::CUDAGuard device_guard(out_pattern.device());
-  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
+  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
 
   at::CUDAGeneratorImpl* gen =
       at::get_generator_or_default<at::CUDAGeneratorImpl>(
