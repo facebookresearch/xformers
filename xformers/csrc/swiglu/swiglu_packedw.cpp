@@ -211,12 +211,7 @@ at::Tensor swiglu_packedw_cuda(
     const std::optional<at::Tensor> b1b2,
     const at::Tensor w3,
     const std::optional<at::Tensor> b3) {
-  if (x.requires_grad()) {
     return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
-  } else {
-    return SwiGLUPackedWeights::forward(
-        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3);
-  }
 }
 } // namespace
 
