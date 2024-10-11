@@ -110,20 +110,20 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
         constexpr bool kPadSeqLenK = true;
 
         const bool pad_headdim_q =
-            !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
+            !(param.K % FmhaBwdShape<MaxK>::kQKHeaddimForGemmN == 0);
         const bool pad_headdim_v =
-            !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddim == 0);
+            !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddimForGemmN == 0);
 
         // usually headdim_q and headdim_v are same, consider them together
         // to determine whether to do padding saving some compiling time
         const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
         BOOL_SWITCH(pad_headdim, kPadHeadDim, [&] {
-          using FmhaBwdTraits_ = ck_tile::TileFmhaTraits<
+          using FmhaBwdTraits_ = ck_tile::TileFmhaBwdTraits<
               kPadSeqLenQ,
               kPadSeqLenK,
-              kPadHeadDim, // kPadHeadDimQ,
-              kPadHeadDim, // kPadHeadDimV,
+              kPadHeadDim, // kPadHeadDimQ
+              kPadHeadDim, // kPadHeadDimV
               kBiasEnum,
               kHasBiasGrad,
               false, // kStoreLSE

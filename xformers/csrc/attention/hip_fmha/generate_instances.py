@@ -106,6 +106,7 @@ BOOL_MAP_DROPOUT = {
 INT_MAP_MAX_K = {
     32: "maxk_32",
     64: "maxk_64",
+    96: "maxk_96",
     128: "maxk_128",
     256: "maxk_256",
 }
@@ -368,9 +369,11 @@ if __name__ == "__main__":
             disable_hd256 = True
 
     if disable_hd256:
-        headdims = [32, 64, 128]
+        headdims_fwd = [32, 64, 128]
+        headdims_bwd = [32, 64, 96, 128]
     else:
-        headdims = [32, 64, 128, 256]
+        headdims_fwd = [32, 64, 128, 256]
+        headdims_bwd = [32, 64, 96, 128, 256]
 
     this_dir = os.path.dirname(__file__)
     output_dir = Path(this_dir) / "instances"
@@ -382,9 +385,9 @@ if __name__ == "__main__":
         file_path = os.path.join(output_dir, ff)
         os.remove(file_path)
 
-    create_infer_instances(output_dir, headdims)
-    create_infer_instances_ref(output_dir, headdims)
-    create_forward_instances(output_dir, headdims)
-    create_forward_instances_ref(output_dir, headdims)
-    create_backward_instances(output_dir, headdims)
-    create_backward_instances_ref(output_dir, headdims)
+    create_infer_instances(output_dir, headdims_fwd)
+    create_infer_instances_ref(output_dir, headdims_fwd)
+    create_forward_instances(output_dir, headdims_fwd)
+    create_forward_instances_ref(output_dir, headdims_fwd)
+    create_backward_instances(output_dir, headdims_bwd)
+    create_backward_instances_ref(output_dir, headdims_bwd)

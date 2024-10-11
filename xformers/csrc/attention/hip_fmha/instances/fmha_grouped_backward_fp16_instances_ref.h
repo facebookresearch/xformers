@@ -209,6 +209,102 @@ extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
     true,
     false,
     true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    false,
+    true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    false,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    false,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    true,
+    true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    true,
+    true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    true,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    true,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    false,
+    false,
+    true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    false,
+    false,
+    true,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    false,
+    false,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    false,
+    false,
+    false,
+    96>(GroupedBackwardParams& param, hipStream_t stream);
+
+extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    false,
+    true,
     128>(GroupedBackwardParams& param, hipStream_t stream);
 
 extern template void run_grouped_backward_causalmask_bias_dropout_dispatch<
