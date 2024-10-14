@@ -110,7 +110,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
         constexpr bool kPadSeqLenK = true;
 
         const bool pad_headdim_q =
-            !(param.K % FmhaBwdShape<MaxK>::kQKHeaddimForGemmN == 0);
+            !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
         const bool pad_headdim_v =
             !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddimForGemmN == 0);
 
@@ -169,8 +169,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
       constexpr ck_tile::index_t kBlockSize = 256;
 
       const bool pad_seqlen_q = !(param.M % kBlockSize == 0);
-      const bool pad_headdim_q =
-          !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
+      const bool pad_headdim_q = !(param.K % MaxK == 0);
 
       BOOL_SWITCH_2(
           pad_seqlen_q, kPadSeqLenQ, pad_headdim_q, kPadHeadDimQ, [&] {
@@ -189,7 +188,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
                     kBlockSize,
                     FmhaBwdShape<MaxK>::kM0,
                     FmhaBwdShape<MaxK>::kN0,
-                    FmhaBwdShape<MaxK>::kQKHeaddim,
+                    MaxK, // kQKHeaddim
                     false, // kIsGroupMode
                     false, // kIsDeterministic
                     FmhaBwdConvertQGradTraits_>;
