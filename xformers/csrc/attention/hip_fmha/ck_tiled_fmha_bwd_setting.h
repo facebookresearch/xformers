@@ -72,7 +72,7 @@ struct FmhaBwdBlockTile<64> {
 
 template <>
 struct FmhaBwdBlockTile<96> {
-  using tile_lengths = ck_tile::sequence<16, 128, 96, 16, 96, 16, 32, 128, 96>;
+  using tile_lengths = ck_tile::sequence<16, 128, 96, 16, 96, 16, 32, 128, 128>;
   using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
   using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
   using gemm4_warps = ck_tile::sequence<1, 4, 1>; // default for gemm4
