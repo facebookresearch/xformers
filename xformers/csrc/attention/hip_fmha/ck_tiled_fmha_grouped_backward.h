@@ -128,10 +128,8 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
               using FmhaBwdPipelineProblem =
                   FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
 
-              constexpr auto FmhaBwdPipelineEnum_ = FmhaBwdPipelineEnumSelector<
-                  MaxK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV>::value;
+              constexpr auto FmhaBwdPipelineEnum_ =
+                  FmhaBwdPipelineEnumSelector<MaxK>::value;
 
               using FmhaBwdPipeline_ = typename FmhaBwdPipelineMaker<
                   FmhaBwdPipelineEnum_,

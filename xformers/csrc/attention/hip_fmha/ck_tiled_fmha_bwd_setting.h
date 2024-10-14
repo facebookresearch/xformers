@@ -173,7 +173,7 @@ struct FmhaBwdShape<256> : ck_tile::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<256>::gemm4_warps,
                                FmhaBwdWarpTile2> {};
 
-template <ck_tile::index_t MaxK, bool kPadHeadDimQK, bool kPadHeadDimV>
+template <ck_tile::index_t MaxK>
 struct FmhaBwdPipelineEnumSelector {
   static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
       ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR_IGLP;
