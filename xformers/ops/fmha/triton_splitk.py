@@ -579,18 +579,18 @@ if TYPE_CHECKING or _is_triton_available():
             # Maybe we can unroll the last iteration instead?
             if BOUNDS_CHECKS_N:
                 qk = tl.where(tl.arange(0, BLOCK_N) < hi - start_n, qk, float("-inf"))
+            if IS_CAUSAL:
+                # -- apply the causal mask --
+                qk = tl.where(diag_idx_shifted >= start_n, qk, float("-inf"))
             # -- compute scaling constant ---
             m_i_new = tl.maximum(m_i, tl.max(qk, 1))
             alpha = tl.math.exp2(m_i - m_i_new)
             p = tl.math.exp2(qk - m_i_new[:, None])
-            if HAS_ADDITIVE_BIAS:
+            if HAS_ADDITIVE_BIAS or IS_CAUSAL:
                 # NOTE: It's possible that an entire block is masked out.
                 # if this is the case, `m_i_new=nan` and everything becomes nan
                 alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
                 p = tl.where(m_i_new[:, None] == float("-inf"), 0, p)
-            if IS_CAUSAL:
-                # -- apply the causal mask --
-                p = tl.where(diag_idx_shifted >= start_n, p, 0)
 
             # -- update m_i and l_i --
             l_i = l_i * alpha + tl.sum(p, 1)
@@ -717,6 +717,7 @@ if TYPE_CHECKING or _is_triton_available():
         kernel = triton.autotune(
             configs=TRITON_CONFIGS,
             key=AUTOTUNER_KEY,
+            use_cuda_graph=True,
         )(kernel)
         return kernel
 
@@ -734,7 +735,9 @@ if TYPE_CHECKING or _is_triton_available():
                 _get_splitk_kernel(num_groups)
             )
 
-        def get_autotuner_cache(num_groups: int) -> Dict[Tuple[int], triton.Config]:
+        def get_autotuner_cache(
+            num_groups: int,
+        ) -> Dict[Tuple[Union[int, str]], triton.Config]:
             """Returns a triton.runtime.autotuner.AutoTuner.cache object, which
             represents mappings from kernel autotune keys (tuples describing kernel inputs)
             to triton.Config
@@ -742,7 +745,7 @@ if TYPE_CHECKING or _is_triton_available():
             return _fwd_kernel_splitK_autotune[num_groups].cache
 
         def set_autotuner_cache(
-            cache: Dict[Tuple[int], triton.Config], num_groups: int
+            cache: Dict[Tuple[Union[int, str]], triton.Config], num_groups: int
         ) -> None:
             _fwd_kernel_splitK_autotune[num_groups].cache = cache
 
@@ -871,26 +874,26 @@ if TYPE_CHECKING or _is_triton_available():
         LSE,  # [B, H, M]
         split_k: tl.constexpr,
         splitK_pow2: tl.constexpr,
-        stride_osk_z,
-        stride_osk_g,
-        stride_osk_h,
-        stride_osk_s,
-        stride_osk_m,
-        stride_osk_k,
-        stride_lsek_z,
-        stride_lsek_g,
-        stride_lsek_h,
-        stride_lsek_s,
-        stride_lsek_m,
-        stride_oz,
-        stride_og,
-        stride_oh,
-        stride_om,
-        stride_ok,
-        stride_lse_z,
-        stride_lse_g,
-        stride_lse_h,
-        stride_lse_m,
+        stride_osk_z: tl.constexpr,
+        stride_osk_g: tl.constexpr,
+        stride_osk_h: tl.constexpr,
+        stride_osk_s: tl.constexpr,
+        stride_osk_m: tl.constexpr,
+        stride_osk_k: tl.constexpr,
+        stride_lsek_z: tl.constexpr,
+        stride_lsek_g: tl.constexpr,
+        stride_lsek_h: tl.constexpr,
+        stride_lsek_s: tl.constexpr,
+        stride_lsek_m: tl.constexpr,
+        stride_oz: tl.constexpr,
+        stride_og: tl.constexpr,
+        stride_oh: tl.constexpr,
+        stride_om: tl.constexpr,
+        stride_ok: tl.constexpr,
+        stride_lse_z: tl.constexpr,
+        stride_lse_g: tl.constexpr,
+        stride_lse_h: tl.constexpr,
+        stride_lse_m: tl.constexpr,
         BLOCK_SIZE: tl.constexpr,
         H: tl.constexpr,
         G: tl.constexpr,
