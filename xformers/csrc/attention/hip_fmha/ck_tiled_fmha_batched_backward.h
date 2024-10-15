@@ -115,7 +115,7 @@ struct batched_backward_causalmask_bias_dropout_dispatch {
 
         BOOL_SWITCH_2(
             pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-              using FmhaBwdTraits_ = ck_tile::TileFmhaBwdTraits<
+              using FmhaBwdTraits_ = ck_tile::TileFmhaTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
                   kPadHeadDimQ,
