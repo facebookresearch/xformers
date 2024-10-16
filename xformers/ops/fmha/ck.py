@@ -356,6 +356,7 @@ class BwOp(AttentionBwOpBase):
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
         64,
+        96,
         128,  # 64x128/128x128 kernel
         256,
     ]
