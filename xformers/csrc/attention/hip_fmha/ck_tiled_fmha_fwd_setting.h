@@ -118,3 +118,79 @@ struct FmhaFwdShape<256> : ck_tile::TileFmhaShape<
                                typename FmhaFwdBlockTile<256>::gemm1_warps,
                                FmhaFwdWarpTile,
                                IsVLayoutRowMajor> {};
+
+template <ck_tile::index_t MaxK>
+struct FmhaFwdSplitKVBlockTile;
+
+template <>
+struct FmhaFwdSplitKVBlockTile<32> {
+  using type = ck_tile::sequence<64, 64, 16, 32, 32, 32>;
+  using gemm0_warps = ck_tile::sequence<2, 1, 1>;
+  using gemm1_warps = ck_tile::sequence<2, 1, 1>;
+};
+
+template <>
+struct FmhaFwdSplitKVBlockTile<64> {
+  using type = ck_tile::sequence<64, 64, 32, 64, 32, 64>;
+  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm1_warps = ck_tile::sequence<4, 1, 1>;
+};
+
+template <>
+struct FmhaFwdSplitKVBlockTile<128> {
+  using type = ck_tile::sequence<64, 128, 32, 128, 32, 128>;
+  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm1_warps = ck_tile::sequence<4, 1, 1>;
+};
+
+template <>
+struct FmhaFwdSplitKVBlockTile<256> {
+  using type = ck_tile::sequence<64, 128, 32, 256, 32, 256>;
+  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm1_warps = ck_tile::sequence<4, 1, 1>;
+};
+
+using FmhaFwdSplitKVWarpTile = ck_tile::sequence<16, 16, 16>;
+
+template <ck_tile::index_t MaxK>
+struct FmhaFwdSplitKVShape;
+
+template <>
+struct FmhaFwdSplitKVShape<32>
+    : ck_tile::TileFmhaShape<
+          typename FmhaFwdSplitKVBlockTile<32>::type,
+          typename FmhaFwdSplitKVBlockTile<32>::gemm0_warps,
+          FmhaFwdSplitKVWarpTile,
+          typename FmhaFwdSplitKVBlockTile<32>::gemm1_warps,
+          FmhaFwdSplitKVWarpTile,
+          IsVLayoutRowMajor> {};
+
+template <>
+struct FmhaFwdSplitKVShape<64>
+    : ck_tile::TileFmhaShape<
+          typename FmhaFwdSplitKVBlockTile<64>::type,
+          typename FmhaFwdSplitKVBlockTile<64>::gemm0_warps,
+          FmhaFwdSplitKVWarpTile,
+          typename FmhaFwdSplitKVBlockTile<64>::gemm1_warps,
+          FmhaFwdSplitKVWarpTile,
+          IsVLayoutRowMajor> {};
+
+template <>
+struct FmhaFwdSplitKVShape<128>
+    : ck_tile::TileFmhaShape<
+          typename FmhaFwdSplitKVBlockTile<128>::type,
+          typename FmhaFwdSplitKVBlockTile<128>::gemm0_warps,
+          FmhaFwdSplitKVWarpTile,
+          typename FmhaFwdSplitKVBlockTile<128>::gemm1_warps,
+          FmhaFwdSplitKVWarpTile,
+          IsVLayoutRowMajor> {};
+
+template <>
+struct FmhaFwdSplitKVShape<256>
+    : ck_tile::TileFmhaShape<
+          typename FmhaFwdSplitKVBlockTile<256>::type,
+          typename FmhaFwdSplitKVBlockTile<256>::gemm0_warps,
+          FmhaFwdSplitKVWarpTile,
+          typename FmhaFwdSplitKVBlockTile<256>::gemm1_warps,
+          FmhaFwdSplitKVWarpTile,
+          IsVLayoutRowMajor> {};

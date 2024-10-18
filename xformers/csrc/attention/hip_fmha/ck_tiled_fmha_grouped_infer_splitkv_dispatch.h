@@ -36,7 +36,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          FmhaFwdShape<MaxK>,
+          FmhaFwdSplitKVShape<MaxK>,
           true, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;

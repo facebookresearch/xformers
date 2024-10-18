@@ -36,7 +36,7 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          FmhaFwdShape<MaxK>,
+          FmhaFwdSplitKVShape<MaxK>,
           false, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
