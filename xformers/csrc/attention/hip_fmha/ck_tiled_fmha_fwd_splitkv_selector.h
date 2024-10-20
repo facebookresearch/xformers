@@ -9,6 +9,7 @@
 #include <cmath>
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_seqlen_q_switch.h"
 
 static int get_num_kv_splits_heuristic(
     int num_batches,
@@ -19,15 +20,21 @@ static int get_num_kv_splits_heuristic(
   // m_tile size is the size for dividing the seqlen_q
   int mtile_size;
 
-  if (max_headdim <= 32) {
-    mtile_size = FmhaFwdSplitKVShape<32>::kM0;
-  } else if (max_headdim <= 64) {
-    mtile_size = FmhaFwdSplitKVShape<64>::kM0;
-  } else if (max_headdim <= 128) {
-    mtile_size = FmhaFwdSplitKVShape<128>::kM0;
-  } else {
-    mtile_size = FmhaFwdSplitKVShape<256>::kM0;
-  };
+  FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqlenQ, [&] {
+    if (max_headdim <= 32) {
+      using FmhaTileShape = typename FmhaFwdSplitKVShape<32, MaxSeqlenQ>::Type;
+      mtile_size = FmhaTileShape::kM0;
+    } else if (max_headdim <= 64) {
+      using FmhaTileShape = typename FmhaFwdSplitKVShape<64, MaxSeqlenQ>::Type;
+      mtile_size = FmhaTileShape::kM0;
+    } else if (max_headdim <= 128) {
+      using FmhaTileShape = typename FmhaFwdSplitKVShape<128, MaxSeqlenQ>::Type;
+      mtile_size = FmhaTileShape::kM0;
+    } else {
+      using FmhaTileShape = typename FmhaFwdSplitKVShape<256, MaxSeqlenQ>::Type;
+      mtile_size = FmhaTileShape::kM0;
+    };
+  });
 
   int num_SMs = get_number_of_cu() * 2;
 

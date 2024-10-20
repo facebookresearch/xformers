@@ -8,6 +8,7 @@
 
 #include "ck_tiled_fmha_grouped_forward_dispatch.h"
 #include "ck_tiled_fmha_grouped_forward_splitkv_dispatch.h"
+#include "ck_tiled_fmha_seqlen_q_switch.h"
 
 template <
     typename ScalarType,
@@ -21,13 +22,16 @@ void run_grouped_forward_causalmask_bias_dropout_dispatch(
   // currently split-kv implementation does not support dropout
   if constexpr (!kHasDropout) {
 #ifndef FMHA_FWD_SPLITKV_NOT_USED
-    if (param.use_split_kv)
-      grouped_forward_splitkv_causalmask_bias_dropout_dispatch<
-          ScalarType,
-          kHasCausalMask,
-          kHasBias,
-          MaxK>::Run(param, stream);
-    else
+    if (param.use_split_kv) {
+      FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
+        grouped_forward_splitkv_causalmask_bias_dropout_dispatch<
+            ScalarType,
+            kHasCausalMask,
+            kHasBias,
+            MaxK,
+            MaxSeqlenQ>::Run(param, stream);
+      });
+    } else
 #endif
       grouped_forward_causalmask_bias_dropout_dispatch<
           ScalarType,

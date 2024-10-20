@@ -21,7 +21,8 @@ template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
-    ck_tile::index_t MaxK>
+    ck_tile::index_t MaxK,
+    ck_tile::index_t MaxSeqlenQ>
 struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
   template <typename FmhaFwdSplitKVTraits, typename FmhaMask>
   using FmhaFwdSplitKVPipelineProblemTemp =
@@ -36,7 +37,7 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          FmhaFwdSplitKVShape<MaxK>,
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
           true, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
@@ -65,9 +66,10 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
 
         using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
-        using FmhaFwdShape_ = FmhaFwdSplitKVShape<MaxK>;
+        using FmhaTileShape =
+            typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
         using FmhaTilePartitioner =
-            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaFwdShape_>;
+            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
 
         constexpr ck_tile::index_t occupancy = -1;
 
@@ -79,8 +81,8 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
         constexpr bool kPadSeqLenK = true;
 
         const bool pad_headdim_q =
-            !(param.K % FmhaFwdShape_::kK0BlockLength == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
+            !(param.K % FmhaTileShape::kK0BlockLength == 0);
+        const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
         BOOL_SWITCH_2(
             pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
@@ -122,8 +124,11 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
     };
 
     {
-      constexpr ck_tile::index_t kM0 = FmhaFwdSplitKVShape<MaxK>::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaFwdSplitKVShape<MaxK>::kN1 / 2;
+      using FmhaTileShape =
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+
+      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
+      constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;

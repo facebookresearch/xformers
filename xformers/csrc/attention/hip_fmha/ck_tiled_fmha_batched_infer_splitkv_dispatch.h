@@ -21,7 +21,8 @@ template <
     typename ScalarType,
     bool kHasCausalMask,
     bool kHasBias,
-    ck_tile::index_t MaxK>
+    ck_tile::index_t MaxK,
+    ck_tile::index_t MaxSeqlenQ>
 struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
   template <typename FmhaFwdSplitKVTraits, typename FmhaMask>
   using FmhaFwdSplitKVPipelineProblemTemp =
@@ -36,7 +37,7 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          FmhaFwdSplitKVShape<MaxK>,
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
           false, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
@@ -65,25 +66,27 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
 
         using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
-        using FmhaShape = FmhaFwdSplitKVShape<MaxK>;
+        using FmhaTileShape =
+            typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
         using FmhaTilePartitioner =
-            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaShape>;
+            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
         constexpr ck_tile::index_t occupancy = -1;
 
         constexpr auto kBiasEnum = kHasBias
             ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
             : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-        const bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
-        const bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
+        const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
+        const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
+        const bool pad_headdim_q =
+            !(param.K % FmhaTileShape::kK0BlockLength == 0);
 
         // usually headdim_q and headdim_v are same, consider them together to
         // determine whether to do padding saving some compiling time
         const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
         const bool has_uneven_splits =
-            !(param.N % (param.num_kv_splits * FmhaShape::kN0) == 0);
+            !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
 
         BOOL_SWITCH_3(
             pad_seqlen_q,
@@ -132,8 +135,11 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
     };
 
     {
-      constexpr ck_tile::index_t kM0 = FmhaFwdSplitKVShape<MaxK>::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaFwdSplitKVShape<MaxK>::kN1 / 2;
+      using FmhaTileShape =
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+
+      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
+      constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
