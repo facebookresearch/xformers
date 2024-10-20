@@ -65,7 +65,7 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
 
         using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
-        using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
+        using FmhaFwdShape_ = FmhaFwdSplitKVShape<MaxK>;
         using FmhaTilePartitioner =
             ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaFwdShape_>;
 
@@ -122,8 +122,8 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
     };
 
     {
-      constexpr ck_tile::index_t kM0 = FmhaFwdShape<MaxK>::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaFwdShape<MaxK>::kN1 / 2;
+      constexpr ck_tile::index_t kM0 = FmhaFwdSplitKVShape<MaxK>::kM0 / 2;
+      constexpr ck_tile::index_t kN1 = FmhaFwdSplitKVShape<MaxK>::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;

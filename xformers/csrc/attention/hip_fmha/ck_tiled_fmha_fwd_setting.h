@@ -124,7 +124,7 @@ struct FmhaFwdSplitKVBlockTile;
 
 template <>
 struct FmhaFwdSplitKVBlockTile<32> {
-  using type = ck_tile::sequence<64, 64, 16, 32, 32, 32>;
+  using type = ck_tile::sequence<32, 64, 16, 32, 32, 32>;
   using gemm0_warps = ck_tile::sequence<2, 1, 1>;
   using gemm1_warps = ck_tile::sequence<2, 1, 1>;
 };

@@ -20,13 +20,13 @@ static int get_num_kv_splits_heuristic(
   int mtile_size;
 
   if (max_headdim <= 32) {
-    mtile_size = FmhaFwdShape<32>::kM0;
+    mtile_size = FmhaFwdSplitKVShape<32>::kM0;
   } else if (max_headdim <= 64) {
-    mtile_size = FmhaFwdShape<64>::kM0;
+    mtile_size = FmhaFwdSplitKVShape<64>::kM0;
   } else if (max_headdim <= 128) {
-    mtile_size = FmhaFwdShape<128>::kM0;
+    mtile_size = FmhaFwdSplitKVShape<128>::kM0;
   } else {
-    mtile_size = FmhaFwdShape<256>::kM0;
+    mtile_size = FmhaFwdSplitKVShape<256>::kM0;
   };
 
   int num_SMs = get_number_of_cu() * 2;

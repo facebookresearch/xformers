@@ -65,7 +65,7 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
 
         using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
 
-        using FmhaShape = FmhaFwdShape<MaxK>;
+        using FmhaShape = FmhaFwdSplitKVShape<MaxK>;
         using FmhaTilePartitioner =
             ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaShape>;
         constexpr ck_tile::index_t occupancy = -1;
@@ -132,8 +132,8 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
     };
 
     {
-      constexpr ck_tile::index_t kM0 = FmhaFwdShape<MaxK>::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaFwdShape<MaxK>::kN1 / 2;
+      constexpr ck_tile::index_t kM0 = FmhaFwdSplitKVShape<MaxK>::kM0 / 2;
+      constexpr ck_tile::index_t kN1 = FmhaFwdSplitKVShape<MaxK>::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
