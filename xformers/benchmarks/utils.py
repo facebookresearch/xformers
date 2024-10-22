@@ -543,31 +543,37 @@ def benchmark_run_and_compare(
 
         name = None
         try:
-            for benchmark_object in benchmarks_generator:
-                is_optimized = (
-                    benchmark_object._task_spec.description not in BASELINE_DESCRIPTIONS
-                )
-                metadata = {}
-                if is_optimized:
-                    metadata[META_ALGORITHM] = benchmark_object._task_spec.description
-                    benchmark_object._task_spec = replace(
-                        benchmark_object._task_spec, description=optimized_label
-                    )
-                elif (
-                    omit_baselines
-                    or (
-                        benchmark_object._task_spec.sub_label,
-                        benchmark_object._task_spec.num_threads,
-                    )
-                    in skip_vanilla_tasks
-                ):
-                    continue
+            torch.cuda.synchronize()
+            torch.cuda.reset_peak_memory_stats()
+            mem_begin = torch.cuda.max_memory_allocated() / 2**20
 
+            for benchmark_object in benchmarks_generator:
                 memory = math.inf
                 try:
+
+                    is_optimized = (
+                        benchmark_object._task_spec.description
+                        not in BASELINE_DESCRIPTIONS
+                    )
+                    metadata = {}
+                    if is_optimized:
+                        metadata[
+                            META_ALGORITHM
+                        ] = benchmark_object._task_spec.description
+                        benchmark_object._task_spec = replace(
+                            benchmark_object._task_spec, description=optimized_label
+                        )
+                    elif (
+                        omit_baselines
+                        or (
+                            benchmark_object._task_spec.sub_label,
+                            benchmark_object._task_spec.num_threads,
+                        )
+                        in skip_vanilla_tasks
+                    ):
+                        continue
+
                     torch.cuda.synchronize()
-                    torch.cuda.reset_peak_memory_stats()
-                    mem_begin = torch.cuda.max_memory_allocated() / 2**20
                     benchmark_object._task_spec = replace(
                         benchmark_object._task_spec, env=env
                     )
@@ -579,6 +585,9 @@ def benchmark_run_and_compare(
                     name = measurement.task_spec.description
                     memory = torch.cuda.max_memory_allocated() / 2**20 - mem_begin
                     measurement.mem_use = memory
+
+                    torch.cuda.reset_peak_memory_stats()
+                    mem_begin = torch.cuda.max_memory_allocated() / 2**20
                 except RuntimeError as e:
                     if not _is_oom_error(e):
                         raise
