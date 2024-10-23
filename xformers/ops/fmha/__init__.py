@@ -17,7 +17,12 @@ from . import (
     flash3,
     triton_splitk,
 )
-from .attn_bias import VARLEN_BIASES, AttentionBias, LowerTriangularMask
+from .attn_bias import (
+    VARLEN_BIASES, 
+    AttentionBias, 
+    LowerTriangularMask, 
+    BlockDiagonalMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -884,4 +889,5 @@ __all__ = [
     "attn_bias",
     "_get_use_fa3",
     "_set_use_fa3",
+    "BlockDiagonalMask",
 ]
