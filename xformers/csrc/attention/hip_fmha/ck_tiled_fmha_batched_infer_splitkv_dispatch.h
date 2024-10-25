@@ -96,7 +96,9 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
             has_uneven_splits,
             kHasUnevenSplits,
             [&] {
-              constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
+              // since buffer_load_dword is used, padding dim seqlen-k is not
+              // needed when loading K/V, but still needed when loading bias
+              constexpr bool kPadSeqLenK = kHasBias ? true : false;
 
               using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
                   kPadSeqLenQ,

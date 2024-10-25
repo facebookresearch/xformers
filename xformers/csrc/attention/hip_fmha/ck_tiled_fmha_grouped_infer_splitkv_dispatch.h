@@ -78,7 +78,9 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
         constexpr bool kPadSeqLenQ = true;
-        constexpr bool kPadSeqLenK = true;
+        // since buffer_load_dword is used, padding dim seqlen-k is not
+        // needed when loading K/V, but still needed when loading bias
+        constexpr bool kPadSeqLenK = kHasBias ? true : false;
 
         bool pad_headdim_q = !(param.K % FmhaTileShape::kK0BlockLength == 0);
         bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
