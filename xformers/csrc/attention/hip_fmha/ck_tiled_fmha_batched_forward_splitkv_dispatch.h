@@ -121,8 +121,8 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
                       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                      kPadSeqLenQ,
-                      kPadHeadDim>>;
+                      false,
+                      false>>;
 
               using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
                   FmhaTilePartitioner,
