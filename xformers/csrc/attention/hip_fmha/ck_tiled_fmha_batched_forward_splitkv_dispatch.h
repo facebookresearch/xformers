@@ -79,7 +79,7 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
         const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
         const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
         const bool pad_headdim_q =
-            !(param.K % FmhaTileShape::kK0BlockLength == 0);
+            !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
 
         // usually headdim_q and headdim_v are same, consider them together to
         // determine whether to do padding saving some compiling time

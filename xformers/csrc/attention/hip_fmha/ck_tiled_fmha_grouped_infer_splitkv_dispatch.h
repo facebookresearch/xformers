@@ -80,7 +80,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
         constexpr bool kPadSeqLenQ = true;
         constexpr bool kPadSeqLenK = true;
 
-        bool pad_headdim_q = !(param.K % FmhaTileShape::kK0BlockLength == 0);
+        bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
         bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
         BOOL_SWITCH_2(

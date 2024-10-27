@@ -63,7 +63,7 @@ struct batched_infer_causalmask_bias_dropout_dispatch {
       const bool pad_seqlen_k =
           (param.N == 0) || !(param.N % FmhaShape::kN0 == 0);
       const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
-      const bool pad_headdim_q = !(param.K % FmhaShape::kK0BlockLength == 0);
+      const bool pad_headdim_q = !(param.K % FmhaShape::kSubQKHeaddim == 0);
 
       // usually headdim_q and headdim_v are same, consider them together to
       // determine whether to do padding saving some compiling time
