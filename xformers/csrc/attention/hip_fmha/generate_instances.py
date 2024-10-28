@@ -369,10 +369,10 @@ if __name__ == "__main__":
             disable_hd256 = True
 
     if disable_hd256:
-        headdims_fwd = [32, 64, 128]
+        headdims_fwd = [32, 64, 96, 128]
         headdims_bwd = [32, 64, 96, 128]
     else:
-        headdims_fwd = [32, 64, 128, 256]
+        headdims_fwd = [32, 64, 96, 128, 256]
         headdims_bwd = [32, 64, 96, 128, 256]
 
     this_dir = os.path.dirname(__file__)
