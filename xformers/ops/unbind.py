@@ -12,7 +12,7 @@ from .common import _get_storage_base
 
 def get_stack_strides(
     tensors: Sequence[torch.Tensor], dim: int
-) -> Optional[Tuple[int, ...]]:
+) -> Optional[Tuple[Union[int, torch.SymInt], ...]]:
     """
     If the tensors are already stacked on dimension :code:`dim`, \
         returns the strides of the stacked tensors. \
@@ -24,8 +24,10 @@ def get_stack_strides(
     final_stride = []
     for i in range(tensors[0].ndim + 1):
         if i == dim:
+            # PyTorch 2.5 messed up the type annotations for SymInt, but 2.6 will fix it
+            # https://github.com/pytorch/pytorch/issues/138478
             final_stride.append(
-                tensors[1].storage_offset() - tensors[0].storage_offset()
+                tensors[1].storage_offset() - tensors[0].storage_offset()  # type: ignore[operator]
             )
             continue
         if i > dim:
@@ -39,9 +41,11 @@ def get_stack_strides(
             return None
         if x.stride() != tensors[0].stride():
             return None
+        # PyTorch 2.5 messed up the type annotations for SymInt, but 2.6 will fix it
+        # https://github.com/pytorch/pytorch/issues/138478
         if (
             x.storage_offset()
-            != tensors[0].storage_offset() + (i + 1) * final_stride[dim]
+            != tensors[0].storage_offset() + (i + 1) * final_stride[dim]  # type: ignore[operator]
         ):
             return None
         if storage_data_ptr is None:
