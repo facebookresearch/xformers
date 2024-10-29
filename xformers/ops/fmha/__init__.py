@@ -18,10 +18,10 @@ from . import (
     triton_splitk,
 )
 from .attn_bias import (
-    VARLEN_BIASES, 
-    AttentionBias, 
-    LowerTriangularMask, 
+    VARLEN_BIASES,
+    AttentionBias,
     BlockDiagonalMask,
+    LowerTriangularMask,
 )
 from .common import (
     AttentionBwOpBase,
