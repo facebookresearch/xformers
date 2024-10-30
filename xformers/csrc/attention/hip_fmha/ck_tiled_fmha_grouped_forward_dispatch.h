@@ -62,8 +62,7 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
       constexpr bool kPadSeqLenQ = true;
       constexpr bool kPadSeqLenK = true;
 
-      const bool pad_headdim_q =
-          !(param.K % FmhaFwdShape_::kK0BlockLength == 0);
+      const bool pad_headdim_q = !(param.K % FmhaFwdShape_::kSubQKHeaddim == 0);
       const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
 
       BOOL_SWITCH_2(

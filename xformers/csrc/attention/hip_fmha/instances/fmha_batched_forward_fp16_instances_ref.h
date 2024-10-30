@@ -128,6 +128,62 @@ extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
     true,
     true,
     true,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    true,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    false,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    true,
+    false,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    false,
+    true,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    false,
+    true,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    false,
+    false,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    false,
+    false,
+    false,
+    96>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_forward_causalmask_bias_dropout_dispatch<
+    ck_tile::fp16_t,
+    true,
+    true,
+    true,
     128>(BatchedForwardParams& param, hipStream_t stream);
 
 extern template void run_batched_forward_causalmask_bias_dropout_dispatch<

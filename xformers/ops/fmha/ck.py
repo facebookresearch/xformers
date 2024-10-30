@@ -187,6 +187,7 @@ class FwOp(AttentionFwOpBase):
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
+        96,
         128,  # 64x128 kernel
         256,  # 64x128 with accumulation in gmem
     ]

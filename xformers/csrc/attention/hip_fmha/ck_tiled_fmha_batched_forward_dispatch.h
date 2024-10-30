@@ -62,8 +62,7 @@ struct batched_forward_causalmask_bias_dropout_dispatch {
       const bool pad_seqlen_q = !(param.M % FmhaFwdShape_::kM0 == 0);
       const bool pad_seqlen_k =
           (param.N == 0) || !(param.N % FmhaFwdShape_::kN0 == 0);
-      const bool pad_headdim_q =
-          !(param.K % FmhaFwdShape_::kK0BlockLength == 0);
+      const bool pad_headdim_q = !(param.K % FmhaFwdShape_::kSubQKHeaddim == 0);
       const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
 
       // usually headdim_q and headdim_v are same, consider them together to
