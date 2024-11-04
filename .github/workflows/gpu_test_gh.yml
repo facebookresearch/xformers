@@ -77,6 +77,11 @@ jobs:
           pip install -r requirements-test.txt --progress-bar off
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python setup.py develop
       - run: python -m xformers.info
+      - name: xFormers import should not init cuda context
+        run: |
+          # NOTE: we check GPU version by default to determine if triton should be used
+          # and this initializes CUDA context, unless we set `XFORMERS_ENABLE_TRITON`
+          XFORMERS_ENABLE_TRITON=1 python -c "import xformers; import xformers.ops; import torch; assert not torch.cuda.is_initialized()"
       - name: Unit tests
         run: |
           python -m pytest --verbose --random-order-bucket=global --maxfail=20 --junitxml=test-results/junit.xml --cov-report=xml --cov=./ tests
