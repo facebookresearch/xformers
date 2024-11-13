@@ -76,7 +76,7 @@ runs:
 
     - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda')
       name: (Linux) install cuda
-      shell: bash
+      shell: bash -l {0}
       run: >
         wget -q "${{ steps.cuda_info.outputs.CUDA_INSTALL_SCRIPT }}" -O cuda.run &&
         sh ./cuda.run --silent --toolkit &&
