@@ -111,11 +111,11 @@ class SwiGLUPackedWeights
   static torch::autograd::variable_list backward(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_outputs) {
+    auto saved = ctx->get_saved_variables();
     at::AutoDispatchBelowADInplaceOrView g;
 
     // Unpack variables
     auto dx5 = grad_outputs[0];
-    auto saved = ctx->get_saved_variables();
     auto x = saved[0];
     auto w1w2 = saved[1];
     auto w3 = saved[2];
