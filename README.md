@@ -1,8 +1,5 @@
 <img src="./docs/assets/logo.png" width=800>
 
-![Install with conda](https://anaconda.org/xformers/xformers/badges/installer/conda.svg)
-![Downloads](https://anaconda.org/xformers/xformers/badges/downloads.svg)
-![License](https://anaconda.org/xformers/xformers/badges/license.svg)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/facebookresearch/xformers/blob/main/docs/source/xformers_mingpt.ipynb)
 <br/><!--
 ![PyPI](https://img.shields.io/pypi/v/xformers)
@@ -28,13 +25,6 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux) Install latest stable with conda**: Requires [PyTorch 2.5.1 installed with conda](https://pytorch.org/get-started/locally/)
-
-```bash
-# (python 3.10/3.11 only)
-conda install xformers -c xformers
-```
-
 * **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.5.1](https://pytorch.org/get-started/locally/)
 
 ```bash
@@ -51,8 +41,7 @@ pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.1
 * **Development binaries**:
 
 ```bash
-# Use either conda or pip, same requirements as for the stable version above
-conda install xformers -c xformers/label/dev
+# Same requirements as for the stable version above
 pip install --pre -U xformers
 ```
 
@@ -108,7 +97,6 @@ python -m xformers.info
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
 * If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
-* If you encounter [`UnsatisfiableError`](https://github.com/facebookresearch/xformers/issues/390#issuecomment-1315020700) when installing with conda, make sure you have PyTorch installed in your conda environment, and that your setup (PyTorch version, cuda version, python version, OS) match [an existing binary for xFormers](https://anaconda.org/xformers/xformers/files)
 
 
 ### License

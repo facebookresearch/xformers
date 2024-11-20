@@ -93,7 +93,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           git config --global --add safe.directory "*"
-          version=`python packaging/compute_wheel_version.py --source $VERSION_SOURCE`
+          version=`python .github/compute_wheel_version.py --source $VERSION_SOURCE`
           echo $version > version.txt
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}

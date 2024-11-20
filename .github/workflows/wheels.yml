@@ -3,7 +3,7 @@ name: wheels
 on:
   pull_request:
     paths:
-      - "packaging/compute_wheel_version.sh"
+      - ".github/compute_wheel_version.py"
       - ".github/workflows/wheel*"
       - ".github/actions/setup-build-cuda/action.yml"
       - "setup.py"
