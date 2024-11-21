@@ -191,6 +191,9 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
           param.Hq, // nhead_q
           param.Hq / param.Hkv, // nhead_ratio_qk
           param.num_kv_splits, // num_splits
+          nullptr, // block_table_ptr
+          0, // batch_stride_block_table
+          0, // page_block_size
           param.scale,
           1.0f, // scale_p
           param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
