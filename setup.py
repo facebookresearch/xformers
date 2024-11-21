@@ -356,6 +356,8 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "hopper",
                 ]
             ],
+            # Without this we get and error about cuTensorMapEncodeTiled not defined
+            libraries=["cuda"],
         )
     ]
 
