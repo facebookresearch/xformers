@@ -231,6 +231,7 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
             nullptr, // block_table_ptr
             0, // batch_stride_block_table
             0, // page_block_size
+            false, // is_gappy
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
@@ -274,6 +275,7 @@ struct grouped_forward_splitkv_causalmask_bias_dropout_dispatch {
             nullptr, // block_table_ptr
             0, // batch_stride_block_table
             0, // page_block_size
+            false, // is_gappy
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim stride

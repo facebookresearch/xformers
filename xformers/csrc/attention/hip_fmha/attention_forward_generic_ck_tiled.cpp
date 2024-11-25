@@ -95,7 +95,9 @@ efficient_attention_forward_ck(
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
-    TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
+    TORCH_CHECK(
+        seqstart_q->size(0) == seqstart_k->size(0) ||
+        seqstart_q->size(0) == seqstart_k->size(0) + 1);
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));

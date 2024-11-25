@@ -249,6 +249,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.block_table_ptr : nullptr,
             param.use_paged_kvcache ? param.batch_stride_block_table : 0,
             param.use_paged_kvcache ? param.page_block_size : 0,
+            param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
@@ -294,6 +295,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.block_table_ptr : nullptr,
             param.use_paged_kvcache ? param.batch_stride_block_table : 0,
             param.use_paged_kvcache ? param.page_block_size : 0,
+            param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim
