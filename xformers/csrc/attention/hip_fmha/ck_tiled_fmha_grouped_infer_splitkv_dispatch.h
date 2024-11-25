@@ -86,8 +86,16 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
         bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
         bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
-        BOOL_SWITCH_2(
-            pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+        bool is_paged_kv = param.use_paged_kvcache;
+
+        BOOL_SWITCH_3(
+            pad_headdim_q,
+            kPadHeadDimQ,
+            pad_headdim_v,
+            kPadHeadDimV,
+            is_paged_kv,
+            kIsPagedKV,
+            [&] {
               if (param.num_kv_splits > 1) {
                 using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
                     kPadSeqLenQ,
@@ -98,7 +106,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
                     false, // kHasBiasGrad place-holder
                     true, // kStoreLSE
                     false, // kDoFp8StaticQuant place-holder
-                    false, // kIsPagedKV
+                    kIsPagedKV,
                     true, // kHasUnevenSplits
                     occupancy>;
 
@@ -135,7 +143,7 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
                     false, // kHasBiasGrad place-holder
                     false, // kStoreLSE
                     false, // kDoFp8StaticQuant place-holder
-                    false, // kIsPagedKV
+                    kIsPagedKV,
                     true, // kHasUnevenSplits
                     occupancy>;
 
@@ -238,9 +246,9 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            nullptr, // block_table_ptr
-            0, // batch_stride_block_table
-            0, // page_block_size
+            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
+            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
+            param.use_paged_kvcache ? param.page_block_size : 0,
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
@@ -256,9 +264,11 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.attn_bias_strides[1],
             param.lse_acc_strides[1],
             param.out_acc_strides[2],
-            0, // batch_stride_k, not used, only used for paged-kvcache
-            0, // batch_stride_v, not used, only used for paged-kvcache
-            param.lse_acc_strides[0], // split_stride_lse_acc
+            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_k
+            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_v
+            param.lse_acc_strides[0], // split_stride_l
             param.out_acc_strides[0], // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
                                     : -1, // window_left_size
@@ -281,9 +291,9 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            nullptr, // block_table_ptr
-            0, // batch_stride_block_table
-            0, // page_block_size
+            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
+            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
+            param.use_paged_kvcache ? param.page_block_size : 0,
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim
@@ -299,8 +309,10 @@ struct grouped_infer_splitkv_causalmask_bias_dropout_dispatch {
             param.attn_bias_strides[1],
             0, // nhead_stride_lse
             param.out_strides[1],
-            0, // batch_stride_k, not used, only used for paged-kvcache
-            0, // batch_stride_v, not used, only used for paged-kvcache
+            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_k
+            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_v
             0, // split_stride_lse_acc
             0, // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
