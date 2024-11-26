@@ -18,11 +18,11 @@
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     bool kHasDropout,
     ck_tile::index_t MaxK>
-struct grouped_forward_causalmask_bias_dropout_dispatch {
+struct grouped_forward_mask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -42,78 +42,72 @@ struct grouped_forward_causalmask_bias_dropout_dispatch {
       FmhaTraits>;
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
-    const bool has_local_attention = (param.window_size > 0) ? true : false;
+    using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-      constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
+    using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
 
-      using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
+    constexpr ck_tile::index_t occupancy = (MaxK == 64) ? 3
+        : (MaxK == 256)                                 ? 1
+                                                        : 2;
 
-      using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
+    constexpr auto kBiasEnum = kHasBias
+        ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
+        : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-      constexpr ck_tile::index_t occupancy = (MaxK == 64) ? 3
-          : (MaxK == 256)                                 ? 1
-                                                          : 2;
+    constexpr bool kPadSeqLenQ = true;
+    constexpr bool kPadSeqLenK = true;
 
-      constexpr auto kBiasEnum = kHasBias
-          ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
-          : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
+    const bool pad_headdim_q = !(param.K % FmhaFwdShape_::kSubQKHeaddim == 0);
+    const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
 
-      constexpr bool kPadSeqLenQ = true;
-      constexpr bool kPadSeqLenK = true;
+    BOOL_SWITCH_2(
+        pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+          using FmhaFwdTraits_ = ck_tile::TileFmhaTraits<
+              kPadSeqLenQ,
+              kPadSeqLenK,
+              kPadHeadDimQ,
+              kPadHeadDimV,
+              kBiasEnum,
+              false, // kHasBiasGrad place-holder
+              true, // kStoreLSE
+              kHasDropout,
+              false, // kDoFp8StaticQuant place-holder
+              occupancy>;
 
-      const bool pad_headdim_q = !(param.K % FmhaFwdShape_::kSubQKHeaddim == 0);
-      const bool pad_headdim_v = !(param.Kv % FmhaFwdShape_::kN1 == 0);
+          using FmhaPipelineProblem =
+              FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
 
-      BOOL_SWITCH_2(
-          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-            using FmhaFwdTraits_ = ck_tile::TileFmhaTraits<
-                kPadSeqLenQ,
-                kPadSeqLenK,
-                kPadHeadDimQ,
-                kPadHeadDimV,
-                kBiasEnum,
-                false, // kHasBiasGrad place-holder
-                true, // kStoreLSE
-                kHasDropout,
-                false, // kDoFp8StaticQuant place-holder
-                occupancy>;
+          using FmhaFwdPipeline_ =
+              ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
 
-            using FmhaPipelineProblem =
-                FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
+          using FmhaFwdEpilogue_ =
+              ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                  kPadSeqLenQ,
+                  kPadHeadDimV>>;
 
-            using FmhaFwdPipeline_ =
-                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+          if (param.seqlen_k_dev_ptr !=
+              nullptr) { // seqlen_k of batches are padded
+            using FmhaTilePartitioner =
+                ck_tile::FmhaFwdTilePartitioner_HBS<FmhaFwdShape_>;
+            using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
+                FmhaTilePartitioner,
+                FmhaFwdPipeline_,
+                FmhaFwdEpilogue_>;
 
-            using FmhaFwdEpilogue_ =
-                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                    typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-                    kPadSeqLenQ,
-                    kPadHeadDimV>>;
+            RunWithKernel<FmhaFwdKernel_>(param, stream);
+          } else {
+            using FmhaTilePartitioner =
+                ck_tile::FmhaFwdTilePartitioner_SHB<FmhaFwdShape_>;
+            using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
+                FmhaTilePartitioner,
+                FmhaFwdPipeline_,
+                FmhaFwdEpilogue_>;
 
-            if (param.seqlen_k_dev_ptr !=
-                nullptr) { // seqlen_k of batches are padded
-              using FmhaTilePartitioner =
-                  ck_tile::FmhaFwdTilePartitioner_HBS<FmhaFwdShape_>;
-              using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaFwdPipeline_,
-                  FmhaFwdEpilogue_>;
-
-              RunWithKernel<FmhaFwdKernel_>(param, stream);
-            } else {
-              using FmhaTilePartitioner =
-                  ck_tile::FmhaFwdTilePartitioner_SHB<FmhaFwdShape_>;
-              using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaFwdPipeline_,
-                  FmhaFwdEpilogue_>;
-
-              RunWithKernel<FmhaFwdKernel_>(param, stream);
-            }
-          });
-    });
+            RunWithKernel<FmhaFwdKernel_>(param, stream);
+          }
+        });
   };
 
   template <typename FmhaFwdKernel>

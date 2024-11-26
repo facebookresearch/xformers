@@ -28,6 +28,9 @@ from .attn_bias import (
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
     LowerTriangularMaskWithTensorBias,
+    PagedBlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
 )
 from .common import (
     AttentionBwOpBase,
@@ -50,7 +53,7 @@ def _get_seqlen_info(
     attn_bias = inp.attn_bias
     if isinstance(
         attn_bias,
-        (BlockDiagonalMask, BlockDiagonalPaddedKeysMask, BlockDiagonalGappyKeysMask),
+        (BlockDiagonalMask, BlockDiagonalPaddedKeysMask, BlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask, PagedBlockDiagonalGappyKeysMask)
     ):
         attn_bias.k_seqinfo.to(inp.query.device)
         attn_bias.q_seqinfo.to(inp.query.device)
@@ -134,6 +137,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     ):
         return int(_CustomMaskType.CausalFromBottomRight)
@@ -165,6 +169,9 @@ class FwOp(AttentionFwOpBase):
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
         attn_bias.BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+        PagedBlockDiagonalPaddedKeysMask,
+        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        PagedBlockDiagonalGappyKeysMask,
     )
 
     SUPPORTS_DROPOUT = True
@@ -282,6 +289,8 @@ class FwOp(AttentionFwOpBase):
                     (
                         BlockDiagonalGappyKeysMask,
                         BlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalGappyKeysMask,
                     ),
                 )
                 else None
@@ -294,6 +303,28 @@ class FwOp(AttentionFwOpBase):
                         BlockDiagonalCausalLocalAttentionMask,
                         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
                         LowerTriangularFromBottomRightLocalAttentionMask,
+                    ),
+                )
+                else None
+            ),
+            block_tables=(
+                inp.attn_bias.block_tables
+                if isinstance(
+                    inp.attn_bias,
+                    (
+                        PagedBlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalGappyKeysMask,
+                    ),
+                )
+                else None
+            ),
+            page_size=(
+                inp.attn_bias.page_size
+                if isinstance(
+                    inp.attn_bias,
+                    (
+                        PagedBlockDiagonalPaddedKeysMask,
+                        PagedBlockDiagonalGappyKeysMask,
                     ),
                 )
                 else None

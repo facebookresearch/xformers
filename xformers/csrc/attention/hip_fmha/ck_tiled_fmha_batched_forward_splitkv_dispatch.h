@@ -19,12 +19,15 @@
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     ck_tile::index_t MaxK,
     ck_tile::index_t MaxSeqlenQ>
-struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
-  template <typename FmhaFwdSplitKVTraits, typename FmhaMask>
+struct batched_forward_splitkv_mask_bias_dropout_dispatch {
+  template <
+      typename FmhaFwdSplitKVTraits,
+      typename FmhaMask,
+      typename ODataType>
   using FmhaFwdSplitKVPipelineProblemTemp =
       ck_tile::BlockFmhaFwdSplitKVPipelineProblem<
           typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -36,7 +39,7 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::LSEDataType,
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+          ODataType,
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
           false, // kIsGroupMode
           FmhaMask,
@@ -59,60 +62,59 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
 
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     {
-      const bool has_local_attention = (param.window_size > 0) ? true : false;
+      using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-        constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
+      using FmhaTileShape =
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTilePartitioner =
+          ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
+      constexpr ck_tile::index_t occupancy = -1;
 
-        using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
+      constexpr auto kBiasEnum = kHasBias
+          ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
+          : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-        using FmhaTileShape =
-            typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
-        using FmhaTilePartitioner =
-            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
-        constexpr ck_tile::index_t occupancy = -1;
+      const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
+      const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
+      const bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
 
-        constexpr auto kBiasEnum = kHasBias
-            ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
-            : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
+      // usually headdim_q and headdim_v are same, consider them together to
+      // determine whether to do padding saving some compiling time
+      const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-        const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
-        const bool pad_headdim_q =
-            !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
+      const bool has_uneven_splits =
+          !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
 
-        // usually headdim_q and headdim_v are same, consider them together to
-        // determine whether to do padding saving some compiling time
-        const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+      BOOL_SWITCH_3(
+          pad_seqlen_q,
+          kPadSeqLenQ,
+          pad_headdim,
+          kPadHeadDim,
+          has_uneven_splits,
+          kHasUnevenSplits,
+          [&] {
+            constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
 
-        const bool has_uneven_splits =
-            !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
+            using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDim, // kPadHeadDimQ,
+                kPadHeadDim, // kPadHeadDimV,
+                kBiasEnum,
+                false, // kHasBiasGrad place-holder
+                true, // kStoreLSE
+                false, // kDoFp8StaticQuant place-holder
+                false, // kIsPagedKV
+                kHasUnevenSplits,
+                occupancy>;
 
-        BOOL_SWITCH_3(
-            pad_seqlen_q,
-            kPadSeqLenQ,
-            pad_headdim,
-            kPadHeadDim,
-            has_uneven_splits,
-            kHasUnevenSplits,
-            [&] {
-              constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
-
-              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDim, // kPadHeadDimQ,
-                  kPadHeadDim, // kPadHeadDimV,
-                  kBiasEnum,
-                  false, // kHasBiasGrad place-holder
-                  true, // kStoreLSE
-                  false, // kDoFp8StaticQuant place-holder
-                  false, // kIsPagedKV
-                  kHasUnevenSplits,
-                  occupancy>;
-
-              using FmhaPipelineProblem =
-                  FmhaFwdSplitKVPipelineProblemTemp<FmhaTraits, FmhaMask>;
+            if (param.num_kv_splits > 1) {
+              using ODataType =
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType;
+              using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
+                  FmhaTraits,
+                  FmhaMask,
+                  ODataType>;
 
               using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
                   FmhaPipelineProblem>;
@@ -120,7 +122,7 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
               using FmhaEpilogue =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                      typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                      ODataType,
                       false,
                       false>>;
 
@@ -130,11 +132,35 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
                   FmhaEpilogue>;
 
               RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
-            });
-      });
+            } else {
+              using ODataType =
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType;
+              using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
+                  FmhaTraits,
+                  FmhaMask,
+                  ODataType>;
+
+              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
+                  FmhaPipelineProblem>;
+
+              using FmhaEpilogue =
+                  ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                      typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                      ODataType,
+                      false,
+                      false>>;
+
+              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
+                  FmhaTilePartitioner,
+                  FmhaPipeline,
+                  FmhaEpilogue>;
+
+              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
+            }
+          });
     }
 
-    {
+    if (param.num_kv_splits > 1) {
       using FmhaTileShape =
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
 
@@ -193,54 +219,103 @@ struct batched_forward_splitkv_causalmask_bias_dropout_dispatch {
       BatchedForwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
-      return FmhaFwdSplitKVKernel::MakeKargs(
-          param.q_ptr,
-          param.k_ptr,
-          param.v_ptr,
-          param.attn_bias_ptr,
-          param.logsumexp_acc_ptr,
-          param.out_acc_ptr,
-          param.B, // batch
-          param.M, // seqlen_q
-          param.N, // seqlen_k
-          nullptr, // seqlen_k_ptr, not used
-          param.K, // hdim_q
-          param.Kv, // hdim_v
-          param.Hq, // nhead_q
-          param.Hq / param.Hkv, // nhead_ratio_qk
-          param.num_kv_splits, // num_splits
-          nullptr, // block_table_ptr, not used
-          0, // batch_stride_block_table, not used
-          0, // page_table_size, not used
-          nullptr, // cache_batch_idx, not used
-          param.scale,
-          1.0f, // scale_p
-          param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
-                              // stride
-          param.k_strides[1],
-          param.v_strides[1],
-          param.attn_bias_strides[2],
-          param.out_acc_strides[2],
-          param.q_strides[2], // q, k, v, bias, lse_acc, out_acc tensor
-                              // head-dim stride
-          param.k_strides[2],
-          param.v_strides[2],
-          param.attn_bias_strides[1],
-          param.lse_acc_strides[2],
-          param.out_acc_strides[3],
-          param.q_strides[0], // q, k, v, bias, lse_acc, out_acc tensor
-                              // batch-dim stride
-          param.k_strides[0],
-          param.v_strides[0],
-          param.attn_bias_strides[0],
-          param.lse_acc_strides[1],
-          param.out_acc_strides[1],
-          param.lse_acc_strides[0], // split_stride_lse_acc
-          param.out_acc_strides[0], // split_stride_out_acc
-          (param.window_size > 0) ? param.window_size - 1
-                                  : -1, // window_left_size
-          (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
-          param.custom_mask_type);
+      if (param.num_kv_splits)
+        return FmhaFwdSplitKVKernel::MakeKargs(
+            param.q_ptr,
+            param.k_ptr,
+            param.v_ptr,
+            param.attn_bias_ptr,
+            param.logsumexp_acc_ptr,
+            param.out_acc_ptr,
+            param.B, // batch
+            param.M, // seqlen_q
+            param.N, // seqlen_k
+            nullptr, // seqlen_k_ptr, not used
+            param.K, // hdim_q
+            param.Kv, // hdim_v
+            param.Hq, // nhead_q
+            param.Hq / param.Hkv, // nhead_ratio_qk
+            param.num_kv_splits, // num_splits
+            nullptr, // block_table_ptr, not used
+            0, // batch_stride_block_table, not used
+            0, // page_table_size, not used
+            nullptr, // cache_batch_idx, not used
+            param.scale,
+            1.0f, // scale_p
+            param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
+                                // stride
+            param.k_strides[1],
+            param.v_strides[1],
+            param.attn_bias_strides[2],
+            param.out_acc_strides[2],
+            param.q_strides[2], // q, k, v, bias, lse_acc, out_acc tensor
+                                // head-dim stride
+            param.k_strides[2],
+            param.v_strides[2],
+            param.attn_bias_strides[1],
+            param.lse_acc_strides[2],
+            param.out_acc_strides[3],
+            param.q_strides[0], // q, k, v, bias, lse_acc, out_acc tensor
+                                // batch-dim stride
+            param.k_strides[0],
+            param.v_strides[0],
+            param.attn_bias_strides[0],
+            param.lse_acc_strides[1],
+            param.out_acc_strides[1],
+            param.lse_acc_strides[0], // split_stride_lse_acc
+            param.out_acc_strides[0], // split_stride_out_acc
+            (param.window_size > 0) ? param.window_size - 1
+                                    : -1, // window_left_size
+            (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
+            param.custom_mask_type);
+      else
+        return FmhaFwdSplitKVKernel::MakeKargs(
+            param.q_ptr,
+            param.k_ptr,
+            param.v_ptr,
+            param.attn_bias_ptr,
+            param.logsumexp_ptr,
+            param.out_ptr,
+            param.B, // batch
+            param.M, // seqlen_q
+            param.N, // seqlen_k
+            nullptr, // seqlen_k_ptr, not used
+            param.K, // hdim_q
+            param.Kv, // hdim_v
+            param.Hq, // nhead_q
+            param.Hq / param.Hkv, // nhead_ratio_qk
+            param.num_kv_splits, // num_splits
+            nullptr, // block_table_ptr, not used
+            0, // batch_stride_block_table, not used
+            0, // page_table_size, not used
+            nullptr, // cache_batch_idx, not used
+            param.scale,
+            1.0f, // scale_p
+            param.q_strides[1], // q, k, v, bias, out tensor seq-dim stride
+            param.k_strides[1],
+            param.v_strides[1],
+            param.attn_bias_strides[2],
+            param.out_strides[1],
+            param.q_strides[2], // q, k, v, bias, lse, out tensor head-dim
+                                // stride
+            param.k_strides[2],
+            param.v_strides[2],
+            param.attn_bias_strides[1],
+            param.lse_strides[1],
+            param.out_strides[2],
+            param.q_strides[0], // q, k, v, bias, lse, out tensor
+                                // batch-dim stride
+            param.k_strides[0],
+            param.v_strides[0],
+            param.attn_bias_strides[0],
+            param.lse_strides[0],
+            param.out_strides[0],
+            0, // split_stride_lse_acc
+            0, // split_stride_out_acc
+            (param.window_size > 0) ? param.window_size - 1
+                                    : -1, // window_left_size
+            (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
+            param.custom_mask_type);
     }();
 
     dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(

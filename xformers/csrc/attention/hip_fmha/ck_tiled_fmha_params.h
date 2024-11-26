@@ -103,6 +103,12 @@ struct GroupedInferParams {
   int window_size; // local-attention
 
   void* out_ptr;
+
+  bool use_paged_kvcache;
+  bool is_gappy;
+  void* block_table_ptr;
+  int page_block_size;
+  int batch_stride_block_table;
 };
 
 struct GroupedForwardParams : public GroupedInferParams {

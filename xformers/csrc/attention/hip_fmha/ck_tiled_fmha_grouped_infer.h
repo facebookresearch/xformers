@@ -12,11 +12,11 @@
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     bool kHasDropout,
     ck_tile::index_t MaxK>
-void run_grouped_infer_causalmask_bias_dropout_dispatch(
+void run_grouped_infer_mask_bias_dropout_dispatch(
     GroupedForwardParams& param,
     hipStream_t stream) {
   // currently split-kv implementation does not support dropout
@@ -24,25 +24,25 @@ void run_grouped_infer_causalmask_bias_dropout_dispatch(
 #ifndef FMHA_FWD_SPLITKV_NOT_USED
     if (param.use_split_kv) {
       FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
-        grouped_infer_splitkv_causalmask_bias_dropout_dispatch<
+        grouped_infer_splitkv_mask_bias_dropout_dispatch<
             ScalarType,
-            kHasCausalMask,
+            kHasMask,
             kHasBias,
             MaxK,
             MaxSeqlenQ>::Run(param, stream);
       });
     } else
 #endif
-      grouped_infer_causalmask_bias_dropout_dispatch<
+      grouped_infer_mask_bias_dropout_dispatch<
           ScalarType,
-          kHasCausalMask,
+          kHasMask,
           kHasBias,
           kHasDropout,
           MaxK>::Run(param, stream);
   } else {
-    grouped_infer_causalmask_bias_dropout_dispatch<
+    grouped_infer_mask_bias_dropout_dispatch<
         ScalarType,
-        kHasCausalMask,
+        kHasMask,
         kHasBias,
         kHasDropout,
         MaxK>::Run(param, stream);

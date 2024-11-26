@@ -25,16 +25,18 @@ void grouped_backward_fp16(GroupedBackwardParams& param, hipStream_t stream) {
       [&] {
         if constexpr (kHasBias || !kHasBiasGrad) {
           FMHA_BWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
-            if (param.custom_mask_type == 0)
-              run_grouped_backward_causalmask_bias_dropout_dispatch<
+            if (param.custom_mask_type == 0 && param.window_size <= 0)
+              run_grouped_backward_mask_bias_dropout_dispatch<
                   ck_tile::fp16_t,
                   false,
                   kHasBias,
                   kHasBiasGrad,
                   kHasDropout,
                   MaxK>(param, stream);
-            else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-              run_grouped_backward_causalmask_bias_dropout_dispatch<
+            else if (
+                param.custom_mask_type == 1 || param.custom_mask_type == 2 ||
+                param.window_size > 0)
+              run_grouped_backward_mask_bias_dropout_dispatch<
                   ck_tile::fp16_t,
                   true,
                   kHasBias,
