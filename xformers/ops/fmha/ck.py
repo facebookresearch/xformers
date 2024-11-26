@@ -126,7 +126,6 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
             LowerTriangularMask,
             BlockDiagonalCausalMask,
             BlockDiagonalCausalLocalAttentionMask,
-            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     ):
         return int(_CustomMaskType.CausalFromTopLeft)
@@ -138,6 +137,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     ):
         return int(_CustomMaskType.CausalFromBottomRight)
