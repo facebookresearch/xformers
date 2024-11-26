@@ -19,11 +19,11 @@
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     ck_tile::index_t MaxK,
     ck_tile::index_t MaxSeqlenQ>
-struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
+struct batched_infer_splitkv_mask_bias_dropout_dispatch {
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -62,122 +62,115 @@ struct batched_infer_splitkv_causalmask_bias_dropout_dispatch {
 
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     {
-      const bool has_local_attention = (param.window_size > 0) ? true : false;
+      using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-        constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
+      using FmhaTileShape =
+          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTilePartitioner =
+          ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
+      constexpr ck_tile::index_t occupancy = -1;
 
-        using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
+      constexpr auto kBiasEnum = kHasBias
+          ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
+          : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-        using FmhaTileShape =
-            typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
-        using FmhaTilePartitioner =
-            ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
-        constexpr ck_tile::index_t occupancy = -1;
+      const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
+      const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
+      const bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
 
-        constexpr auto kBiasEnum = kHasBias
-            ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
-            : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
+      // usually headdim_q and headdim_v are same, consider them together to
+      // determine whether to do padding saving some compiling time
+      const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
 
-        const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
-        const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
-        const bool pad_headdim_q =
-            !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
+      const bool has_uneven_splits =
+          !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
 
-        // usually headdim_q and headdim_v are same, consider them together to
-        // determine whether to do padding saving some compiling time
-        const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+      BOOL_SWITCH_3(
+          pad_seqlen_q,
+          kPadSeqLenQ,
+          pad_headdim,
+          kPadHeadDim,
+          has_uneven_splits,
+          kHasUnevenSplits,
+          [&] {
+            constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
 
-        const bool has_uneven_splits =
-            !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
+            if (param.num_kv_splits > 1) {
+              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
+                  kPadSeqLenQ,
+                  kPadSeqLenK,
+                  kPadHeadDim, // kPadHeadDimQ,
+                  kPadHeadDim, // kPadHeadDimV,
+                  kBiasEnum,
+                  false, // kHasBiasGrad place-holder
+                  true, // kStoreLSE
+                  false, // kDoFp8StaticQuant place-holder
+                  false, // kIsPagedKV
+                  kHasUnevenSplits,
+                  occupancy>;
 
-        BOOL_SWITCH_3(
-            pad_seqlen_q,
-            kPadSeqLenQ,
-            pad_headdim,
-            kPadHeadDim,
-            has_uneven_splits,
-            kHasUnevenSplits,
-            [&] {
-              constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
+              using ODataType =
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType;
+              using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
+                  FmhaTraits,
+                  FmhaMask,
+                  ODataType>;
 
-              if (param.num_kv_splits > 1) {
-                using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                    kPadSeqLenQ,
-                    kPadSeqLenK,
-                    kPadHeadDim, // kPadHeadDimQ,
-                    kPadHeadDim, // kPadHeadDimV,
-                    kBiasEnum,
-                    false, // kHasBiasGrad place-holder
-                    true, // kStoreLSE
-                    false, // kDoFp8StaticQuant place-holder
-                    false, // kIsPagedKV
-                    kHasUnevenSplits,
-                    occupancy>;
+              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
+                  FmhaPipelineProblem>;
 
-                using ODataType =
-                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType;
-                using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
-                    FmhaTraits,
-                    FmhaMask,
-                    ODataType>;
+              using FmhaEpilogue =
+                  ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                      typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                      ODataType,
+                      false,
+                      false>>;
 
-                using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                    FmhaPipelineProblem>;
+              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
+                  FmhaTilePartitioner,
+                  FmhaPipeline,
+                  FmhaEpilogue>;
 
-                using FmhaEpilogue = ck_tile::Default2DEpilogue<
-                    ck_tile::Default2DEpilogueProblem<
-                        typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                        ODataType,
-                        false,
-                        false>>;
+              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
+            } else {
+              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
+                  kPadSeqLenQ,
+                  kPadSeqLenK,
+                  kPadHeadDim, // kPadHeadDimQ,
+                  kPadHeadDim, // kPadHeadDimV,
+                  kBiasEnum,
+                  false, // kHasBiasGrad place-holder
+                  false, // kStoreLSE
+                  false, // kDoFp8StaticQuant place-holder
+                  false, // kIsPagedKV
+                  kHasUnevenSplits,
+                  occupancy>;
 
-                using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
+              using ODataType =
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType;
+              using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
+                  FmhaTraits,
+                  FmhaMask,
+                  ODataType>;
 
-                RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
-              } else {
-                using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                    kPadSeqLenQ,
-                    kPadSeqLenK,
-                    kPadHeadDim, // kPadHeadDimQ,
-                    kPadHeadDim, // kPadHeadDimV,
-                    kBiasEnum,
-                    false, // kHasBiasGrad place-holder
-                    false, // kStoreLSE
-                    false, // kDoFp8StaticQuant place-holder
-                    false, // kIsPagedKV
-                    kHasUnevenSplits,
-                    occupancy>;
+              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
+                  FmhaPipelineProblem>;
 
-                using ODataType =
-                    typename FmhaFwdTypeConfig<ScalarType>::ODataType;
-                using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
-                    FmhaTraits,
-                    FmhaMask,
-                    ODataType>;
+              using FmhaEpilogue =
+                  ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                      typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                      ODataType,
+                      false,
+                      false>>;
 
-                using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                    FmhaPipelineProblem>;
+              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
+                  FmhaTilePartitioner,
+                  FmhaPipeline,
+                  FmhaEpilogue>;
 
-                using FmhaEpilogue = ck_tile::Default2DEpilogue<
-                    ck_tile::Default2DEpilogueProblem<
-                        typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                        ODataType,
-                        false,
-                        false>>;
-
-                using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                    FmhaTilePartitioner,
-                    FmhaPipeline,
-                    FmhaEpilogue>;
-
-                RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
-              }
-            });
-      });
+              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
+            }
+          });
     };
 
     if (param.num_kv_splits > 1) {
