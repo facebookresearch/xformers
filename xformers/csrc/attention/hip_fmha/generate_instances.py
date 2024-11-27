@@ -20,7 +20,7 @@ FMHA_COPYRIGHT_HEADER = """
  * The file is automatically generated, don't modify!
  * See the generator script `{file}`
  */
-""".format(file=__file__)
+""".format(file=os.path.relpath(os.path.realpath(__file__), start=Path(__file__).parents[4]))
 
 FMHA_INFER_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
