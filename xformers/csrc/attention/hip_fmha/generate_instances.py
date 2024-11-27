@@ -18,8 +18,9 @@ FMHA_COPYRIGHT_HEADER = """
  * LICENSE file in the root directory of this source tree.
  *
  * The file is automatically generated, don't modify!
+ * See the generator script `{file}`
  */
-"""
+""".format(file=__file__)
 
 FMHA_INFER_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
@@ -104,11 +105,7 @@ BOOL_MAP_DROPOUT = {
 }
 
 INT_MAP_MAX_K = {
-    32: "maxk_32",
-    64: "maxk_64",
-    96: "maxk_96",
-    128: "maxk_128",
-    256: "maxk_256",
+    hd: f"maxk_{hd}" for hd in [32, 64, 96, 128, 256, 512]
 }
 
 TYPE_CTYPE_MAP = {
@@ -372,7 +369,7 @@ if __name__ == "__main__":
         headdims_fwd = [32, 64, 96, 128]
         headdims_bwd = [32, 64, 96, 128]
     else:
-        headdims_fwd = [32, 64, 96, 128, 256]
+        headdims_fwd = [32, 64, 96, 128, 256, 512]
         headdims_bwd = [32, 64, 96, 128, 256]
 
     this_dir = os.path.dirname(__file__)
