@@ -83,6 +83,13 @@ struct FmhaFwdBlockTile<256> {
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
 
+template <>
+struct FmhaFwdBlockTile<512> {
+  using type = ck_tile::sequence<128, 128, 32, 512, 32, 512>;
+  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm1_warps = ck_tile::sequence<4, 1, 1>;
+};
+
 using FmhaFwdWarpTile = ck_tile::sequence<32, 32, 16>;
 
 static constexpr bool IsVLayoutRowMajor = true;
@@ -132,6 +139,15 @@ struct FmhaFwdShape<256> : ck_tile::TileFmhaShape<
                                typename FmhaFwdBlockTile<256>::gemm0_warps,
                                FmhaFwdWarpTile,
                                typename FmhaFwdBlockTile<256>::gemm1_warps,
+                               FmhaFwdWarpTile,
+                               IsVLayoutRowMajor> {};
+
+template <>
+struct FmhaFwdShape<512> : ck_tile::TileFmhaShape<
+                               typename FmhaFwdBlockTile<512>::type,
+                               typename FmhaFwdBlockTile<512>::gemm0_warps,
+                               FmhaFwdWarpTile,
+                               typename FmhaFwdBlockTile<512>::gemm1_warps,
                                FmhaFwdWarpTile,
                                IsVLayoutRowMajor> {};
 
