@@ -68,6 +68,8 @@ if _C_flashattention3 is not None:
         softmax_scale: float,
         is_causal: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor,]:
+        window_size_left = -1
+        window_size_right = 0 if is_causal else -1
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
             assert seqused_k is None
@@ -80,21 +82,36 @@ if _C_flashattention3 is not None:
                 softmax_lse,
                 p,
             ) = _C_flashattention3.fwd(
-                query, key, value, None, softmax_scale, None, None, None, is_causal
+                query,  # q
+                key,    # k
+                value,  # v
+                None,   # out_
+                softmax_scale,  # softmax_scale
+                None,   # descale_q
+                None,   # descale_k
+                None,   # descale_v
+                is_causal,  # is_causal
+                window_size_left,   # window_size_left
+                window_size_right,  # window_size_right
+                False,  # use_gqa_packing
             )
         else:
             out, q, k, v, out_padded, softmax_lse = _C_flashattention3.varlen_fwd(
-                query,
-                key,
-                value,
-                None,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                seqused_k,
-                max_seqlen_q,
-                max_seqlen_k,
-                softmax_scale,
-                is_causal,
+                query,  # q
+                key,    # k
+                value,  # v
+                None,   # out_
+                cu_seqlens_q,   # cu_seqlens_q
+                cu_seqlens_k,   # cu_seqlens_k
+                None,   # seqused_q
+                seqused_k,  # seqused_k
+                None,   # block_table_
+                max_seqlen_q,   # max_seqlen_q
+                max_seqlen_k,   # max_seqlen_k
+                softmax_scale,  # softmax_scale
+                is_causal,  # is_causal
+                window_size_left,   # window_size_left
+                window_size_right,  # window_size_right
             )
         return out, softmax_lse
 
@@ -159,40 +176,48 @@ if _C_flashattention3 is not None:
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         is_deterministic = False
+        window_size_left = -1
+        window_size_right = 0 if is_causal else -1
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
             dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                softmax_scale,
-                is_causal,
-                is_deterministic,
+                dout,   # dout
+                query,  # q
+                key,    # k
+                value,  # v
+                out,    # out
+                softmax_lse,    # softmax_lse
+                dq,     # dq_
+                dk,     # dk_
+                dv,     # dv_
+                softmax_scale,  # softmax_scale
+                is_causal,  # is_causal
+                window_size_left,   # window_size_left
+                window_size_left,   # window_size_right
+                is_deterministic,   # is_deterministic
             )
         else:
             dq, dk, dv, softmax_d, *rest = _C_flashattention3.varlen_bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                max_seqlen_q,
-                max_seqlen_k,
-                softmax_scale,
-                is_causal,
-                is_deterministic,
+                dout,   # dout
+                query,  # q
+                key,    # k
+                value,  # v
+                out,    # out
+                softmax_lse,    # softmax_lse
+                dq,     # dq_
+                dk,     # dk_
+                dv,     # dv_
+                cu_seqlens_q,   # cu_seqlens_q
+                cu_seqlens_k,   # cu_seqlens_k
+                None,   # seqused_q
+                None,   # seqused_k
+                max_seqlen_q,   # max_seqlen_q
+                max_seqlen_k,   # max_seqlen_k
+                softmax_scale,  # softmax_scale
+                is_causal,      # is_causal
+                window_size_left,   # window_size_left
+                window_size_right,  # window_size_right
+                is_deterministic,   # is_deterministic
             )
         return dq, dk, dv
 
