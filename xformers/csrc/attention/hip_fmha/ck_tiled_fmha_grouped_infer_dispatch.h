@@ -47,7 +47,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
 
     using FmhaShape = FmhaFwdShape<MaxK>;
     constexpr ck_tile::index_t occupancy =
-        (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
+        (MaxK == 64) ? 3 : ((MaxK >= 256) ? 1 : 2);
 
     constexpr auto kBiasEnum = kHasBias
         ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
