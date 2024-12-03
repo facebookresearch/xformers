@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_splitkv_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -21,9 +21,8 @@ template <
     typename ScalarType,
     bool kHasMask,
     bool kHasBias,
-    ck_tile::index_t MaxK,
-    ck_tile::index_t MaxSeqlenQ>
-struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
+    ck_tile::index_t MaxK>
+struct grouped_forward_splitkv_smallq_mask_bias_dropout_dispatch {
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -40,7 +39,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           ODataType,
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
+          typename FmhaFwdSplitKVSmallQShape<MaxK>::Type,
           true, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
@@ -64,8 +63,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
 
@@ -78,33 +76,25 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
       constexpr bool kPadSeqLenQ = true;
       constexpr bool kPadSeqLenK = true;
 
-      bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
-      bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
+      const bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
+      const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
-      bool is_paged_kv = param.use_paged_kvcache;
+      BOOL_SWITCH_2(
+          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+            using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ,
+                kPadHeadDimV,
+                kBiasEnum,
+                false, // kHasBiasGrad place-holder
+                true, // kStoreLSE
+                false, // kDoFp8StaticQuant place-holder
+                false, // kIsPagedKV
+                true, // kHasUnevenSplits
+                occupancy>;
 
-      BOOL_SWITCH_3(
-          pad_headdim_q,
-          kPadHeadDimQ,
-          pad_headdim_v,
-          kPadHeadDimV,
-          is_paged_kv,
-          kIsPagedKV,
-          [&] {
             if (param.num_kv_splits > 1) {
-              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  kBiasEnum,
-                  false, // kHasBiasGrad place-holder
-                  true, // kStoreLSE
-                  false, // kDoFp8StaticQuant place-holder
-                  kIsPagedKV,
-                  true, // kHasUnevenSplits
-                  occupancy>;
-
               using ODataType =
                   typename FmhaFwdTypeConfig<ScalarType>::OaccDataType;
               using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
@@ -112,36 +102,24 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaFwdPipeline_ =
+                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                      FmhaPipelineProblem>;
 
-              using FmhaEpilogue =
+              using FmhaFwdEpilogue_ =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
                       ODataType,
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
+              using FmhaFwdKernel_ = ck_tile::FmhaFwdSplitKVKernel<
                   FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+                  FmhaFwdPipeline_,
+                  FmhaFwdEpilogue_>;
 
-              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
+              RunWithFwdSplitKVKernel<FmhaFwdKernel_>(param, stream);
             } else {
-              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  kBiasEnum,
-                  false, // kHasBiasGrad place-holder
-                  false, // kStoreLSE
-                  false, // kDoFp8StaticQuant place-holder
-                  kIsPagedKV,
-                  true, // kHasUnevenSplits
-                  occupancy>;
-
               using ODataType =
                   typename FmhaFwdTypeConfig<ScalarType>::ODataType;
               using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
@@ -149,31 +127,31 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaFwdPipeline_ =
+                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                      FmhaPipelineProblem>;
 
-              using FmhaEpilogue =
+              using FmhaFwdEpilogue_ =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
                       ODataType,
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
+              using FmhaFwdKernel_ = ck_tile::FmhaFwdSplitKVKernel<
                   FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+                  FmhaFwdPipeline_,
+                  FmhaFwdEpilogue_>;
 
-              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
+              RunWithFwdSplitKVKernel<FmhaFwdKernel_>(param, stream);
             }
           });
     };
 
     if (param.num_kv_splits > 1) {
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
 
-      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
+      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0;
       constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
 
       using FmhaTilePartitioner =
@@ -189,7 +167,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
           using FmhaTraits = ck_tile::TileFmhaFwdSplitKVCombineTraits<
               kPadSeqLenQ,
               kPadHeadDimV,
-              false, // kStoreLSE
+              true, // kStoreLSE
               false, // kDoFp8StaticQuant place-holder
               kLogMaxSplits,
               -1>;
@@ -240,10 +218,10 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
-            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
-            param.use_paged_kvcache ? param.page_block_size : 0,
-            param.use_paged_kvcache ? param.is_gappy : false,
+            nullptr, // block_table_ptr
+            0, // batch_stride_block_table
+            0, // page_block_size
+            false, // is_gappy
             param.scale,
             1.0f, // scale_p
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
@@ -259,11 +237,9 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
             param.attn_bias_strides[1],
             param.lse_acc_strides[1],
             param.out_acc_strides[2],
-            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_k
-            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_v
-            param.lse_acc_strides[0], // split_stride_l
+            0, // batch_stride_k, not used, only used for paged-kvcache
+            0, // batch_stride_v, not used, only used for paged-kvcache
+            param.lse_acc_strides[0], // split_stride_lse_acc
             param.out_acc_strides[0], // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
                                     : -1, // window_left_size
@@ -275,7 +251,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
             param.k_ptr,
             param.v_ptr,
             param.attn_bias_ptr,
-            nullptr, // lse_ptr,
+            param.logsumexp_ptr,
             param.out_ptr,
             param.num_batches,
             param.seqstart_q_dev_ptr,
@@ -286,29 +262,26 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
-            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
-            param.use_paged_kvcache ? param.page_block_size : 0,
-            param.use_paged_kvcache ? param.is_gappy : false,
+            nullptr, // block_table_ptr
+            0, // batch_stride_block_table
+            0, // page_block_size
+            false, // is_gappy
             param.scale,
             1.0f, // scale_p
-            param.q_strides[0], // q, k, v, bias, out tensor seq-dim
-                                // stride
+            param.q_strides[0], // q, k, v, bias, out tensor seq-dim stride
             param.k_strides[0],
             param.v_strides[0],
             param.attn_bias_strides[2],
             param.out_strides[0],
-            param.q_strides[1], // q, k, v, bias, lse, out tensor
-                                // head-dim stride
+            param.q_strides[1], // q, k, v, bias, lse, out tensor head-dim
+                                // stride
             param.k_strides[1],
             param.v_strides[1],
             param.attn_bias_strides[1],
-            0, // nhead_stride_lse
+            param.lse_strides[0],
             param.out_strides[1],
-            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_k
-            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_v
+            0, // batch_stride_k, not used, only used for paged-kvcache
+            0, // batch_stride_v, not used, only used for paged-kvcache
             0, // split_stride_lse_acc
             0, // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
@@ -340,7 +313,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
       return FmhaSplitKVCombineKernel::MakeKargs(
           param.logsumexp_acc_ptr,
           param.out_acc_ptr,
-          nullptr, // lse_ptr, not used
+          param.logsumexp_ptr,
           param.out_ptr,
           param.num_batches,
           param.seqstart_q_dev_ptr,
@@ -351,7 +324,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
           param.out_strides[0], // row_stride_o,
           param.lse_acc_strides[1], // nhead_stride_lse_acc
           param.out_acc_strides[2], // nhead_stride_o_acc,
-          0, // nhead_stride_lse,
+          param.lse_strides[0], // nhead_stride_lse,
           param.out_strides[1], // nhead_stride_o,
           param.lse_acc_strides[0], // split_stride_lse_acc,
           param.out_acc_strides[0]); // split_stride_o_acc

@@ -6,8 +6,11 @@
  */
 #pragma once
 
+#include <algorithm>
 #include "ck_tiled_fmha_batched_forward_dispatch.h"
 #include "ck_tiled_fmha_batched_forward_splitkv_dispatch.h"
+#include "ck_tiled_fmha_batched_forward_splitkv_smallq_dispatch.h"
+#include "ck_tiled_fmha_fwd_splitkv_selector.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
 template <
@@ -23,14 +26,22 @@ void run_batched_forward_mask_bias_dropout_dispatch(
   if constexpr (!kHasDropout) {
 #ifndef FMHA_FWD_SPLITKV_NOT_USED
     if (param.use_split_kv) {
-      FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
-        batched_forward_splitkv_mask_bias_dropout_dispatch<
+      if (use_splitkv_smallq(param.M, std::max(param.K, param.Kv))) {
+        batched_forward_splitkv_smallq_mask_bias_dropout_dispatch<
             ScalarType,
             kHasMask,
             kHasBias,
-            MaxK,
-            MaxSeqlenQ>::Run(param, stream);
-      });
+            MaxK>::Run(param, stream);
+      } else {
+        FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
+          batched_forward_splitkv_mask_bias_dropout_dispatch<
+              ScalarType,
+              kHasMask,
+              kHasBias,
+              MaxK,
+              MaxSeqlenQ>::Run(param, stream);
+        });
+      }
     } else
 #endif
       batched_forward_mask_bias_dropout_dispatch<

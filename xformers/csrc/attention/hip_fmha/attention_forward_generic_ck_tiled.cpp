@@ -6,6 +6,7 @@
  */
 #include <cmath>
 #include <mutex>
+#include <tuple>
 
 #include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
@@ -239,14 +240,18 @@ efficient_attention_forward_ck(
       p.lse_strides = {0, 0, 0};
     }
 
-    // added for support split_kv
-    p.num_kv_splits =
+    bool use_split_kv;
+    int num_kv_splits;
+
+    std::tie(use_split_kv, num_kv_splits) =
         get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 32);
 
-    // fmha fwd split-kv kernel does not support dropout
-    p.use_split_kv = (!use_dropout && (p.num_kv_splits > 1)) ? true : false;
+    // 1) fmha fwd split-kv kernel does not support dropout
+    p.use_split_kv = (!use_dropout && use_split_kv) ? true : false;
 
-    if (p.use_split_kv) {
+    p.num_kv_splits = num_kv_splits;
+
+    if (p.use_split_kv && p.num_kv_splits > 1) {
       out_acc =
           at::empty({p.num_kv_splits, B, M, Hq, Kv}, opts.dtype(at::kFloat));
       p.out_acc_ptr = out_acc.data_ptr();
@@ -383,16 +388,19 @@ efficient_attention_forward_ck(
       p.lse_strides = {0, 0};
     }
 
+    bool use_split_kv;
+    int num_kv_splits;
+
     // added for support split_kv
-    p.num_kv_splits = get_num_kv_splits_heuristic(
+    std::tie(use_split_kv, num_kv_splits) = get_num_kv_splits_heuristic(
         p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 32);
 
     // 1) fmha fwd split-kv kernel does not support dropout
     // 2) Paged-KVcache is only available from the split-kv kernel at present
     p.use_split_kv =
-        (p.use_paged_kvcache || (!use_dropout && (p.num_kv_splits > 1)))
-        ? true
-        : false;
+        (p.use_paged_kvcache || (!use_dropout && use_split_kv)) ? true : false;
+
+    p.num_kv_splits = num_kv_splits;
 
     if (p.use_split_kv && p.num_kv_splits > 1) {
       out_acc = at::empty({p.num_kv_splits, M, Hq, Kv}, opts.dtype(at::kFloat));

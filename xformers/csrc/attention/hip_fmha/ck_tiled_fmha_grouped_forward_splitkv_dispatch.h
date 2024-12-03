@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 

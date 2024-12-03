@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_splitkv_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -21,9 +21,8 @@ template <
     typename ScalarType,
     bool kHasMask,
     bool kHasBias,
-    ck_tile::index_t MaxK,
-    ck_tile::index_t MaxSeqlenQ>
-struct batched_infer_splitkv_mask_bias_dropout_dispatch {
+    ck_tile::index_t MaxK>
+struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -40,8 +39,8 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           ODataType,
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
-          false, // kIsGroupMode
+          typename FmhaFwdSplitKVSmallQShape<MaxK>::Type,
+          true, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
@@ -57,56 +56,51 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
           MaxK, // headdim_v
           kM0,
           kN1,
-          false, // kIsGroupMode
+          true, // kIsGroupMode
           FmhaSplitKVCombineTraits>;
 
-  static void Run(BatchedForwardParams& param, hipStream_t stream) {
+  static void Run(GroupedForwardParams& param, hipStream_t stream) {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
+
       constexpr ck_tile::index_t occupancy = -1;
 
       constexpr auto kBiasEnum = kHasBias
           ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
           : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-      const bool pad_seqlen_q = !(param.M % FmhaTileShape::kM0 == 0);
-      const bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
-      const bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
+      constexpr bool kPadSeqLenQ = true;
+      constexpr bool kPadSeqLenK = true;
 
-      // usually headdim_q and headdim_v are same, consider them together to
-      // determine whether to do padding saving some compiling time
-      const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+      bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
+      bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
-      const bool has_uneven_splits =
-          !(param.N % (param.num_kv_splits * FmhaTileShape::kN0) == 0);
+      bool is_paged_kv = param.use_paged_kvcache;
 
       BOOL_SWITCH_3(
-          pad_seqlen_q,
-          kPadSeqLenQ,
-          pad_headdim,
-          kPadHeadDim,
-          has_uneven_splits,
-          kHasUnevenSplits,
+          pad_headdim_q,
+          kPadHeadDimQ,
+          pad_headdim_v,
+          kPadHeadDimV,
+          is_paged_kv,
+          kIsPagedKV,
           [&] {
-            constexpr bool kPadSeqLenK = kHasUnevenSplits ? true : false;
-
             if (param.num_kv_splits > 1) {
               using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
-                  kPadHeadDim, // kPadHeadDimQ,
-                  kPadHeadDim, // kPadHeadDimV,
+                  kPadHeadDimQ,
+                  kPadHeadDimV,
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   true, // kStoreLSE
                   false, // kDoFp8StaticQuant place-holder
-                  false, // kIsPagedKV
-                  kHasUnevenSplits,
+                  kIsPagedKV,
+                  true, // kHasUnevenSplits
                   occupancy>;
 
               using ODataType =
@@ -116,8 +110,9 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                      FmhaPipelineProblem>;
 
               using FmhaEpilogue =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
@@ -136,14 +131,14 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
               using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
                   kPadSeqLenQ,
                   kPadSeqLenK,
-                  kPadHeadDim, // kPadHeadDimQ,
-                  kPadHeadDim, // kPadHeadDimV,
+                  kPadHeadDimQ,
+                  kPadHeadDimV,
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   false, // kStoreLSE
                   false, // kDoFp8StaticQuant place-holder
-                  false, // kIsPagedKV
-                  kHasUnevenSplits,
+                  kIsPagedKV,
+                  true, // kHasUnevenSplits
                   occupancy>;
 
               using ODataType =
@@ -153,8 +148,9 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                      FmhaPipelineProblem>;
 
               using FmhaEpilogue =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
@@ -174,62 +170,56 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
     };
 
     if (param.num_kv_splits > 1) {
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
 
-      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
+      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0;
       constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
       constexpr ck_tile::index_t occupancy = -1;
 
-      const bool pad_seqlen_q = !(param.M % kM0 == 0);
+      constexpr bool kPadSeqLenQ = true;
+
       const bool pad_headdim_v = !(param.Kv % kN1 == 0);
 
-      BOOL_SWITCH_2(
-          pad_seqlen_q, kPadSeqLenQ, pad_headdim_v, kPadHeadDimV, [&] {
-            FMHA_FWD_NUM_KV_SPLITS_SWITCH(
-                param.num_kv_splits, kLogMaxSplits, [&] {
-                  using FmhaTraits = ck_tile::TileFmhaFwdSplitKVCombineTraits<
-                      kPadSeqLenQ,
-                      kPadHeadDimV,
-                      false, // kStoreLSE
-                      false, // kDoFp8StaticQuant place-holder
-                      kLogMaxSplits,
-                      -1>;
+      BOOL_SWITCH(pad_headdim_v, kPadHeadDimV, [&] {
+        FMHA_FWD_NUM_KV_SPLITS_SWITCH(param.num_kv_splits, kLogMaxSplits, [&] {
+          using FmhaTraits = ck_tile::TileFmhaFwdSplitKVCombineTraits<
+              kPadSeqLenQ,
+              kPadHeadDimV,
+              false, // kStoreLSE
+              false, // kDoFp8StaticQuant place-holder
+              kLogMaxSplits,
+              -1>;
 
-                  using FmhaPipelineProblem =
-                      FmhaSplitKVCombinePipelineProblemTemp<
-                          kM0,
-                          kN1,
-                          FmhaTraits>;
+          using FmhaPipelineProblem =
+              FmhaSplitKVCombinePipelineProblemTemp<kM0, kN1, FmhaTraits>;
 
-                  using FmhaPipeline =
-                      ck_tile::BlockFmhaFwdSplitKVCombinePipeline<
-                          FmhaPipelineProblem>;
+          using FmhaPipeline =
+              ck_tile::BlockFmhaFwdSplitKVCombinePipeline<FmhaPipelineProblem>;
 
-                  using FmhaEpilogue = ck_tile::Default2DEpilogue<
-                      ck_tile::Default2DEpilogueProblem<
-                          typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                          typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-                          kPadSeqLenQ,
-                          kPadHeadDimV>>;
+          using FmhaEpilogue =
+              ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                  kPadSeqLenQ,
+                  kPadHeadDimV>>;
 
-                  using FmhaKernel = ck_tile::FmhaFwdSplitKVCombineKernel<
-                      FmhaTilePartitioner,
-                      FmhaPipeline,
-                      FmhaEpilogue>;
+          using FmhaKernel = ck_tile::FmhaFwdSplitKVCombineKernel<
+              FmhaTilePartitioner,
+              FmhaPipeline,
+              FmhaEpilogue>;
 
-                  RunWithSplitKVCombineKernel<FmhaKernel>(param, stream);
-                });
-          });
+          RunWithSplitKVCombineKernel<FmhaKernel>(param, stream);
+        });
+      });
     };
   };
 
   template <typename FmhaFwdSplitKVKernel>
   static void RunWithFwdSplitKVKernel(
-      BatchedForwardParams& param,
+      GroupedForwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
       if (param.num_kv_splits > 1)
@@ -240,42 +230,39 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
             param.attn_bias_ptr,
             param.logsumexp_acc_ptr,
             param.out_acc_ptr,
-            param.B, // batch
-            param.M, // seqlen_q
-            param.N, // seqlen_k
-            nullptr, // seqlen_k_ptr, not used
+            param.num_batches,
+            param.seqstart_q_dev_ptr,
+            param.seqstart_k_dev_ptr,
+            param.seqlen_k_dev_ptr,
             param.K, // hdim_q
             param.Kv, // hdim_v
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            nullptr, // block_table_ptr, not used
-            0, // batch_stride_block_table, not used
-            0, // page_table_size, not used
-            nullptr, // cache_batch_idx, not used
+            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
+            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
+            param.use_paged_kvcache ? param.page_block_size : 0,
+            param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
-            param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
+            param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
-            param.k_strides[1],
-            param.v_strides[1],
-            param.attn_bias_strides[2],
-            param.out_acc_strides[2],
-            param.q_strides[2], // q, k, v, bias, lse_acc, out_acc tensor
-                                // head-dim stride
-            param.k_strides[2],
-            param.v_strides[2],
-            param.attn_bias_strides[1],
-            param.lse_acc_strides[2],
-            param.out_acc_strides[3],
-            param.q_strides[0], // q, k, v, bias, lse_acc, out_acc tensor
-                                // batch-dim stride
             param.k_strides[0],
             param.v_strides[0],
-            param.attn_bias_strides[0],
-            param.lse_acc_strides[1],
+            param.attn_bias_strides[2],
             param.out_acc_strides[1],
-            param.lse_acc_strides[0], // split_stride_lse_acc
+            param.q_strides[1], // q, k, v, bias, lse_acc, out_acc tensor
+                                // head-dim stride
+            param.k_strides[1],
+            param.v_strides[1],
+            param.attn_bias_strides[1],
+            param.lse_acc_strides[1],
+            param.out_acc_strides[2],
+            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_k
+            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_v
+            param.lse_acc_strides[0], // split_stride_l
             param.out_acc_strides[0], // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
                                     : -1, // window_left_size
@@ -287,42 +274,40 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
             param.k_ptr,
             param.v_ptr,
             param.attn_bias_ptr,
-            nullptr, // lse_ptr
+            nullptr, // lse_ptr,
             param.out_ptr,
-            param.B, // batch
-            param.M, // seqlen_q
-            param.N, // seqlen_k
-            nullptr, // seqlen_k_ptr, not used
+            param.num_batches,
+            param.seqstart_q_dev_ptr,
+            param.seqstart_k_dev_ptr,
+            param.seqlen_k_dev_ptr,
             param.K, // hdim_q
             param.Kv, // hdim_v
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
             param.num_kv_splits, // num_splits
-            nullptr, // block_table_ptr, not used
-            0, // batch_stride_block_table, not used
-            0, // page_table_size, not used
-            nullptr, // cache_batch_idx, not used
+            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
+            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
+            param.use_paged_kvcache ? param.page_block_size : 0,
+            param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
-            param.q_strides[1], // q, k, v, bias, out tensor seq-dim stride
-            param.k_strides[1],
-            param.v_strides[1],
-            param.attn_bias_strides[2],
-            param.out_strides[1],
-            param.q_strides[2], // q, k, v, bias, lse, out tensor head-dim
+            param.q_strides[0], // q, k, v, bias, out tensor seq-dim
                                 // stride
-            param.k_strides[2],
-            param.v_strides[2],
-            param.attn_bias_strides[1],
-            0, // nhead_stride_lse
-            param.out_strides[2],
-            param.q_strides[0], // q, k, v, bias, lse, out tensor
-                                // batch-dim stride
             param.k_strides[0],
             param.v_strides[0],
-            param.attn_bias_strides[0],
-            0, // batch_stride_lse
+            param.attn_bias_strides[2],
             param.out_strides[0],
+            param.q_strides[1], // q, k, v, bias, lse, out tensor
+                                // head-dim stride
+            param.k_strides[1],
+            param.v_strides[1],
+            param.attn_bias_strides[1],
+            0, // nhead_stride_lse
+            param.out_strides[1],
+            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_k
+            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
+                                    : 0, // batch_stride_v
             0, // split_stride_lse_acc
             0, // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
@@ -332,7 +317,11 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
     }();
 
     dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(
-        param.B, param.Hq, param.M, param.Kv, param.num_kv_splits);
+        param.num_batches,
+        param.Hq,
+        param.max_seqlen_q,
+        param.Kv,
+        param.num_kv_splits);
     constexpr dim3 kBlockSize = FmhaFwdSplitKVKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaFwdSplitKVKernel::kBlockPerCu;
 
@@ -344,7 +333,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
 
   template <typename FmhaSplitKVCombineKernel>
   static void RunWithSplitKVCombineKernel(
-      BatchedForwardParams& param,
+      GroupedForwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
       return FmhaSplitKVCombineKernel::MakeKargs(
@@ -352,27 +341,23 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
           param.out_acc_ptr,
           nullptr, // lse_ptr, not used
           param.out_ptr,
-          param.B, // batches
-          param.M, // seqlen_q
+          param.num_batches,
+          param.seqstart_q_dev_ptr,
           param.Kv,
           param.num_kv_splits,
           1.0f,
-          param.out_acc_strides[2], // row_stride_o_acc
-          param.out_strides[1], // row_stride_o
-          param.lse_acc_strides[2], // head_stride_lse_acc
-          param.out_acc_strides[3], // head_stride_o_acc
-          0, // head_stride_lse, // not used
-          param.out_strides[2], // head_stride_o
-          param.lse_acc_strides[1], // batch_stride_lse_acc
-          param.out_acc_strides[1], // batch_stride_o_acc
-          0, // batch_stride_lse, not used
-          param.out_strides[0], // batch_stride_o
-          param.lse_acc_strides[0], // split_stride_lse_acc
-          param.out_acc_strides[0]); // split_stride_out_acc
+          param.out_acc_strides[1], // row_stride_o_acc,
+          param.out_strides[0], // row_stride_o,
+          param.lse_acc_strides[1], // nhead_stride_lse_acc
+          param.out_acc_strides[2], // nhead_stride_o_acc,
+          0, // nhead_stride_lse,
+          param.out_strides[1], // nhead_stride_o,
+          param.lse_acc_strides[0], // split_stride_lse_acc,
+          param.out_acc_strides[0]); // split_stride_o_acc
     }();
 
     dim3 kGridSize = FmhaSplitKVCombineKernel::GridSize(
-        param.B, param.Hq, param.M, param.Kv);
+        param.num_batches, param.Hq, param.max_seqlen_q, param.Kv);
     constexpr dim3 kBlockSize = FmhaSplitKVCombineKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu =
         FmhaSplitKVCombineKernel::kBlockPerCu;

@@ -7,45 +7,91 @@
 #pragma once
 
 #include <cmath>
+#include <tuple>
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
-static int get_num_kv_splits_heuristic(
+static std::pair<bool, int> get_num_kv_splits_heuristic(
     int num_batches,
     int num_heads,
     int max_seqlen_q,
     int max_headdim,
     int max_splits) {
-  // m_tile size is the size for dividing the seqlen_q
-  int mtile_size;
+  int num_SMs = get_number_of_cu() * 2;
+  auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
 
-  FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqlenQ, [&] {
+  int mtile_size_for_pipeline_default = 128;
+  int mtile_size_for_splitkv = 64;
+  int mtile_size_for_splitkv_smallq = 16;
+
+  // get mtile_size_for_pipline_default
+  if (max_headdim <= 32) {
+    mtile_size_for_pipeline_default = fwd_get_mtile_size<32>();
+  } else if (max_headdim <= 64) {
+    mtile_size_for_pipeline_default = fwd_get_mtile_size<64>();
+  } else if (max_headdim <= 96) {
+    mtile_size_for_pipeline_default = fwd_get_mtile_size<96>();
+  } else if (max_headdim <= 128) {
+    mtile_size_for_pipeline_default = fwd_get_mtile_size<128>();
+  } else {
+    mtile_size_for_pipeline_default = fwd_get_mtile_size<256>();
+  };
+
+  // get mtile_size_for_splitkv
+  FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqLenQ, [&] {
     if (max_headdim <= 32) {
-      using FmhaTileShape = typename FmhaFwdSplitKVShape<32, MaxSeqlenQ>::Type;
-      mtile_size = FmhaTileShape::kM0;
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<32, MaxSeqLenQ>();
     } else if (max_headdim <= 64) {
-      using FmhaTileShape = typename FmhaFwdSplitKVShape<64, MaxSeqlenQ>::Type;
-      mtile_size = FmhaTileShape::kM0;
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<64, MaxSeqLenQ>();
+    } else if (max_headdim <= 96) {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<96, MaxSeqLenQ>();
     } else if (max_headdim <= 128) {
-      using FmhaTileShape = typename FmhaFwdSplitKVShape<128, MaxSeqlenQ>::Type;
-      mtile_size = FmhaTileShape::kM0;
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<128, MaxSeqLenQ>();
     } else {
-      using FmhaTileShape = typename FmhaFwdSplitKVShape<256, MaxSeqlenQ>::Type;
-      mtile_size = FmhaTileShape::kM0;
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<256, MaxSeqLenQ>();
     };
   });
 
-  int num_SMs = get_number_of_cu() * 2;
+  // get mtile_size_for_splitkv_smallq
+  if (max_headdim <= 32) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<32>();
+  } else if (max_headdim <= 64) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<64>();
+  } else if (max_headdim <= 96) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<96>();
+  } else if (max_headdim <= 128) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<128>();
+  } else {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<256>();
+  };
 
-  auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
+  if (max_seqlen_q >= mtile_size_for_pipeline_default) {
+    int batch_nhead_mblocks = num_batches * num_heads *
+        ceildiv(max_seqlen_q, mtile_size_for_pipeline_default);
+
+    if (batch_nhead_mblocks >= 0.8f * num_SMs)
+      return std::make_pair(false, 1);
+  }
+
+  bool use_splitkv = true;
+
+  // m_tile size is the size for dividing the seqlen_q
+  int mtile_size;
+
+  if (max_seqlen_q <= mtile_size_for_splitkv_smallq)
+    mtile_size = mtile_size_for_splitkv_smallq;
+  else
+    mtile_size = mtile_size_for_splitkv;
 
   int batch_nhead_mblocks =
       num_batches * num_heads * ceildiv(max_seqlen_q, mtile_size);
 
   // If we have enough to almost fill the SMs, then just use 1 split
   if (batch_nhead_mblocks >= 0.8f * num_SMs) {
-    return 1;
+    return std::make_pair(use_splitkv, 1);
   }
 
   max_splits = std::min({max_splits, num_SMs});
@@ -65,8 +111,30 @@ static int get_num_kv_splits_heuristic(
   }
   for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
     if (efficiency[num_splits - 1] >= 0.85 * max_efficiency) {
-      return num_splits;
+      return std::make_pair(use_splitkv, num_splits);
     }
   }
-  return 1;
+  return std::make_pair(use_splitkv, 1);
+}
+
+static bool use_splitkv_smallq(int max_seqlen_q, int max_headdim) {
+  int mtile_size_for_splitkv_smallq = 16;
+
+  // get mtile_size_for_splitkv_smallq
+  if (max_headdim <= 32) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<32>();
+  } else if (max_headdim <= 64) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<64>();
+  } else if (max_headdim <= 96) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<96>();
+  } else if (max_headdim <= 128) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<128>();
+  } else {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<256>();
+  };
+
+  if (max_seqlen_q <= mtile_size_for_splitkv_smallq)
+    return true;
+  else
+    return false;
 }
