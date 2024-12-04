@@ -20,9 +20,6 @@ pytest-mpi == 0.4
 pytest-timeout == 1.4.2
 pytest-random-order == 1.1.1
 
-# Dependency for factory
-hydra-core >= 1.1
-
 # Dependency for Mixture of Experts
 fairscale >= 0.4.5
 scipy >= 1.7
