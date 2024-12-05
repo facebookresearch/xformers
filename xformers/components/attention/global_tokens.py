@@ -70,7 +70,7 @@ class GlobalAttention(Attention):
         self.force_sparsity = force_sparsity
 
         if causal:
-            self.attention_mask &= causal_1d_pattern(attention_query_mask.shape[1])
+            self.attention_mask &= causal_1d_pattern(attention_query_mask.shape[0])
 
         self.attention_mask = (
             sparsify(self.attention_mask)
