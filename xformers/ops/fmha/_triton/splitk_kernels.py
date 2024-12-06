@@ -468,7 +468,7 @@ def _fwd_kernel_splitK(
                 additive_bias_block_ptr,
                 boundary_check=(0, 1) if BOUNDS_CHECKS_N else (0,),
             )
-            qk += loaded_bias * 1.44269504
+            qk += loaded_bias.to(tl.float32) * 1.44269504
             additive_bias_block_ptr = tl.advance(additive_bias_block_ptr, (0, BLOCK_N))
 
         # TODO: This is slow, and only needed at the last iteration.
