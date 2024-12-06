@@ -219,7 +219,7 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
       BatchedForwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
-      if (param.num_kv_splits)
+      if (param.num_kv_splits > 1)
         return FmhaFwdSplitKVKernel::MakeKargs(
             param.q_ptr,
             param.k_ptr,
