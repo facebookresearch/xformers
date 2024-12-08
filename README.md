@@ -102,6 +102,7 @@ python -m xformers.info
 ### License
 
 xFormers has a BSD-style license, as found in the [LICENSE](LICENSE) file.
+It includes code from the [triton-lang/kernels](https://github.com/triton-lang/kernels) repo.
 
 ## Citing xFormers
 
