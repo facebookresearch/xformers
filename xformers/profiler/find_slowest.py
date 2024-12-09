@@ -4,41 +4,14 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
+import concurrent.futures
 import glob
-import gzip
-import json
 import os
-import sys
-from collections import defaultdict
+import subprocess
+from shlex import quote
 from typing import Dict, List
 
-import numpy as np
-
-
-def read_gzipped_json(file_path):
-    with gzip.open(file_path, "rt") as f:
-        return json.load(f)
-
-
-# Extract detailed event durations
-def extract_detailed_info(log_data):
-    events = []
-    rank = log_data["distributedInfo"]["rank"]
-
-    for event in log_data["traceEvents"]:
-        if "name" in event and "dur" in event:
-            events.append(
-                {
-                    "name": event["name"],
-                    "start_time": event["ts"],
-                    "duration_ms": (event["dur"] / 1000),  # convert to milliseconds
-                    "rank": f"GPU {rank}",
-                    "trace_name": log_data["traceName"],
-                    "cat": event["cat"],
-                    "log_name": log_data["log_name"],
-                }
-            )
-    return events
+import pandas as pd
 
 
 def print_json_as_dataframe(json_list):
@@ -69,67 +42,76 @@ def print_json_as_dataframe(json_list):
 
 
 def compute_std_dev_of_event_durations_over_ranks(events, top=5):
-    # Step 1: Group by 'rank' and 'kernel' and sum the 'duration_ms'
-    grouped_data: defaultdict[str, defaultdict[str, float]] = defaultdict(
-        lambda: defaultdict(float)
+    grouped_sorted_events = list(
+        events.filter(items=["name", "log_name", "dur"])
+        .groupby(["name", "log_name"])
+        .sum()
+        .groupby(["name"])
+        .std()
+        .sort_values(["dur"], ascending=False)
+        .iterrows()
     )
-    for event in events:
-        grouped_data[event["name"]][event["rank"]] += event["duration_ms"]
 
-    # Step 2: Calculate the standard deviation across ranks for each kernel
-    std_devs = []
-    for name, ranks in grouped_data.items():
-        durations = np.array(list(ranks.values()))
-        std_dev = np.std(durations, ddof=1)
-        std_devs.append({"name": name, "std_dev": std_dev})
-
-    # Step 3: Sort by standard deviation in descending order
-    std_devs.sort(key=lambda x: x["std_dev"], reverse=True)
-    for r in std_devs:
-        r["std_dev"] = f"{r['std_dev']:.2f} ms"
-
-    return std_devs[:top]
+    return [
+        {"name": idx, "std_dev": f"{row.dur / 1000:.2f} ms"}
+        for idx, row in grouped_sorted_events[:top]
+    ]
 
 
 def sort_nccl_events(
     nccl_events, top_k: int = 3, last_k: int = 3
 ) -> List[Dict[str, str]]:
-    # Step 1: Group by 'log_name' and sum the 'duration_ms'
-    grouped_data: Dict[str, float] = defaultdict(float)
-    for event in nccl_events:
-        key = event["log_name"]
-        grouped_data[key] += event["duration_ms"]
+    grouped_sorted_events = list(
+        nccl_events.filter(items=["log_name", "dur"])
+        .groupby(["log_name"])
+        .sum()
+        .sort_values(["dur"])
+        .iterrows()
+    )
 
-    # Step 2: Create a sorted list of tuples by 'duration_ms' in descending order
-    sorted_list = sorted(grouped_data.items(), key=lambda x: x[1], reverse=True)
-
-    # Step 3: Format the sorted list
-    formatted_list: List[Dict[str, str]] = [
-        {"log_name": log_name, "nccl_ms": f"{duration:.2f} ms"}
-        for log_name, duration in sorted_list
+    return [
+        {"log_name": idx, "nccl_ms": f"{row.dur / 1000:.2f} ms"}
+        for idx, row in (
+            grouped_sorted_events[:top_k] + grouped_sorted_events[-last_k:]
+        )
     ]
 
-    # Step 4: Get top_k and last_k items
-    top_k_list = formatted_list[:top_k]
-    last_k_list = formatted_list[-last_k:]
 
-    return top_k_list + last_k_list
+def parse_one_file(profile_trace_path):
+    jq_pipe = '.traceEvents[] | select(.cat == "kernel") | [.name, .dur] | @csv'
+    if profile_trace_path.endswith(".gz"):
+        cmd = (
+            f"gunzip -c {quote(profile_trace_path)} | jq --raw-output {quote(jq_pipe)}"
+        )
+    else:
+        cmd = f"jq --raw-output {quote(jq_pipe)} {quote(profile_trace_path)}"
+
+    subp = subprocess.Popen(
+        cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+    )
+    try:
+        kernel_events = pd.read_csv(subp.stdout, names=["name", "dur"])
+    except Exception:
+        subp.terminate()
+        raise
+    finally:
+        assert subp.wait() == 0
+
+    kernel_events["log_name"] = os.path.basename(profile_trace_path)
+
+    communication_kernels = kernel_events[kernel_events.name.str.startswith("nccl")]
+    computation_kernels = kernel_events[~(kernel_events.name.str.startswith("nccl"))]
+
+    return communication_kernels, computation_kernels
 
 
 def print_profiling_info(cuda_profile_dir: str):
-    has_json_gz_files = None
-
     cuda_profile_path_name = f"{cuda_profile_dir}/*trace.json.gz"
-
     profile_files = glob.glob(cuda_profile_path_name)
 
     if len(profile_files) == 0:
         cuda_profile_path_name = f"{cuda_profile_dir}/*.json"
-
         profile_files = glob.glob(cuda_profile_path_name)
-        has_json_gz_files = False
-    else:
-        has_json_gz_files = True
 
     if len(profile_files) == 0:
         raise Exception(
@@ -137,25 +119,20 @@ def print_profiling_info(cuda_profile_dir: str):
         )
 
     # Extract detailed NCCL event durations for all logs
-    events_details = []
-    total_files = len(profile_files)
-    for index, profile_trace_path in enumerate(profile_files):
-        print(f"Processing file {index + 1}/{total_files}", end="\r")
-        sys.stdout.flush()
-
-        if has_json_gz_files:
-            log_data = read_gzipped_json(profile_trace_path)
-        else:
-            with open(profile_trace_path, "r") as f:
-                log_data = json.loads(f.read())
-
-        log_data["log_name"] = os.path.basename(profile_trace_path)
-        events_details.extend(extract_detailed_info(log_data))
+    communication_kernels = []
+    computation_kernels = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
+        for index, (comm_ks, comp_ks) in enumerate(
+            executor.map(parse_one_file, profile_files)
+        ):
+            print(
+                f"Processed file {index + 1}/{len(profile_files)}", end="\r", flush=True
+            )
+            communication_kernels.append(comm_ks)
+            computation_kernels.append(comp_ks)
+    communication_kernels = pd.concat(communication_kernels)
+    computation_kernels = pd.concat(computation_kernels)
     print()
-
-    kernel_events = [e for e in events_details if e["cat"] == "kernel"]
-    communication_kernels = [e for e in kernel_events if "nccl" in e["name"]]
-    computation_kernels = [e for e in kernel_events if "nccl" not in e["name"]]
 
     print("The longest and shortest communication_kernels:")
     print_json_as_dataframe(sort_nccl_events(communication_kernels))
