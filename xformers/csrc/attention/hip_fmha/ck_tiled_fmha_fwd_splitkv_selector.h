@@ -14,13 +14,25 @@
 #include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
+// generate a list of numbers as num_splits to consider, the list of numbers is
+// like 1, 2, 4, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320
+static int generate_splits_list(int i) {
+  if (i <= 0)
+    return 1;
+
+  if (i <= 5)
+    return 1 << (i - 1);
+  else
+    return (i - 5) * 32;
+};
+
 static std::pair<bool, int> get_num_kv_splits_heuristic(
     int num_batches,
     int num_heads,
     int max_seqlen_q,
     int max_headdim,
     int max_splits) {
-  int num_SMs = get_number_of_cu() * 2;
+  int num_SMs = get_number_of_cu();
   auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
 
   int mtile_size_for_pipeline_default = 128;
@@ -94,27 +106,46 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
     return std::make_pair(use_splitkv, 1);
   }
 
+  /*
+    max_splits = std::min({max_splits, num_SMs});
+
+    float max_efficiency = 0.f;
+    std::vector<float> efficiency;
+    efficiency.reserve(max_splits);
+
+    for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
+      float n_blocks = float(batch_nhead_mblocks * num_splits) / num_SMs;
+      float eff = n_blocks / std::ceil(n_blocks);
+
+      if (eff > max_efficiency) {
+        max_efficiency = eff;
+      }
+      efficiency.push_back(eff);
+    }
+    for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
+      if (efficiency[num_splits - 1] >= 0.85 * max_efficiency) {
+        return std::make_pair(use_splitkv, num_splits);
+      }
+    }
+    return std::make_pair(use_splitkv, 1);
+  */
+
   max_splits = std::min({max_splits, num_SMs});
 
-  float max_efficiency = 0.f;
-  std::vector<float> efficiency;
-  efficiency.reserve(max_splits);
+  int max_check = 1;
 
-  for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
-    float n_blocks = float(batch_nhead_mblocks * num_splits) / num_SMs;
-    float eff = n_blocks / std::ceil(n_blocks);
+  while (generate_splits_list(max_check) <= max_splits)
+    max_check++;
 
-    if (eff > max_efficiency) {
-      max_efficiency = eff;
-    }
-    efficiency.push_back(eff);
-  }
-  for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
-    if (efficiency[num_splits - 1] >= 0.85 * max_efficiency) {
-      return std::make_pair(use_splitkv, num_splits);
-    }
-  }
-  return std::make_pair(use_splitkv, 1);
+  int num_splits = 1;
+  for (int i = 1; i < max_check; i++) {
+    num_splits = generate_splits_list(i);
+
+    if (batch_nhead_mblocks * num_splits >= 0.8 * num_SMs)
+      break;
+  };
+
+  return std::make_pair(use_splitkv, num_splits);
 }
 
 static bool use_splitkv_smallq(int max_seqlen_q, int max_headdim) {
