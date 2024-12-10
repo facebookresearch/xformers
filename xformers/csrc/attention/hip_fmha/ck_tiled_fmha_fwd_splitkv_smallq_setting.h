@@ -18,39 +18,39 @@ struct FmhaFwdSplitKVSmallQBlockTile;
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<32> {
   using type = ck_tile::sequence<16, 64, 16, 32, 32, 32>;
-  using gemm0_warps = ck_tile::sequence<2, 1, 1>;
+  using gemm0_warps = ck_tile::sequence<1, 2, 1>;
   using gemm1_warps = ck_tile::sequence<1, 2, 1>;
 };
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<64> {
   using type = ck_tile::sequence<16, 64, 32, 64, 32, 64>;
-  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<96> {
   using type = ck_tile::sequence<16, 64, 32, 128, 32, 96>;
-  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<128> {
   using type = ck_tile::sequence<16, 64, 32, 128, 64, 128>;
-  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<256> {
   using type = ck_tile::sequence<16, 64, 32, 256, 32, 256>;
-  using gemm0_warps = ck_tile::sequence<4, 1, 1>;
+  using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
 
-using FmhaFwdSplitKVSmallQWarpTile0 = ck_tile::sequence<4, 64, 16>;
+using FmhaFwdSplitKVSmallQWarpTile0 = ck_tile::sequence<16, 16, 16>;
 using FmhaFwdSplitKVSmallQWarpTile1 = ck_tile::sequence<16, 16, 16>;
 
 template <ck_tile::index_t MaxK>
