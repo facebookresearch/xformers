@@ -63,7 +63,7 @@ try:
 
             FLASH_VERSION = flash_attn.__version__
             FLASH_VER_MIN = (2, 6, 3)
-            FLASH_VER_LAST = (2, 6, 3)  # last supported, inclusive
+            FLASH_VER_LAST = (2, 7, 2)  # last supported, inclusive
             flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
             if (
                 flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
