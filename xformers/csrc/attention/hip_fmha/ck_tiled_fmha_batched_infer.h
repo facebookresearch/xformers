@@ -25,7 +25,6 @@ void run_batched_infer_mask_bias_dropout_dispatch(
     hipStream_t stream) {
   // currently split-kv implementation does not support dropout
   if constexpr (!kHasDropout) {
-#ifndef FMHA_FWD_SPLITKV_NOT_USED
     if (param.use_split_kv) {
       if (use_splitkv_smallq(param.M, std::max(param.K, param.Kv))) {
         batched_infer_splitkv_smallq_mask_bias_dropout_dispatch<
@@ -44,7 +43,6 @@ void run_batched_infer_mask_bias_dropout_dispatch(
         });
       }
     } else {
-#endif
       if (get_fmha_fwd_mtile(param.B, param.Hq, param.M) == 128)
         batched_infer_mask_bias_dropout_dispatch<
             ScalarType,
