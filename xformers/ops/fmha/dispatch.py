@@ -139,10 +139,6 @@ def _dispatch_fw(inp: Inputs, needs_gradient: bool) -> Type[AttentionFwOpBase]:
     )
 
 
-def _is_cutlassB_faster_than_flash(inp: Inputs) -> bool:
-    return False
-
-
 def _dispatch_bw(
     inp: Inputs, varlen_lse_packed: Optional[bool]
 ) -> Type[AttentionBwOpBase]:
@@ -151,6 +147,8 @@ def _dispatch_bw(
             flash.BwOp,
             cutlass.BwOp,
         ]
+        if _get_use_fa3():
+            priority_list_ops = [flash3.BwOp] + priority_list_ops
     else:
         priority_list_ops = [
             ck.BwOp,
@@ -178,9 +176,6 @@ def _dispatch_bw(
         priority_list_ops = [
             op for op in priority_list_ops if op.VARLEN_LSE_PACKED == varlen_lse_packed
         ]
-    if torch.version.cuda and _is_cutlassB_faster_than_flash(inp):
-        priority_list_ops.remove(cutlass.BwOp)
-        priority_list_ops.insert(0, cutlass.BwOp)
     return _run_priority_list(
         "memory_efficient_attention_backward", priority_list_ops, inp
     )
