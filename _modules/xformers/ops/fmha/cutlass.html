@@ -234,7 +234,7 @@
 
 <span class="kn">import</span> <span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">get_xformers_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
 <span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
 <span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
@@ -380,15 +380,6 @@
     <span class="k">return</span> <span class="nb">int</span><span class="p">(</span><span class="n">_CustomMaskType</span><span class="o">.</span><span class="n">NoCustomMask</span><span class="p">)</span>
 
 
-<span class="n">USE_TORCH_CUTLASS</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="n">is_pt_cutlass_compatible</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-    <span class="ow">and</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">xformers</span><span class="p">,</span> <span class="s2">&quot;efficient_attention_forward_cutlass&quot;</span><span class="p">)</span>
-    <span class="ow">and</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">_C</span><span class="o">.</span><span class="n">_dispatch_has_kernel_for_dispatch_key</span><span class="p">(</span>
-        <span class="s2">&quot;xformers::efficient_attention_forward_cutlass&quot;</span><span class="p">,</span> <span class="s2">&quot;CUDA&quot;</span>
-    <span class="p">)</span>
-<span class="p">)</span>
-
-
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.cutlass.FwOp">[docs]</a><span class="nd">@register_operator</span>
 <span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;xFormers&#39; MHA kernel based on CUTLASS.</span>
@@ -398,8 +389,8 @@
 
     <span class="n">OPERATOR</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;aten&quot;</span><span class="p">,</span> <span class="s2">&quot;_efficient_attention_forward&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span>
-        <span class="k">else</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_forward_cutlass&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">is_pt_cutlass_compatible</span><span class="p">()</span>
+        <span class="k">else</span> <span class="kc">None</span>
     <span class="p">)</span>
     <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
@@ -423,7 +414,7 @@
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">SUPPORTS_BMGHK</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassF-pt&quot;</span> <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span> <span class="k">else</span> <span class="s2">&quot;cutlassF&quot;</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassF-pt&quot;</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
@@ -562,8 +553,8 @@
 
     <span class="n">OPERATOR</span> <span class="o">=</span> <span class="p">(</span>
         <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;aten&quot;</span><span class="p">,</span> <span class="s2">&quot;_efficient_attention_backward&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span>
-        <span class="k">else</span> <span class="n">get_xformers_operator</span><span class="p">(</span><span class="s2">&quot;efficient_attention_backward_cutlass&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">is_pt_cutlass_compatible</span><span class="p">()</span>
+        <span class="k">else</span> <span class="kc">None</span>
     <span class="p">)</span>
 
     <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span>
@@ -589,7 +580,7 @@
     <span class="n">SUPPORTS_CUSTOM_SCALE</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_CUSTOM_SCALE</span>
     <span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTS_DIFFERENT_VALUE_EMBED</span>
     <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassB-pt&quot;</span> <span class="k">if</span> <span class="n">USE_TORCH_CUTLASS</span> <span class="k">else</span> <span class="s2">&quot;cutlassB&quot;</span>
+    <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;cutlassB-pt&quot;</span>
 
     <span class="n">_TEST_K</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span>
         <span class="mi">32</span><span class="p">,</span>  <span class="c1"># 64x64 kernel</span>
