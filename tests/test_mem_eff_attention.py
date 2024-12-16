@@ -2469,6 +2469,7 @@ def test_paged_attention(
         B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
     )
 
+
 @cuda_only
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
@@ -2477,7 +2478,10 @@ def test_paged_attention(
 def test_paged_attention_ck(B, MAX_T: int, page_size: int, gappy: bool):
     op = fmha.ck.FwOp
     num_quant_groups = 0
-    paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy)
+    paged_attention_run_inner(
+        B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
+    )
+
 
 @sm80_or_better_only
 @disable_on_rocm
