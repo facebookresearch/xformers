@@ -10,7 +10,8 @@
 #include "ck_tiled_fmha_batched_infer_dispatch.h"
 #include "ck_tiled_fmha_batched_infer_splitkv_dispatch.h"
 #include "ck_tiled_fmha_batched_infer_splitkv_smallq_dispatch.h"
-#include "ck_tiled_fmha_fwd_splitkv_selector.h"
+#include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_smallq_selector.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
 template <
@@ -42,20 +43,33 @@ void run_batched_infer_mask_bias_dropout_dispatch(
               MaxSeqlenQ>::Run(param, stream);
         });
       }
-    } else
+    } else {
 #endif
-      batched_infer_mask_bias_dropout_dispatch<
-          ScalarType,
-          kHasMask,
-          kHasBias,
-          kHasDropout,
-          MaxK>::Run(param, stream);
+      if (get_fmha_fwd_mtile(param.B, param.Hq, param.M) == 128)
+        batched_infer_mask_bias_dropout_dispatch<
+            ScalarType,
+            kHasMask,
+            kHasBias,
+            kHasDropout,
+            MaxK,
+            128>::Run(param, stream);
+      else
+        batched_infer_mask_bias_dropout_dispatch<
+            ScalarType,
+            kHasMask,
+            kHasBias,
+            kHasDropout,
+            MaxK,
+            64>::Run(param, stream);
+    }
   } else {
+    // at present, dropout of fwd kernel requires 32x32 WarpTile
     batched_infer_mask_bias_dropout_dispatch<
         ScalarType,
         kHasMask,
         kHasBias,
         kHasDropout,
-        MaxK>::Run(param, stream);
+        MaxK,
+        128>::Run(param, stream);
   }
 };

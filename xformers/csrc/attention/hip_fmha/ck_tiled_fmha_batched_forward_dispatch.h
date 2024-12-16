@@ -21,7 +21,8 @@ template <
     bool kHasMask,
     bool kHasBias,
     bool kHasDropout,
-    ck_tile::index_t MaxK>
+    ck_tile::index_t MaxK,
+    ck_tile::index_t MTile>
 struct batched_forward_mask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
@@ -36,7 +37,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::PDataType,
       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-      FmhaFwdShape<MaxK>,
+      typename FmhaFwdShape<MaxK, MTile>::Type,
       false, // kIsGroupMode
       FmhaMask,
       FmhaTraits>;
@@ -44,7 +45,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
+    using FmhaFwdShape_ = typename FmhaFwdShape<MaxK, MTile>::Type;
     using FmhaFwdTilePartitioner_ =
         ck_tile::FmhaFwdTilePartitioner<FmhaFwdShape_>;
     constexpr ck_tile::index_t occupancy =

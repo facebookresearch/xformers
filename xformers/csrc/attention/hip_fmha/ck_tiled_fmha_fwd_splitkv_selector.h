@@ -15,7 +15,7 @@
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
 // generate a list of numbers as num_splits to consider, the list of numbers is
-// like 1, 2, 4, 8, 16, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320
+// like 1, 2, 4, 8, 16, 32, 64, 96, 128, 160
 static int generate_splits_list(int i) {
   if (i <= 0)
     return 1;
@@ -35,22 +35,9 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   int num_SMs = get_number_of_cu();
   auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
 
-  int mtile_size_for_pipeline_default = 128;
+  int mtile_size_for_pipeline_default = get_fmha_fwd_least_mtile();
   int mtile_size_for_splitkv = 64;
   int mtile_size_for_splitkv_smallq = 16;
-
-  // get mtile_size_for_pipline_default
-  if (max_headdim <= 32) {
-    mtile_size_for_pipeline_default = fwd_get_mtile_size<32>();
-  } else if (max_headdim <= 64) {
-    mtile_size_for_pipeline_default = fwd_get_mtile_size<64>();
-  } else if (max_headdim <= 96) {
-    mtile_size_for_pipeline_default = fwd_get_mtile_size<96>();
-  } else if (max_headdim <= 128) {
-    mtile_size_for_pipeline_default = fwd_get_mtile_size<128>();
-  } else {
-    mtile_size_for_pipeline_default = fwd_get_mtile_size<256>();
-  };
 
   // get mtile_size_for_splitkv
   FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqLenQ, [&] {
@@ -146,26 +133,4 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   };
 
   return std::make_pair(use_splitkv, num_splits);
-}
-
-static bool use_splitkv_smallq(int max_seqlen_q, int max_headdim) {
-  int mtile_size_for_splitkv_smallq = 16;
-
-  // get mtile_size_for_splitkv_smallq
-  if (max_headdim <= 32) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<32>();
-  } else if (max_headdim <= 64) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<64>();
-  } else if (max_headdim <= 96) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<96>();
-  } else if (max_headdim <= 128) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<128>();
-  } else {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<256>();
-  };
-
-  if (max_seqlen_q <= mtile_size_for_splitkv_smallq)
-    return true;
-  else
-    return false;
 }
