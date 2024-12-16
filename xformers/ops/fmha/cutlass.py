@@ -11,7 +11,7 @@ from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
 
-from ..common import get_operator, get_xformers_operator, register_operator
+from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
@@ -157,15 +157,6 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
     return int(_CustomMaskType.NoCustomMask)
 
 
-USE_TORCH_CUTLASS = (
-    is_pt_cutlass_compatible(force=False)
-    and hasattr(torch.ops.xformers, "efficient_attention_forward_cutlass")
-    and not torch._C._dispatch_has_kernel_for_dispatch_key(
-        "xformers::efficient_attention_forward_cutlass", "CUDA"
-    )
-)
-
-
 @register_operator
 class FwOp(AttentionFwOpBase):
     """xFormers' MHA kernel based on CUTLASS.
@@ -175,8 +166,8 @@ class FwOp(AttentionFwOpBase):
 
     OPERATOR = (
         get_operator("aten", "_efficient_attention_forward")
-        if USE_TORCH_CUTLASS
-        else get_xformers_operator("efficient_attention_forward_cutlass")
+        if is_pt_cutlass_compatible()
+        else None
     )
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
@@ -200,7 +191,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
     VARLEN_LSE_PACKED = False
-    NAME = "cutlassF-pt" if USE_TORCH_CUTLASS else "cutlassF"
+    NAME = "cutlassF-pt"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel
@@ -339,8 +330,8 @@ class BwOp(AttentionBwOpBase):
 
     OPERATOR = (
         get_operator("aten", "_efficient_attention_backward")
-        if USE_TORCH_CUTLASS
-        else get_xformers_operator("efficient_attention_backward_cutlass")
+        if is_pt_cutlass_compatible()
+        else None
     )
 
     SUPPORTED_DEVICES = FwOp.SUPPORTED_DEVICES
@@ -366,7 +357,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
     VARLEN_LSE_PACKED = False
-    NAME = "cutlassB-pt" if USE_TORCH_CUTLASS else "cutlassB"
+    NAME = "cutlassB-pt"
 
     _TEST_K: List[int] = [
         32,  # 64x64 kernel

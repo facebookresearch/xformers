@@ -21,16 +21,6 @@ PyMODINIT_FUNC PyInit__C(void) {
 #endif // defined(_WIN32)
 
 TORCH_LIBRARY_FRAGMENT(xformers, m) {
-#if !defined(USE_ROCM)
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_cutlass(Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, int? max_seqlen_q, int? max_seqlen_k, float dropout_p, int custom_mask_type, bool compute_log_sumexp=False, *, float? scale=None, Tensor? seqlen_k=None, int? window_size=None) -> (Tensor output, Tensor logsumexp, Tensor philox_seed, Tensor philox_offset, SymInt max_seqlen_batch_q, SymInt max_seqlen_batch_k)"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_backward_cutlass(Tensor grad_out_, Tensor query, Tensor key, Tensor value, Tensor? bias, Tensor out, Tensor? cu_seqlens_q, Tensor? cu_seqlens_k, SymInt max_seqlen_q, SymInt max_seqlen_k, Tensor logsumexp, float dropout_p, Tensor philox_seed, Tensor philox_offset, int custom_mask_type, bool bias_requires_grad, *, float? scale=None, int? num_splits_key=None, int? window_size=None) -> (Tensor, Tensor, Tensor, Tensor)"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_temp_dropout(Tensor out, float p) -> Tensor"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_cutlass_rand_uniform(float p, Tensor out) -> Tensor"));
-#endif
 #if defined(USE_ROCM)
   m.def(TORCH_SELECTIVE_SCHEMA(
       "xformers::efficient_attention_forward_ck(Tensor query, "
