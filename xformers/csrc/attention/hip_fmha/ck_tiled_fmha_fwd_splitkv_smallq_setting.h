@@ -38,14 +38,14 @@ struct FmhaFwdSplitKVSmallQBlockTile<96> {
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<128> {
-  using type = ck_tile::sequence<16, 64, 32, 128, 64, 128>;
+  using type = ck_tile::sequence<16, 64, 64, 128, 64, 128>;
   using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
 
 template <>
 struct FmhaFwdSplitKVSmallQBlockTile<256> {
-  using type = ck_tile::sequence<16, 64, 32, 256, 32, 256>;
+  using type = ck_tile::sequence<16, 64, 64, 256, 64, 256>;
   using gemm0_warps = ck_tile::sequence<1, 4, 1>;
   using gemm1_warps = ck_tile::sequence<1, 4, 1>;
 };
