@@ -453,7 +453,7 @@
 <span class="sd">        attn = attn.softmax(-1)</span>
 <span class="sd">        attn = F.dropout(attn, p)</span>
 <span class="sd">        attn = attn @ value</span>
-<span class="sd">        return attn.transpose(1, 2)</span>
+<span class="sd">        return attn.transpose(1, 2).contiguous()</span>
 
 <span class="sd">    :Examples:</span>
 
