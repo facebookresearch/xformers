@@ -232,7 +232,7 @@ def memory_efficient_attention(
         attn = attn.softmax(-1)
         attn = F.dropout(attn, p)
         attn = attn @ value
-        return attn.transpose(1, 2)
+        return attn.transpose(1, 2).contiguous()
 
     :Examples:
 
