@@ -71,7 +71,7 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
     int batch_nhead_mblocks = num_batches * num_heads *
         ceildiv(max_seqlen_q, mtile_size_for_pipeline_default);
 
-    if (batch_nhead_mblocks >= 0.8f * num_SMs)
+    if (batch_nhead_mblocks >= 0.8 * num_SMs)
       return std::make_pair(false, 1);
   }
 
@@ -89,7 +89,7 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
       num_batches * num_heads * ceildiv(max_seqlen_q, mtile_size);
 
   // If we have enough to almost fill the SMs, then just use 1 split
-  if (batch_nhead_mblocks >= 0.8f * num_SMs) {
+  if (batch_nhead_mblocks >= num_SMs) {
     return std::make_pair(use_splitkv, 1);
   }
 
@@ -128,7 +128,7 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   for (int i = 1; i < max_check; i++) {
     num_splits = generate_splits_list(i);
 
-    if (batch_nhead_mblocks * num_splits >= 0.8 * num_SMs)
+    if (batch_nhead_mblocks * num_splits >= num_SMs)
       break;
   };
 
