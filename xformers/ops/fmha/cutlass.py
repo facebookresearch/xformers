@@ -436,7 +436,7 @@ class BwOp(AttentionBwOpBase):
             philox_offset=rng_offset,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            num_splits_key=-1,  # Let C++ determine it
+            num_splits_key=None,  # Let C++ determine it
             window_size=(
                 inp.attn_bias._window_size
                 if isinstance(
