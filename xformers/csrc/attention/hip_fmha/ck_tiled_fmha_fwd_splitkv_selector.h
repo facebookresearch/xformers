@@ -40,82 +40,41 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   int mtile_size_for_splitkv_smallq = 16;
 
   // get mtile_size_for_splitkv
-  FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqLenQ, [&] {
-    if (max_headdim <= 32) {
-      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<32, MaxSeqLenQ>();
-    } else if (max_headdim <= 64) {
-      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<64, MaxSeqLenQ>();
-    } else if (max_headdim <= 96) {
-      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<96, MaxSeqLenQ>();
-    } else if (max_headdim <= 128) {
-      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<128, MaxSeqLenQ>();
-    } else {
-      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<256, MaxSeqLenQ>();
-    };
-  });
+  mtile_size_for_splitkv =
+      get_mtile_size_for_splitkv(max_seqlen_q, max_headdim);
 
   // get mtile_size_for_splitkv_smallq
-  if (max_headdim <= 32) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<32>();
-  } else if (max_headdim <= 64) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<64>();
-  } else if (max_headdim <= 96) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<96>();
-  } else if (max_headdim <= 128) {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<128>();
-  } else {
-    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<256>();
-  };
+  mtile_size_for_splitkv_smallq =
+      get_mtile_size_for_splitkv_smallq(max_headdim);
 
   if (max_seqlen_q >= mtile_size_for_pipeline_default) {
     int batch_nhead_mblocks = num_batches * num_heads *
         ceildiv(max_seqlen_q, mtile_size_for_pipeline_default);
 
-    if (batch_nhead_mblocks >= 0.8 * num_SMs)
+    if (batch_nhead_mblocks >= 0.8f * num_SMs)
       return std::make_pair(false, 1);
   }
 
   bool use_splitkv = true;
 
   // m_tile size is the size for dividing the seqlen_q
-  int mtile_size;
-
-  if (max_seqlen_q <= mtile_size_for_splitkv_smallq)
-    mtile_size = mtile_size_for_splitkv_smallq;
-  else
-    mtile_size = mtile_size_for_splitkv;
-
+  // we first tries to use the normal splitkv kernel
+  int mtile_size = mtile_size_for_splitkv;
   int batch_nhead_mblocks =
       num_batches * num_heads * ceildiv(max_seqlen_q, mtile_size);
 
-  // If we have enough to almost fill the SMs, then just use 1 split
-  if (batch_nhead_mblocks >= num_SMs) {
+  // resort to splitkv-smallq kernel for avoiding wasting of computation or for
+  // better CU occupancy
+  if (max_seqlen_q <= mtile_size_for_splitkv_smallq)
+    mtile_size = mtile_size_for_splitkv_smallq;
+
+  batch_nhead_mblocks =
+      num_batches * num_heads * ceildiv(max_seqlen_q, mtile_size);
+
+  // If we have enough workgroups to fill all the SMs, then just use 1 split
+  if (batch_nhead_mblocks >= 0.9f * num_SMs) {
     return std::make_pair(use_splitkv, 1);
   }
-
-  /*
-    max_splits = std::min({max_splits, num_SMs});
-
-    float max_efficiency = 0.f;
-    std::vector<float> efficiency;
-    efficiency.reserve(max_splits);
-
-    for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
-      float n_blocks = float(batch_nhead_mblocks * num_splits) / num_SMs;
-      float eff = n_blocks / std::ceil(n_blocks);
-
-      if (eff > max_efficiency) {
-        max_efficiency = eff;
-      }
-      efficiency.push_back(eff);
-    }
-    for (int num_splits = 1; num_splits <= max_splits; num_splits++) {
-      if (efficiency[num_splits - 1] >= 0.85 * max_efficiency) {
-        return std::make_pair(use_splitkv, num_splits);
-      }
-    }
-    return std::make_pair(use_splitkv, 1);
-  */
 
   max_splits = std::min({max_splits, num_SMs});
 
@@ -124,8 +83,8 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   while (generate_splits_list(max_check) <= max_splits)
     max_check++;
 
-  int num_splits = 1;
-  for (int i = 1; i < max_check; i++) {
+  int num_splits = 2;
+  for (int i = 2; i < max_check; i++) {
     num_splits = generate_splits_list(i);
 
     if (batch_nhead_mblocks * num_splits >= num_SMs)

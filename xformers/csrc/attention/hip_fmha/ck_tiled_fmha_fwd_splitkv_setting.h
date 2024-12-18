@@ -9,6 +9,7 @@
 #include <ck_tile/core.hpp>
 #include <ck_tile/ops/fmha.hpp>
 #include "ck_tiled_fmha_fwd_type_config.h"
+#include "ck_tiled_fmha_seqlen_q_switch.h"
 
 template <ck_tile::index_t MaxK, ck_tile::index_t MaxSeqLenQ = 0>
 struct FmhaFwdSplitKVBlockTile;
@@ -154,3 +155,23 @@ int fwd_splitkv_get_mtile_size() {
 
   return FmhaTileShape::kM0;
 };
+
+static int get_mtile_size_for_splitkv(int max_seqlen_q, int max_headdim) {
+  int mtile_size_for_splitkv = 64;
+
+  FMHA_FWD_SEQLEN_Q_SWITCH(max_seqlen_q, MaxSeqLenQ, [&] {
+    if (max_headdim <= 32) {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<32, MaxSeqLenQ>();
+    } else if (max_headdim <= 64) {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<64, MaxSeqLenQ>();
+    } else if (max_headdim <= 96) {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<96, MaxSeqLenQ>();
+    } else if (max_headdim <= 128) {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<128, MaxSeqLenQ>();
+    } else {
+      mtile_size_for_splitkv = fwd_splitkv_get_mtile_size<256, MaxSeqLenQ>();
+    };
+  });
+
+  return mtile_size_for_splitkv;
+}

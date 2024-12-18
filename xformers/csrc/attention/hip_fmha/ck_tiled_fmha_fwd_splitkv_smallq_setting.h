@@ -117,3 +117,21 @@ int fwd_splitkv_smallq_get_mtile_size() {
 
   return FmhaTileShape::kM0;
 };
+
+static int get_mtile_size_for_splitkv_smallq(int max_headdim) {
+  int mtile_size_for_splitkv_smallq = 16;
+
+  if (max_headdim <= 32) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<32>();
+  } else if (max_headdim <= 64) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<64>();
+  } else if (max_headdim <= 96) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<96>();
+  } else if (max_headdim <= 128) {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<128>();
+  } else {
+    mtile_size_for_splitkv_smallq = fwd_splitkv_smallq_get_mtile_size<256>();
+  };
+
+  return mtile_size_for_splitkv_smallq;
+};
