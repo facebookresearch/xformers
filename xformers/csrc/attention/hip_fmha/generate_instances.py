@@ -21,7 +21,9 @@ FMHA_COPYRIGHT_HEADER = """
  * See the generator script
  * `{file}`
  */
-""".format(file=os.path.relpath(os.path.realpath(__file__), start=Path(__file__).parents[4]))
+""".format(
+    file=os.path.relpath(os.path.realpath(__file__), start=Path(__file__).parents[4])
+)
 
 FMHA_INFER_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
@@ -105,9 +107,7 @@ BOOL_MAP_DROPOUT = {
     False: "no_dropout",
 }
 
-INT_MAP_MAX_K = {
-    hd: f"maxk_{hd}" for hd in [32, 64, 96, 128, 256, 512]
-}
+INT_MAP_MAX_K = {hd: f"maxk_{hd}" for hd in [32, 64, 96, 128, 256, 512]}
 
 TYPE_CTYPE_MAP = {
     "fp16": "ck_tile::fp16_t",
