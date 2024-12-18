@@ -18,7 +18,8 @@ FMHA_COPYRIGHT_HEADER = """
  * LICENSE file in the root directory of this source tree.
  *
  * The file is automatically generated, don't modify!
- * See the generator script `{file}`
+ * See the generator script
+ * `{file}`
  */
 """.format(file=os.path.relpath(os.path.realpath(__file__), start=Path(__file__).parents[4]))
 
