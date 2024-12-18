@@ -2000,7 +2000,7 @@ def test_forward_gqa(opFW_biasT, Mq: int):
     "opBW",
     [
         fmha.flash.BwOp,
-        fmha.cutlass.BwOp,
+        fmha.ck.BwOp if torch.version.hip else fmha.cutlass.BwOp,
     ],
 )
 def test_backward_gqa(opBW):
@@ -2012,7 +2012,7 @@ def test_backward_gqa(opBW):
         attn_bias_requires_grad=False,
         fmt="BMHK",
     )
-    op = (fmha.cutlass.FwOp, opBW)
+    op = (fmha.ck.FwOp if torch.version.hip else fmha.cutlass.FwOp, opBW)
     key = key[:, :, :1].expand(-1, -1, H, -1)
     value = value[:, :, :1].expand(-1, -1, H, -1)
     key.requires_grad_(True)
@@ -2469,6 +2469,7 @@ def test_paged_attention(
         B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
     )
 
+
 @cuda_only
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
@@ -2477,7 +2478,10 @@ def test_paged_attention(
 def test_paged_attention_ck(B, MAX_T: int, page_size: int, gappy: bool):
     op = fmha.ck.FwOp
     num_quant_groups = 0
-    paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy)
+    paged_attention_run_inner(
+        B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
+    )
+
 
 @sm80_or_better_only
 @disable_on_rocm
