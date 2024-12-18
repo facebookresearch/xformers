@@ -16,7 +16,7 @@ from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
 
 
-_USE_FLASH_ATTENTION_3 = False
+_USE_FLASH_ATTENTION_3 = True
 
 
 def _set_use_fa3(use_flash_attention3: bool) -> None:
