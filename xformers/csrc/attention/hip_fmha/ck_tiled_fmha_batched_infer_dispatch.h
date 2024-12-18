@@ -70,42 +70,45 @@ struct batched_infer_mask_bias_dropout_dispatch {
 
     if (!use_async_pipeline) {
       BOOL_SWITCH_3(
-        pad_seqlen_q,
-        kPadSeqLenQ,
-        pad_seqlen_k,
-        kPadSeqLenK,
-        pad_headdim,
-        kPadHeadDim,
-        [&] {
-        using FmhaTraits = ck_tile::TileFmhaTraits<
-            kPadSeqLenQ,
-            kPadSeqLenK,
-            kPadHeadDim, // kPadHeadDimQ,
-            kPadHeadDim, // kPadHeadDimV,
-            kBiasEnum,
-            false, // kHasBiasGrad place-holder
-            false, // kStoreLSE
-            kHasDropout,
-            false, // kDoFp8StaticQuant place-holder
-            occupancy>;
-
-        using FmhaPipelineProblem =
-            FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
-
-        using FmhaPipeline = std::conditional_t<MaxK <= 256, ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>, ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
-
-        using FmhaEpilogue =
-            ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+          pad_seqlen_q,
+          kPadSeqLenQ,
+          pad_seqlen_k,
+          kPadSeqLenK,
+          pad_headdim,
+          kPadHeadDim,
+          [&] {
+            using FmhaTraits = ck_tile::TileFmhaTraits<
                 kPadSeqLenQ,
-                kPadHeadDim>>;
+                kPadSeqLenK,
+                kPadHeadDim, // kPadHeadDimQ,
+                kPadHeadDim, // kPadHeadDimV,
+                kBiasEnum,
+                false, // kHasBiasGrad place-holder
+                false, // kStoreLSE
+                kHasDropout,
+                false, // kDoFp8StaticQuant place-holder
+                occupancy>;
 
-        using FmhaKernel = ck_tile::
-            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+            using FmhaPipelineProblem =
+                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-        RunWithKernel<FmhaKernel>(param, stream);
-        });
+            using FmhaPipeline = std::conditional_t<
+                MaxK <= 256,
+                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>,
+                ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
+
+            using FmhaEpilogue =
+                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                    typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                    kPadSeqLenQ,
+                    kPadHeadDim>>;
+
+            using FmhaKernel = ck_tile::
+                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+
+            RunWithKernel<FmhaKernel>(param, stream);
+          });
     } else {
       BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
         using FmhaTraits = ck_tile::TileFmhaTraits<
@@ -123,7 +126,10 @@ struct batched_infer_mask_bias_dropout_dispatch {
         using FmhaPipelineProblem =
             FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-        using FmhaPipeline = std::conditional_t<MaxK <= 256, ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>, ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
+        using FmhaPipeline = std::conditional_t<
+            MaxK <= 256,
+            ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>,
+            ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
 
         using FmhaEpilogue =
             ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<

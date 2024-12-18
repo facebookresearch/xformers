@@ -80,8 +80,10 @@ struct grouped_infer_mask_bias_dropout_dispatch {
             using FmhaPipelineProblem =
                 FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-            using FmhaPipeline = std::conditional_t<MaxK <= 256, ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>, ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
-
+            using FmhaPipeline = std::conditional_t<
+                MaxK <= 256,
+                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>,
+                ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
 
             using FmhaEpilogue =
                 ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
@@ -126,8 +128,10 @@ struct grouped_infer_mask_bias_dropout_dispatch {
 
       using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-      using FmhaPipeline = std::conditional_t<MaxK <= 256, ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>, ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
-
+      using FmhaPipeline = std::conditional_t<
+          MaxK <= 256,
+          ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>,
+          ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
 
       using FmhaEpilogue =
           ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<

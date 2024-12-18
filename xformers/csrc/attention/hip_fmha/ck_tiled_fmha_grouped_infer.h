@@ -34,11 +34,11 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
         });
       } else {
         grouped_infer_mask_bias_dropout_dispatch<
-          ScalarType,
-          kHasMask,
-          kHasBias,
-          kHasDropout,
-          MaxK>::Run(param, stream);
+            ScalarType,
+            kHasMask,
+            kHasBias,
+            kHasDropout,
+            MaxK>::Run(param, stream);
       }
     } else
 #endif
