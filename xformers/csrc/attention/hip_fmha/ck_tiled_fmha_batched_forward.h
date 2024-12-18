@@ -24,14 +24,21 @@ void run_batched_forward_mask_bias_dropout_dispatch(
 #ifndef FMHA_FWD_SPLITKV_NOT_USED
     if (param.use_split_kv) {
       if constexpr (MaxK <= 256) {
-      FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
-        batched_forward_splitkv_mask_bias_dropout_dispatch<
-            ScalarType,
-            kHasMask,
-            kHasBias,
-            MaxK,
-            MaxSeqlenQ>::Run(param, stream);
-      });
+        FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
+          batched_forward_splitkv_mask_bias_dropout_dispatch<
+              ScalarType,
+              kHasMask,
+              kHasBias,
+              MaxK,
+              MaxSeqlenQ>::Run(param, stream);
+        });
+      } else {
+        batched_forward_mask_bias_dropout_dispatch<
+          ScalarType,
+          kHasMask,
+          kHasBias,
+          kHasDropout,
+          MaxK>::Run(param, stream);
       }
     } else
 #endif

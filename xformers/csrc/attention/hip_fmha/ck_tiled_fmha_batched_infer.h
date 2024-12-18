@@ -23,16 +23,23 @@ void run_batched_infer_mask_bias_dropout_dispatch(
   if constexpr (!kHasDropout) {
 #ifndef FMHA_FWD_SPLITKV_NOT_USED
     if (param.use_split_kv) {
-    if constexpr (MaxK <= 256) {
-      FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
-        batched_infer_splitkv_mask_bias_dropout_dispatch<
-            ScalarType,
-            kHasMask,
-            kHasBias,
-            MaxK,
-            MaxSeqlenQ>::Run(param, stream);
-      });
-    }
+      if constexpr (MaxK <= 256) {
+        FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
+          batched_infer_splitkv_mask_bias_dropout_dispatch<
+              ScalarType,
+              kHasMask,
+              kHasBias,
+              MaxK,
+              MaxSeqlenQ>::Run(param, stream);
+        });
+      } else {
+        batched_infer_mask_bias_dropout_dispatch<
+          ScalarType,
+          kHasMask,
+          kHasBias,
+          kHasDropout,
+          MaxK>::Run(param, stream);
+      }
     } else
 #endif
       batched_infer_mask_bias_dropout_dispatch<
