@@ -438,7 +438,11 @@ def get_extensions():
     use_pt_flash = False
 
     if (
-        (torch.cuda.is_available() and (CUDA_HOME is not None) and (torch.version.cuda is not None))
+        (
+            torch.cuda.is_available()
+            and (CUDA_HOME is not None)
+            and (torch.version.cuda is not None)
+        )
         or os.getenv("FORCE_CUDA", "0") == "1"
         or os.getenv("TORCH_CUDA_ARCH_LIST", "") != ""
     ):

@@ -31,13 +31,9 @@ jobs:
             sm: "9.0a"
           - runner: "4-core-ubuntu-gpu-t4"
             sm: "7.5"
-        pytorch:
-          - channel: pytorch-nightly
-            cuda: 12.1
-            version: 2
         python: [3.11]
 
-    name: test_sm${{ matrix.gpu.sm }}_cu${{ matrix.pytorch.cuda }}
+    name: test_sm${{ matrix.gpu.sm }}
     runs-on: ${{ matrix.gpu.runner }}
 
     timeout-minutes: 360
@@ -62,9 +58,8 @@ jobs:
           set -ex
           micromamba config set channel_priority strict
           micromamba create -n env python=${{ matrix.python }} \
-            zlib pip ninja pytorch=${{ matrix.pytorch.version }} ccache=4.8 pytorch-mutex==1.0=cuda pytorch-cuda=${{ matrix.pytorch.cuda }} \
-            cuda-libraries-dev cuda-nvcc \
-            -c nvidia -c ${{ matrix.pytorch.channel }} -c conda-forge -q -y
+            zlib pip ninja ccache=4.8 cuda-toolkit \
+            -c "nvidia/label/cuda-12.6" -c conda-forge -q -y
       - name: Activate environment
         shell: bash -l {0}
         run: |
@@ -74,6 +69,8 @@ jobs:
       - name: Setup test requirements
         run: |
           which python
+          which nvcc
+          pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
           pip install -r requirements-test.txt --progress-bar off
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python setup.py develop
       - run: python -m xformers.info
