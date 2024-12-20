@@ -101,7 +101,7 @@ runs:
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
       run: |
         echo "#!/bin/bash" > $CONDA_PREFIX/bin/nvcc-ccache
-        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> $CONDA_PREFIX/bin/nvcc-ccache
+        echo "ccache nvcc \"\$@\"" >> $CONDA_PREFIX/bin/nvcc-ccache
         cat $CONDA_PREFIX/bin/nvcc-ccache
         chmod +x $CONDA_PREFIX/bin/nvcc-ccache
         which nvcc
