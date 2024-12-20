@@ -218,22 +218,21 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
-        [B, q_len, G, Hq, K] = inp.query.shape
-        [_, kv_len, _, Hkv, Kv] = inp.key.shape
+        [_, _, G, Hq, _] = inp.query.shape
         attn_bias_replace = inp.attn_bias
         if isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim != 0:
-            attn_bias_replace = torch.reshape(inp.attn_bias, (B, G * Hq, M, N))
+            attn_bias_replace = inp.attn_bias.flatten(1, 2)
         inp = replace(
             inp,
-            query=torch.reshape(inp.query, (B, q_len, G * Hq, K)),
-            key=torch.reshape(inp.key, (B, kv_len, G * Hkv, K)),
-            value=torch.reshape(inp.value, (B, kv_len, G * Hkv, Kv)),
+            query=inp.query.flatten(2, 3),
+            key=inp.key.flatten(2, 3),
+            value=inp.value.flatten(2, 3),
             attn_bias=attn_bias_replace,
         )
         out, ctx = cls.apply_bmhk(inp, needs_gradient=needs_gradient)
-        out = torch.reshape(out, (B, q_len, G, Hq, Kv))
+        out = out.unflatten(2, (G, Hq))
         if ctx is not None:
-            lse = torch.reshape(ctx.lse, (B, G, Hq, q_len))
+            lse = ctx.lse.unflatten(1, (G, Hq))
             ctx = replace(ctx, lse=lse, out=out)
         return out, ctx
 
