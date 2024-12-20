@@ -28,9 +28,9 @@ from .attn_bias import (
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
     LowerTriangularMaskWithTensorBias,
-    PagedBlockDiagonalPaddedKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
+    PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import (
     AttentionBwOpBase,

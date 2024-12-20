@@ -137,9 +137,7 @@ def create_infer_instances(instance_dir: Path, headdims: List) -> None:
                             fname = FMHA_INFER_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_mask_str=BOOL_MAP_MASK[
-                                    has_mask
-                                ],
+                                has_or_no_mask_str=BOOL_MAP_MASK[has_mask],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
@@ -210,9 +208,7 @@ def create_forward_instances(instance_dir: Path, headdims: List) -> None:
                             fname = FMHA_FORWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_mask_str=BOOL_MAP_MASK[
-                                    has_mask
-                                ],
+                                has_or_no_mask_str=BOOL_MAP_MASK[has_mask],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
                                 max_k_str=INT_MAP_MAX_K[max_k],
@@ -289,9 +285,7 @@ def create_backward_instances(instance_dir: Path, headdims: List) -> None:
                             fname = FMHA_BACKWARD_INSTANCE_FNAME.format(
                                 mode=mode,
                                 dtype_str=dtype,
-                                has_or_no_mask_str=BOOL_MAP_MASK[
-                                    has_mask
-                                ],
+                                has_or_no_mask_str=BOOL_MAP_MASK[has_mask],
                                 has_or_no_bias_str=BOOL_MAP_BIAS[has_bias],
                                 has_or_no_biasgrad_str=BOOL_MAP_BIASGRAD[has_bias_grad],
                                 has_or_no_dropout_str=BOOL_MAP_DROPOUT[has_dropout],
