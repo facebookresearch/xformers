@@ -107,7 +107,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                   ODataType>;
 
               using FmhaPipeline =
-                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
                       FmhaPipelineProblem>;
 
               using FmhaEpilogue =
@@ -145,7 +145,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                   ODataType>;
 
               using FmhaPipeline =
-                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
                       FmhaPipelineProblem>;
 
               using FmhaEpilogue =

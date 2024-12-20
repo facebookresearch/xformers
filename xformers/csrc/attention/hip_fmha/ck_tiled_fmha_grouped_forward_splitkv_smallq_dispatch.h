@@ -99,7 +99,7 @@ struct grouped_forward_splitkv_smallq_mask_bias_dropout_dispatch {
                   ODataType>;
 
               using FmhaFwdPipeline_ =
-                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
                       FmhaPipelineProblem>;
 
               using FmhaFwdEpilogue_ =
@@ -124,7 +124,7 @@ struct grouped_forward_splitkv_smallq_mask_bias_dropout_dispatch {
                   ODataType>;
 
               using FmhaFwdPipeline_ =
-                  ck_tile::BlockFmhaFwdSplitKVSmallQPipelineQRKSVS<
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
                       FmhaPipelineProblem>;
 
               using FmhaFwdEpilogue_ =
