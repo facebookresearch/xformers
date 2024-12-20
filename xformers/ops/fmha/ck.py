@@ -218,6 +218,26 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
+        if inp.key.stride()[3] == 0:
+            assert (
+                inp.value.stride()[3] == 0
+            ), "key and value should be expanded in the same way"
+            k_shape = inp.key.size()
+            k_stride = inp.key.stride()
+            key = inp.key.as_strided(
+                (k_shape[0], k_shape[1], k_shape[2], k_shape[4]),
+                (k_stride[0], k_stride[1], k_stride[2], k_stride[4]),
+            )
+            v_shape = inp.value.size()
+            v_stride = inp.value.stride()
+            value = inp.value.as_strided(
+                (v_shape[0], v_shape[1], v_shape[2], k_shape[4]),
+                (k_stride[0], k_stride[1], k_stride[2], k_stride[4]),
+            )
+        else:
+            key = inp.key.flatten(2, 3)
+            value = inp.value.flatten(2, 3)
+
         [_, _, G, Hq, _] = inp.query.shape
         attn_bias_replace = inp.attn_bias
         if isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim != 0:
@@ -225,8 +245,8 @@ class FwOp(AttentionFwOpBase):
         inp = replace(
             inp,
             query=inp.query.flatten(2, 3),
-            key=inp.key.flatten(2, 3),
-            value=inp.value.flatten(2, 3),
+            key=key,
+            value=value,
             attn_bias=attn_bias_replace,
         )
         out, ctx = cls.apply_bmhk(inp, needs_gradient=needs_gradient)
