@@ -17,9 +17,6 @@
     } else if (NUM_SPLITS <= 16) {                                 \
       constexpr ck_tile::index_t CONST_NAME = 4;                   \
       __VA_ARGS__();                                               \
-    } else if (NUM_SPLITS <= 32) {                                 \
-      constexpr ck_tile::index_t CONST_NAME = 5;                   \
-      __VA_ARGS__();                                               \
     } else {                                                       \
       throw std::runtime_error("num-splits not supported!");       \
     }                                                              \

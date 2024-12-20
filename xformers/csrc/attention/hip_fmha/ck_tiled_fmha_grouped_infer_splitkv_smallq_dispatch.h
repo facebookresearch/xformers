@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_splitkv_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -21,9 +21,8 @@ template <
     typename ScalarType,
     bool kHasMask,
     bool kHasBias,
-    ck_tile::index_t MaxK,
-    ck_tile::index_t MaxSeqlenQ>
-struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
+    ck_tile::index_t MaxK>
+struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -40,7 +39,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           ODataType,
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
+          typename FmhaFwdSplitKVSmallQShape<MaxK>::Type,
           true, // kIsGroupMode
           FmhaMask,
           FmhaFwdSplitKVTraits>;
@@ -60,8 +59,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
 
@@ -108,8 +106,9 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
+                      FmhaPipelineProblem>;
 
               using FmhaEpilogue =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
@@ -145,8 +144,9 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   FmhaMask,
                   ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaFwdSplitKVPipelineNWarpSShuffleQRKSVS<
+                      FmhaPipelineProblem>;
 
               using FmhaEpilogue =
                   ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
@@ -166,8 +166,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
     };
 
     if (param.num_kv_splits > 1) {
-      using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdSplitKVSmallQShape<MaxK>::Type;
 
       constexpr ck_tile::index_t kN1 = 32;
       constexpr ck_tile::index_t kM0 =

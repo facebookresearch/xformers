@@ -2000,7 +2000,7 @@ def test_forward_gqa(opFW_biasT, Mq: int):
     "opBW",
     [
         fmha.flash.BwOp,
-        fmha.cutlass.BwOp,
+        fmha.ck.BwOp if torch.version.hip else fmha.cutlass.BwOp,
     ],
 )
 def test_backward_gqa(opBW):
@@ -2012,7 +2012,7 @@ def test_backward_gqa(opBW):
         attn_bias_requires_grad=False,
         fmt="BMHK",
     )
-    op = (fmha.cutlass.FwOp, opBW)
+    op = (fmha.ck.FwOp if torch.version.hip else fmha.cutlass.FwOp, opBW)
     key = key[:, :, :1].expand(-1, -1, H, -1)
     value = value[:, :, :1].expand(-1, -1, H, -1)
     key.requires_grad_(True)

@@ -21,7 +21,8 @@ template <
     bool kHasMask,
     bool kHasBias,
     bool kHasDropout,
-    ck_tile::index_t MaxK>
+    ck_tile::index_t MaxK,
+    ck_tile::index_t MTile>
 struct grouped_forward_mask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
@@ -36,7 +37,7 @@ struct grouped_forward_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::PDataType,
       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-      FmhaFwdShape<MaxK>,
+      typename FmhaFwdShape<MaxK, MTile>::Type,
       true, // kIsGroupMode
       FmhaMask,
       FmhaTraits>;
@@ -44,7 +45,7 @@ struct grouped_forward_mask_bias_dropout_dispatch {
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
+    using FmhaFwdShape_ = typename FmhaFwdShape<MaxK, MTile>::Type;
 
     constexpr ck_tile::index_t occupancy = (MaxK == 64) ? 3
         : (MaxK == 256)                                 ? 1

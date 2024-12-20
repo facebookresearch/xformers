@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -45,19 +45,15 @@ struct grouped_forward_splitkv_mask_bias_dropout_dispatch {
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
-  template <
-      ck_tile::index_t kM0,
-      ck_tile::index_t kN1,
-      typename FmhaSplitKVCombineTraits>
+  template <ck_tile::index_t kN1, typename FmhaSplitKVCombineTraits>
   using FmhaSplitKVCombinePipelineProblemTemp =
       ck_tile::BlockFmhaSplitKVCombinePipelineProblem<
           typename FmhaFwdTypeConfig<ScalarType>::LSEDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::ODataType,
           MaxK, // headdim_v
-          kM0,
-          kN1,
           true, // kIsGroupMode
+          kN1,
           FmhaSplitKVCombineTraits>;
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
@@ -154,8 +150,11 @@ struct grouped_forward_splitkv_mask_bias_dropout_dispatch {
       using FmhaTileShape =
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
 
-      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
+      constexpr ck_tile::index_t kN1 = 32;
+      constexpr ck_tile::index_t kM0 =
+          ck_tile::BlockFmhaSplitKVCombinePipelineTileSizes<
+              typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+              kN1>::kM0;
 
       using FmhaTilePartitioner =
           ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
@@ -176,7 +175,7 @@ struct grouped_forward_splitkv_mask_bias_dropout_dispatch {
               -1>;
 
           using FmhaPipelineProblem =
-              FmhaSplitKVCombinePipelineProblemTemp<kM0, kN1, FmhaTraits>;
+              FmhaSplitKVCombinePipelineProblemTemp<kN1, FmhaTraits>;
 
           using FmhaPipeline =
               ck_tile::BlockFmhaFwdSplitKVCombinePipeline<FmhaPipelineProblem>;
