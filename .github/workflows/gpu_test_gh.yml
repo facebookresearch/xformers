@@ -46,6 +46,7 @@ jobs:
         with:
           submodules: recursive
           path: "."
+          fetch-depth: 0 # We need commits history as well
       - run: nvidia-smi
       - name: Install micromamba
         run: |
@@ -66,6 +67,11 @@ jobs:
           echo "micromamba activate env" >> ~/.profile
           echo "==== .profile ====="
           cat ~/.profile
+      - name: Selective build/tests
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install -r .github/selective_ci/requirements.txt
+          python .github/selective_ci/selective_ci.py
       - name: Setup test requirements
         run: |
           which python
