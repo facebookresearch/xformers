@@ -403,14 +403,11 @@ def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
         [shape[0], shape[2]], device=device, dtype=dtype, requires_grad=False
     )
     dy = torch.randn(shape[:2], device=device, dtype=dtype, requires_grad=False)
-    db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
-    dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
 
     GemmFusedSumOp = xformers.ops.common.get_xformers_operator("gemm_fused_operand_sum")
 
     def fn(x):
-        GemmFusedSumOp(dy.transpose(-2, -1), x, dw, db)
-        return [dw, db]
+        return GemmFusedSumOp(dy.transpose(-2, -1), x)
 
     # Eager
     output = fn(x)
