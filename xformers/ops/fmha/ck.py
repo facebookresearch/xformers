@@ -218,6 +218,7 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
+        ## consider for expanded 5-D inputted
         if inp.key.stride()[3] == 0:
             assert (
                 inp.value.stride()[3] == 0
@@ -231,8 +232,8 @@ class FwOp(AttentionFwOpBase):
             v_shape = inp.value.size()
             v_stride = inp.value.stride()
             value = inp.value.as_strided(
-                (v_shape[0], v_shape[1], v_shape[2], k_shape[4]),
-                (k_stride[0], k_stride[1], k_stride[2], k_stride[4]),
+                (v_shape[0], v_shape[1], v_shape[2], v_shape[4]),
+                (v_stride[0], v_stride[1], v_stride[2], v_stride[4]),
             )
         else:
             key = inp.key.flatten(2, 3)
