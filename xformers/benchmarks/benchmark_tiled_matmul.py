@@ -8,7 +8,6 @@ import itertools
 
 import torch
 from torch.utils import benchmark
-from triton.ops.matmul import matmul as triton_matmul
 
 from xformers.benchmarks.utils import DTYPE2STR, benchmark_main_helper
 from xformers.ops.tiled_matmul import tiled_matmul
@@ -83,7 +82,6 @@ def benchmark_tiled_matmul(shape_name, dtype):
     # Warmup (maybe not needed?)
     torch.mm(a, b)
     matmul_per_tile(a_tiles, b_tiles)
-    triton_matmul(a, b)
     tiled_matmul(a_tiles, b_tiles)
 
     yield benchmark.Timer(
@@ -106,17 +104,6 @@ def benchmark_tiled_matmul(shape_name, dtype):
         },
         label="tiled_matmul",
         description="pytorch_tiled",
-        sub_label=sub_label,
-    )
-    yield benchmark.Timer(
-        stmt="fn(a, b)",
-        globals={
-            "a": a,
-            "b": b,
-            "fn": triton_matmul,
-        },
-        label="tiled_matmul",
-        description="triton_fused",
         sub_label=sub_label,
     )
     yield benchmark.Timer(

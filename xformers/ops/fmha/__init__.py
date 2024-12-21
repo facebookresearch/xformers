@@ -17,7 +17,12 @@ from . import (
     flash3,
     triton_splitk,
 )
-from .attn_bias import VARLEN_BIASES, AttentionBias, LowerTriangularMask
+from .attn_bias import (
+    VARLEN_BIASES,
+    AttentionBias,
+    BlockDiagonalMask,
+    LowerTriangularMask,
+)
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
@@ -227,7 +232,7 @@ def memory_efficient_attention(
         attn = attn.softmax(-1)
         attn = F.dropout(attn, p)
         attn = attn @ value
-        return attn.transpose(1, 2)
+        return attn.transpose(1, 2).contiguous()
 
     :Examples:
 
@@ -884,4 +889,5 @@ __all__ = [
     "attn_bias",
     "_get_use_fa3",
     "_set_use_fa3",
+    "BlockDiagonalMask",
 ]

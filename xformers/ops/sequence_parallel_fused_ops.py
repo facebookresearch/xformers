@@ -4,23 +4,12 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Union,
-    overload,
-)
+from typing import Callable, Dict, List, Optional, Sequence, Union, overload
 
 import torch
 import torch.distributed as dist
 import torch.multiprocessing.reductions
 
-from .. import _is_triton_available
 from .common import BaseOperator, get_xformers_operator, register_operator
 from .ipc import init_ipc
 
@@ -108,18 +97,14 @@ class _FusedSequenceParallel:
         self,
         device: torch.device,
         group: dist.ProcessGroup,
-        num_stripes: int,
     ):
         self.my_device = device
         self.my_rank = group.rank()
         self.world_size = group.size()
-        self.num_stripes = num_stripes
-        self.my_device_capability = torch.cuda.get_device_capability(self.my_device)
 
         self.p2p_comms = init_ipc(group, self.my_device)
 
-        self.next_stripe = 0
-        self.next_seq_nums = [1] * self.num_stripes
+        self.next_seq_num = 1
 
         # My staging buffers
         self.staging = torch.empty((0,), device=self.my_device)
@@ -129,26 +114,26 @@ class _FusedSequenceParallel:
             torch.empty((0,), device=self.my_device)
         ] * self.world_size
 
-        # Allocate buffers for my inboxes
-        self.num_writes_into_my_staging = torch.zeros(
-            (self.world_size, self.num_stripes), dtype=torch.int, device=self.my_device
+        # Allocate buffers for locally-hosted counters
+        self.op_finished_produce = torch.zeros(
+            (), dtype=torch.int, device=self.my_device
         )
-        self.num_reads_from_buddys_staging = torch.zeros(
-            (self.world_size, self.num_stripes), dtype=torch.int, device=self.my_device
+        self.comms_ready_consume = torch.zeros(
+            (self.world_size,), dtype=torch.int, device=self.my_device
         )
 
         # Send my handles to buddies
         for rank, conn in enumerate(self.p2p_comms):
             if conn is not None:
-                conn.send(self.num_writes_into_my_staging[rank])
-                conn.send(self.num_reads_from_buddys_staging[rank])
+                conn.send(self.op_finished_produce)
+                conn.send(self.comms_ready_consume[rank])
 
         # Open buddies' inboxes as my outboxes
-        self.num_writes_into_buddys_staging = [
+        self.op_finished_consume = [
             torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
             for conn in self.p2p_comms
         ]
-        self.num_reads_from_my_staging = [
+        self.comms_ready_produce = [
             torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
             for conn in self.p2p_comms
         ]
@@ -158,9 +143,9 @@ class _FusedSequenceParallel:
         # tends to run the matmul first and delay the memcpy, which causes a
         # domino effect. We thus "encourage" it to prioritize the memcpy.
         self.memcpy_stream = torch.cuda.Stream(priority=-1)
-        # Use dedicated streams to parallelize other operations.
-        self.wait_stream = torch.cuda.Stream(priority=-1)
-        self.write_stream = torch.cuda.Stream(priority=-1)
+        # Use dedicated streams to run the wait kernels in the background.
+        self.compute_wait_stream = torch.cuda.Stream(priority=-1)
+        self.memcpy_wait_stream = torch.cuda.Stream(priority=-1)
 
         self.next_stream_idx = 0
 
@@ -177,37 +162,21 @@ class _FusedSequenceParallel:
             # ensure that the staging buffer doesn't contain all zeroes as that
             # makes the matmuls go faster (better L2 compression or something).
             self.staging = torch.empty(
-                (self.num_stripes, self.world_size, total_num_bytes),
+                (self.world_size, total_num_bytes),
                 device=self.my_device,
                 dtype=torch.uint8,
             )
             if random_init:
-                self.staging.normal_()
+                self.staging.view(torch.bfloat16).normal_()
             for rank, conn in enumerate(self.p2p_comms):
                 if conn is not None:
-                    conn.send(self.staging[:, rank])
+                    conn.send(self.staging[rank])
             self.buddys_staging = [
                 torch.empty((0,), device=self.my_device)
                 if conn is None
                 else conn.recv()
                 for rank, conn in enumerate(self.p2p_comms)
             ]
-
-    def _should_use_triton(self, _triton: bool):
-        if not int(os.getenv("XFORMERS_FUSED_SEQPAR_ENABLE_TRITON", "1")):
-            return False
-        if not _is_triton_available():
-            return False
-        # Triton seems to be having issues on P100 and V100 GPUs, such as
-        # https://github.com/openai/triton/issues/1609
-        # https://github.com/openai/triton/issues/1610
-        # https://github.com/openai/triton/issues/1257#issuecomment-1532616965
-        # and, in recent Triton versions (Jan 2024), returning wrong values.
-        if self.my_device_capability < (8, 0):
-            return False
-        if not _triton:
-            return False
-        return True
 
     def make_stream_factory(
         self, current_stream: torch.cuda.Stream
@@ -229,9 +198,6 @@ class _FusedSequenceParallel:
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
-        _triton: bool = True,
-        _is_regular_matmul: bool = False,
-        _extra_triton_args: Mapping[str, Any] = {},
     ):
         """Perform a fused all-gather followed by a linear layer"""
 
@@ -245,17 +211,14 @@ class _FusedSequenceParallel:
             total_scattered_input_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        stripe = self.next_stripe % self.num_stripes
-        self.next_stripe += 1
-
-        seq_num = self.next_seq_nums[stripe] % SEQ_NUM_WRAP_AROUND
+        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
         prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_nums[stripe] += 1
+        self.next_seq_num += 1
 
         stagings = [
             s.view((self.world_size,) + si.shape)
             for s, si in zip(
-                self.staging.view(dtype)[stripe, :, :total_scattered_input_numel].split(
+                self.staging.view(dtype)[:, :total_scattered_input_numel].split(
                     scattered_input_numels, dim=-1
                 ),
                 scattered_inputs,
@@ -267,7 +230,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(si.shape)
                 for s, si in zip(
-                    bs.view(dtype)[stripe, :total_scattered_input_numel].split(
+                    bs.view(dtype)[:total_scattered_input_numel].split(
                         scattered_input_numels, dim=-1
                     ),
                     scattered_inputs,
@@ -277,112 +240,70 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
-
-        self.memcpy_stream.wait_stream(current_stream)
-
-        # Wait for buddy to signal that it read from the data before we
-        # overwrite it (this wait matches up with write [B] below).
-        if _wait:
-            WaitValues.OPERATOR(
-                [
-                    self.num_reads_from_buddys_staging[
-                        (self.my_rank + iter_) % self.world_size, stripe
-                    ]
-                    for iter_ in range(1, self.world_size)
-                ],
-                prev_seq_num,
-                self.memcpy_stream,
-                timeout_s,
-            )
+        self.second_stream.wait_stream(current_stream)
+        self.compute_wait_stream.wait_stream(current_stream)
+        self.memcpy_wait_stream.wait_stream(current_stream)
+        stream_factory = self.make_stream_factory(current_stream)
 
         for iter_ in range(1, self.world_size):
             dst_rank = (self.my_rank + iter_) % self.world_size
+
+            # Wait for buddy to signal that it read from the data before we
+            # overwrite it (this wait matches up with write [B] below).
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.op_finished_consume[dst_rank]],
+                    prev_seq_num,
+                    self.memcpy_wait_stream,
+                    timeout_s,
+                )
+
+            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
                     for bs, si in zip(buddys_stagings[dst_rank], scattered_inputs):
                         bs.copy_(si)
 
-            self.write_stream.wait_stream(self.memcpy_stream)
-
             # Signal to buddy that we have written into the data so it can
-            # read from it (this write matches up with the wait in Triton
-            # or with wait [A] below).
+            # read from it (this write matches up with wait [A] below).
             if _wait:
                 Memset32bAsync.OPERATOR(
-                    self.num_writes_into_buddys_staging[dst_rank][stripe],
+                    self.comms_ready_produce[dst_rank],
                     seq_num,
-                    self.write_stream,
+                    self.memcpy_stream,
                 )
 
-        # If we're doing a regular matmul, we have a faster fused Triton kernel!
-        if _is_regular_matmul and self._should_use_triton(_triton):
-            from ._triton.sequence_parallel_fused_kernels import (
-                BACKWARDS_WITH_ME_FIRST,
-                _launch_triton_matmul,
-            )
+        my_matmul(scattered_inputs, self.my_rank, stream_factory)
+
+        for iter_ in range(1, self.world_size):
+            src_rank = (self.my_rank - iter_) % self.world_size
 
             # Wait for buddy to signal that it wrote into the data before we
             # read from it (this wait matches up with write [A] above).
-            _launch_triton_matmul(
-                a_my_shard=scattered_inputs[0].flatten(0, -2),
-                a=stagings[0].flatten(0, -2),
-                my_rank=self.my_rank,
-                world_size=self.world_size,
-                wait_counters=self.num_writes_into_my_staging,
-                write_counters=None,
-                direction=BACKWARDS_WITH_ME_FIRST,
-                stripe=stripe,
-                seq_num=seq_num,
-                num_stripes=self.num_stripes,
-                timeout_s=timeout_s,
-                _wait=_wait,
-                **_extra_triton_args,
-            )
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.comms_ready_consume[src_rank]],
+                    seq_num,
+                    self.compute_wait_stream,
+                    timeout_s,
+                )
 
-        else:
-            # Not needed, but it prevents the waits from starting much earlier
-            # than the rest of the op, which is confusing when profiling.
-            self.wait_stream.wait_stream(current_stream)
+            current_stream.wait_stream(self.compute_wait_stream)
+            self.second_stream.wait_stream(self.compute_wait_stream)
 
-            self.second_stream.wait_stream(current_stream)
-            stream_factory = self.make_stream_factory(current_stream)
+            my_matmul([s[src_rank] for s in stagings], src_rank, stream_factory)
 
-            my_matmul(scattered_inputs, self.my_rank, stream_factory)
-
-            for iter_ in range(1, self.world_size):
-                src_rank = (self.my_rank - iter_) % self.world_size
-
-                # Wait for buddy to signal that it wrote into the data before we
-                # read from it (this wait matches up with write [A] above).
-                if _wait:
-                    WaitValues.OPERATOR(
-                        [self.num_writes_into_my_staging[src_rank, stripe]],
-                        seq_num,
-                        self.wait_stream,
-                        timeout_s,
-                    )
-                    current_stream.wait_stream(self.wait_stream)
-                    self.second_stream.wait_stream(self.wait_stream)
-
-                my_matmul([s[src_rank] for s in stagings], src_rank, stream_factory)
-
-            current_stream.wait_stream(self.second_stream)
-
-        self.write_stream.wait_stream(current_stream)
+        current_stream.wait_stream(self.second_stream)
+        current_stream.wait_stream(self.memcpy_stream)
 
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [B] above).
         if _wait:
             WriteValues.OPERATOR(
-                [
-                    self.num_reads_from_my_staging[
-                        (self.my_rank - iter_) % self.world_size
-                    ][stripe]
-                    for iter_ in range(1, self.world_size)
-                ],
+                [self.op_finished_produce],
                 seq_num,
-                self.write_stream,
+                current_stream,
             )
 
     def linear_and_reducescatter(
@@ -395,9 +316,6 @@ class _FusedSequenceParallel:
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
-        _triton: bool = True,
-        _is_regular_matmul: bool = False,
-        _extra_triton_args: Mapping[str, Any] = {},
     ):
         """Perform a fused linear layer followed by a reduce-scatter"""
 
@@ -413,19 +331,16 @@ class _FusedSequenceParallel:
             total_scattered_output_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        stripe = self.next_stripe % self.num_stripes
-        self.next_stripe += 1
-
-        seq_num = self.next_seq_nums[stripe] % SEQ_NUM_WRAP_AROUND
+        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
         prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_nums[stripe] += 1
+        self.next_seq_num += 1
 
         stagings = [
             s.view((self.world_size,) + so.shape)
             for s, so in zip(
-                self.staging.view(dtype)[
-                    stripe, :, :total_scattered_output_numel
-                ].split(scattered_output_numels, dim=-1),
+                self.staging.view(dtype)[:, :total_scattered_output_numel].split(
+                    scattered_output_numels, dim=-1
+                ),
                 scattered_outputs,
             )
         ]
@@ -435,7 +350,7 @@ class _FusedSequenceParallel:
             else [
                 s.view(so.shape)
                 for s, so in zip(
-                    bs.view(dtype)[stripe, :total_scattered_output_numel].split(
+                    bs.view(dtype)[:total_scattered_output_numel].split(
                         scattered_output_numels, dim=-1
                     ),
                     scattered_outputs,
@@ -445,119 +360,84 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
+        self.second_stream.wait_stream(current_stream)
+        self.compute_wait_stream.wait_stream(current_stream)
+        self.memcpy_wait_stream.wait_stream(current_stream)
+        stream_factory = self.make_stream_factory(current_stream)
 
-        self.wait_stream.wait_stream(current_stream)
+        for iter_ in range(1, self.world_size):
+            dst_rank = (self.my_rank + iter_) % self.world_size
 
-        # Wait for buddy to signal that it read from the data before we
-        # overwrite it (this wait matches up with write [2] below).
-        if _wait:
-            WaitValues.OPERATOR(
-                [
-                    self.num_reads_from_my_staging[
-                        (self.my_rank + iter_) % self.world_size
-                    ][stripe]
-                    for iter_ in range(1, self.world_size)
-                ],
-                prev_seq_num,
-                current_stream,
-                timeout_s,
-            )
+            # Wait for buddy to signal that it read from the data before we
+            # overwrite it (this wait matches up with write [2] below).
+            if _wait:
+                WaitValues.OPERATOR(
+                    [self.op_finished_consume[dst_rank]],
+                    prev_seq_num,
+                    self.compute_wait_stream,
+                    timeout_s,
+                )
 
-        # If we're doing a regular matmul, we have a faster fused Triton kernel!
-        if _is_regular_matmul and self._should_use_triton(_triton):
-            from ._triton.sequence_parallel_fused_kernels import (
-                FORWARDS_WITH_ME_LAST,
-                _launch_triton_matmul,
-            )
+            current_stream.wait_stream(self.compute_wait_stream)
+            self.second_stream.wait_stream(self.compute_wait_stream)
+
+            my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
+
+            # Deduce which stream contains the last kernel launched.
+            final_stream = [current_stream, self.second_stream][
+                (self.next_stream_idx - 1) % 2
+            ]
+            final_stream.wait_stream(current_stream)
+            final_stream.wait_stream(self.second_stream)
 
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [1] below).
-            _launch_triton_matmul(
-                cs=[s.flatten(0, -2) for s in stagings],
-                cs_my_shard=[
-                    go[self.my_rank].flatten(0, -2) for go in gathered_outputs
-                ],
-                my_rank=self.my_rank,
-                world_size=self.world_size,
-                wait_counters=None,
-                write_counters=self.num_writes_into_my_staging,
-                direction=FORWARDS_WITH_ME_LAST,
-                stripe=stripe,
-                seq_num=seq_num,
-                num_stripes=self.num_stripes,
-                timeout_s=timeout_s,
-                _wait=_wait,
-                **_extra_triton_args,
-            )
+            if _wait:
+                Memset32bAsync.OPERATOR(
+                    self.comms_ready_produce[dst_rank],
+                    seq_num,
+                    final_stream,
+                )
 
-        else:
-            self.second_stream.wait_stream(current_stream)
-            stream_factory = self.make_stream_factory(current_stream)
-
-            for iter_ in range(1, self.world_size):
-                dst_rank = (self.my_rank + iter_) % self.world_size
-
-                my_matmul([s[dst_rank] for s in stagings], dst_rank, stream_factory)
-
-                # Signal to buddy that we have written into the data so it can
-                # read from it (this write matches up with wait [1] below).
-                if _wait:
-                    self.write_stream.wait_stream(current_stream)
-                    self.write_stream.wait_stream(self.second_stream)
-                    WriteValues.OPERATOR(
-                        [self.num_writes_into_my_staging[dst_rank, stripe]],
-                        seq_num,
-                        self.write_stream,
-                    )
-
-            my_matmul(
-                [o[self.my_rank] for o in gathered_outputs],
-                self.my_rank,
-                stream_factory,
-            )
-
-            current_stream.wait_stream(self.second_stream)
+        my_matmul(
+            [o[self.my_rank] for o in gathered_outputs],
+            self.my_rank,
+            stream_factory,
+        )
 
         for iter_ in range(1, self.world_size):
             src_rank = (self.my_rank - iter_) % self.world_size
 
             # Wait for buddy to signal that it wrote into the data before we
-            # read from it (this wait matches up with the write in Triton
-            # or with write [1] above).
+            # read from it (this wait matches up with write [1] above).
             if _wait:
                 WaitValues.OPERATOR(
-                    [self.num_writes_into_buddys_staging[src_rank][stripe]],
+                    [self.comms_ready_consume[src_rank]],
                     seq_num,
-                    self.wait_stream,
+                    self.memcpy_wait_stream,
                     timeout_s,
                 )
 
-            self.memcpy_stream.wait_stream(self.wait_stream)
+            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
                     for go, bs in zip(gathered_outputs, buddys_stagings[src_rank]):
                         go[src_rank].copy_(bs)
 
+        current_stream.wait_stream(self.second_stream)
         current_stream.wait_stream(self.memcpy_stream)
 
         for go, so in zip(gathered_outputs, scattered_outputs):
             torch.sum(go, dim=0, out=so)
 
-        self.write_stream.wait_stream(current_stream)
-
         # Signal to buddy that we have read from the data so it can
         # overwrite it (this write matches up with wait [2] above).
         if _wait:
             WriteValues.OPERATOR(
-                [
-                    self.num_reads_from_buddys_staging[
-                        (self.my_rank - iter_) % self.world_size, stripe
-                    ]
-                    for iter_ in range(1, self.world_size)
-                ],
+                [self.op_finished_produce],
                 seq_num,
-                self.write_stream,
+                current_stream,
             )
 
 
@@ -581,7 +461,7 @@ def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> b
 
 
 def _lazy_init(
-    device: torch.device, group: dist.ProcessGroup, num_stripes: int
+    device: torch.device, group: dist.ProcessGroup
 ) -> Optional[_FusedSequenceParallel]:
     world_size = group.size()
     try:
@@ -594,7 +474,7 @@ def _lazy_init(
         elif not _can_ranks_communicate_all_to_all_over_nvlink(group):
             obj = None
         else:
-            obj = _FusedSequenceParallel(device, group, num_stripes)
+            obj = _FusedSequenceParallel(device, group)
         CACHE[id(group)] = obj
     return obj
 
@@ -610,7 +490,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[torch.Tensor] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -627,7 +506,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[List[torch.Tensor]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -643,7 +521,6 @@ def fused_allgather_and_linear(
     *,
     group: dist.ProcessGroup,
     out: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_scattered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -676,10 +553,7 @@ def fused_allgather_and_linear(
     buffer will be the maximum needed by any of them. Each call, when it starts,
     must first wait for the previous call to finish using the staging buffer. In
     normal conditions, where there's some other operation between two calls,
-    this isn't an issue. However, when doing back-to-back calls (like in
-    benchmarks) it can introduce artificial delays. To hide them, we allow using
-    more than one staging buffer, which will be cycled through, thus trading
-    memory for speed. This can be controlled using the num_stripes argument.
+    this isn't an issue.
 
     Supports FP8 gemm for tensor-wise quantized weight and input tensors.
     To enable FP8 gemm:
@@ -737,11 +611,9 @@ def fused_allgather_and_linear(
         weights,
         group.group_name,
         gathered_outputs,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-        _triton=private_args_DO_NOT_USE.get("_triton", True),
         scale_scattered_input=scale_scattered_input,
         scales_weights=scales_weights,
     )
@@ -762,11 +634,9 @@ def _fused_allgather_and_linear_custom_op(
     weights: List[torch.Tensor],
     process_group_name: str,
     gathered_outputs: List[torch.Tensor],
-    num_stripes: int,
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
-    _triton: bool,
     scale_scattered_input: torch.Tensor,
     scales_weights: Sequence[Optional[torch.Tensor]],
 ) -> None:
@@ -791,22 +661,13 @@ def _fused_allgather_and_linear_custom_op(
                 else:
                     torch.matmul(inputs[0], w.t(), out=go[src_rank])
 
-    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_allgather_and_anything(
         [scattered_input],
         my_matmul,
         group=process_group,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
-        _triton=_triton,
-        _is_regular_matmul=_is_regular_matmul,
-        _extra_triton_args=dict(
-            bs=[w.t() for w in weights],
-            cs=[go.flatten(0, -2) for go in gathered_outputs],
-            cs_my_shard=None,
-        ),
     )
 
 
@@ -817,7 +678,6 @@ def fused_allgather_and_anything(
     ],
     *,
     group: dist.ProcessGroup,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
@@ -834,7 +694,7 @@ def fused_allgather_and_anything(
 
     gathered_input_shapes = [(world_size,) + si.shape for si in scattered_inputs]
 
-    obj = _lazy_init(scattered_inputs[0].device, group, num_stripes)
+    obj = _lazy_init(scattered_inputs[0].device, group)
 
     if world_size == 1:
         my_matmul(scattered_inputs, 0, _default_stream_factory)
@@ -857,16 +717,12 @@ def fused_allgather_and_anything(
     # Fast path
     else:
         assert scattered_inputs[0].device == obj.my_device
-        assert obj.num_stripes == num_stripes
         obj.allgather_and_linear(
             scattered_inputs,
             my_matmul,
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
             _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-            _triton=private_args_DO_NOT_USE.get("_triton", True),
-            _is_regular_matmul=private_args_DO_NOT_USE.get("_is_regular_matmul", False),
-            _extra_triton_args=private_args_DO_NOT_USE.get("_extra_triton_args", {}),
         )
 
 
@@ -877,7 +733,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[torch.Tensor] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -894,7 +749,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[List[torch.Tensor]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -910,7 +764,6 @@ def fused_linear_and_reducescatter(
     *,
     group: dist.ProcessGroup,
     out: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
@@ -987,11 +840,9 @@ def fused_linear_and_reducescatter(
         weights,
         group.group_name,
         scattered_outputs,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-        _triton=private_args_DO_NOT_USE.get("_triton", True),
         scale_gathered_input=scale_gathered_input,
         scales_weights=scales_weights,
     )
@@ -1012,11 +863,9 @@ def _fused_linear_and_reducescatter_custom_op(
     weights: List[torch.Tensor],
     process_group_name: str,
     scattered_outputs: List[torch.Tensor],
-    num_stripes: int,
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
-    _triton: bool,
     scale_gathered_input: torch.Tensor,
     scales_weights: Sequence[Optional[torch.Tensor]],
 ) -> None:
@@ -1041,22 +890,13 @@ def _fused_linear_and_reducescatter_custom_op(
                 else:
                     torch.matmul(gathered_input[dst_rank], w.t(), out=o)
 
-    _is_regular_matmul = all([not _is_fp8_dtype(w.dtype) for w in weights])
     fused_anything_and_reducescatter(
         my_matmul,
         scattered_outputs,
         group=process_group,
-        num_stripes=num_stripes,
         timeout_s=timeout_s,
         _wait=_wait,
         _memcpy=_memcpy,
-        _triton=_triton,
-        _is_regular_matmul=_is_regular_matmul,
-        _extra_triton_args=dict(
-            a_my_shard=None,
-            a=gathered_input.flatten(0, -2),
-            bs=[w.t() for w in weights],
-        ),
     )
 
 
@@ -1067,7 +907,6 @@ def fused_anything_and_reducescatter(
     scattered_outputs: List[torch.Tensor],
     *,
     group: dist.ProcessGroup,
-    num_stripes: int = 1,
     timeout_s: int = 60 * 60,
     **private_args_DO_NOT_USE,
 ) -> None:
@@ -1084,7 +923,7 @@ def fused_anything_and_reducescatter(
 
     gathered_output_shapes = [(world_size,) + so.shape for so in scattered_outputs]
 
-    obj = _lazy_init(scattered_outputs[0].device, group, num_stripes)
+    obj = _lazy_init(scattered_outputs[0].device, group)
 
     if world_size == 1:
         my_matmul(scattered_outputs, 0, _default_stream_factory)
@@ -1107,7 +946,6 @@ def fused_anything_and_reducescatter(
     # Fast path
     else:
         assert scattered_outputs[0].device == obj.my_device
-        assert obj.num_stripes == num_stripes
         gathered_outputs = [
             scattered_outputs[0].new_empty(gos) for gos in gathered_output_shapes
         ]
@@ -1118,7 +956,4 @@ def fused_anything_and_reducescatter(
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
             _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
-            _triton=private_args_DO_NOT_USE.get("_triton", True),
-            _is_regular_matmul=private_args_DO_NOT_USE.get("_is_regular_matmul", False),
-            _extra_triton_args=private_args_DO_NOT_USE.get("_extra_triton_args", {}),
         )

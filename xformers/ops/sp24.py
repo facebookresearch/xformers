@@ -6,10 +6,12 @@
 import contextlib
 import ctypes
 import glob
+import os
+import time
 import warnings
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional, Tuple, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, cast
 
 import torch
 
@@ -74,6 +76,13 @@ def _get_cusparselt_torch_version() -> Tuple[int, int, int]:
 
 _cusplt_version = _get_cusparselt_torch_version()
 _cusplt_version_str = ".".join(str(v) for v in _cusplt_version)
+
+
+@register_operator
+class Sp24GemmCuspltSearch(BaseOperator):
+    OPERATOR = get_operator("aten", "_cslt_sparse_mm_search")
+    OPERATOR_CATEGORY = "sp24"
+    NAME = f"_cslt_sparse_mm_search@{_cusplt_version_str}"
 
 
 @register_operator
@@ -368,7 +377,9 @@ class Sparse24Tensor(torch.Tensor):
         return self.__slots__, (self.shape, self.requires_grad)
 
     @classmethod
-    def __tensor_unflatten__(cls, inner_tensors, flatten_spec):
+    def __tensor_unflatten__(
+        cls, inner_tensors, flatten_spec, outer_size, outer_stride
+    ):
         shape, requires_grad = flatten_spec
         return cls(
             shape,
@@ -417,6 +428,97 @@ class Sparse24TensorCutlass(Sparse24Tensor):
         )
 
 
+_CUSPLT_ALG_CACHE: Dict[Tuple[int, int, int, str, torch.dtype, bool], int] = {}
+_CUSPLT_TUNE = os.environ.get("XFORMERS_CUSPARSELT_TUNE", "1") == "1"
+
+
+def _cusplt_find_alg(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> int:
+    """
+    cuSPARSELt has multiple algorithms (that correspond to different kernels)
+    to run a given GEMM, because the optimal kernel depends on the GEMM dimensions.
+    This function attempts to find the most efficient one by benchmarking all
+    of them.
+    NOTE: cuSPARSELt also provides a function to search the best algorithm
+    (exposed via `aten:_cslt_sparse_mm_search`) but it often fails to find the best
+    algorithm, so we need this workaround.
+    """
+    if not _CUSPLT_TUNE:
+        return 0
+    M, K = shape
+    N = B.shape[1]
+    fmt = "r"
+    fmt += "r" if B.stride(-1) <= 1 else "c"
+    fmt += "c" if transpose_result else "r"
+    h = (M, N, K, fmt, B.dtype, bias is not None)
+    if h in _CUSPLT_ALG_CACHE:
+        return _CUSPLT_ALG_CACHE[h]
+
+    REPEAT = 10
+    TIME_ALGO = []
+    for algo in range(70):
+        has_error = False
+        for i in range(REPEAT):
+            try:
+                Sp24GemmCusplt.OPERATOR(
+                    packed, B, bias=bias, transpose_result=transpose_result, alg_id=algo
+                )
+            except RuntimeError:
+                has_error = True
+                break
+            if i == 1:  # 1 iteration of warmup
+                torch.cuda.synchronize()
+                t = time.monotonic()
+        if has_error:
+            break
+        torch.cuda.synchronize()
+        dt = time.monotonic() - t
+        TIME_ALGO.append((dt, algo))
+    TIME_ALGO.sort()
+    _CUSPLT_ALG_CACHE[h] = TIME_ALGO[0][1]
+    return _CUSPLT_ALG_CACHE[h]
+
+
+@torch.library.custom_op("xformers::_cusplt_mm", mutates_args=(), device_types=["cuda"])
+def _cusplt_mm(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> torch.Tensor:
+    """
+    This operator wraps find_algo + gemm. This is because we don't want find_algo
+    to be visible by torch compile, otherwise it will remove it from the graph.
+    """
+    alg_id = _cusplt_find_alg(
+        shape, packed, B, bias=bias, transpose_result=transpose_result
+    )
+    return Sp24GemmCusplt.OPERATOR(
+        packed, B, bias=bias, transpose_result=transpose_result, alg_id=alg_id
+    )
+
+
+@torch.library.register_fake("xformers::_cusplt_mm")
+def _cusplt_mm_meta(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> torch.Tensor:
+    M, K = shape
+    N = B.shape[1]
+    if transpose_result:
+        return torch.empty([N, M], dtype=B.dtype, device=B.device)
+    return torch.empty([M, N], dtype=B.dtype, device=B.device)
+
+
 class Sparse24TensorCuSparseLt(Sparse24Tensor):
     def _mm(
         self,
@@ -456,8 +558,12 @@ class Sparse24TensorCuSparseLt(Sparse24Tensor):
                 "This operation is only supported when A, B and C have the same data type."
             )
         assert _has_cusparseLt()
-        out = Sp24GemmCusplt.OPERATOR(
-            self.packed, B, bias=bias, transpose_result=prefer_col_major_output
+        out = torch.ops.xformers._cusplt_mm(
+            self.shape,
+            self.packed,
+            B,
+            bias=bias,
+            transpose_result=prefer_col_major_output,
         )
         if prefer_col_major_output:
             out = out.t()

@@ -41,10 +41,10 @@ void gemm_fused_operand_sum_(
   using ElementOutput = scalar_t;
 
   using LayoutInputA = cutlass::layout::ColumnMajor;
-  TORCH_CHECK(a.stride(0) == 1);
   using LayoutInputB = cutlass::layout::RowMajor;
-  TORCH_CHECK(b.stride(1) == 1);
   using LayoutOutput = cutlass::layout::RowMajor;
+  TORCH_CHECK(a.stride(0) == 1);
+  TORCH_CHECK(b.stride(1) == 1);
   TORCH_CHECK(out_mm.stride(1) == 1);
 
   // Layout of the output vector
@@ -205,33 +205,26 @@ void gemm_fused_operand_sum_(
 template <bool kIsMeta = false>
 std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
     const at::Tensor& a,
-    const at::Tensor& b,
-    at::Tensor& out_mm,
-    at::Tensor& out_sum) {
+    const at::Tensor& b) {
   // TODO: Check all params. This would take a lot of lines of code...
   TORCH_CHECK(a.dim() == 2);
   TORCH_CHECK(b.dim() == 2);
-  TORCH_CHECK(out_mm.dim() == 2);
-  TORCH_CHECK(out_mm.sym_size(0) == a.sym_size(0));
-  TORCH_CHECK(out_mm.sym_size(1) == b.sym_size(1));
-  TORCH_CHECK(out_sum.dim() == 1);
+  TORCH_CHECK(a.stride(0) == 1);
+  TORCH_CHECK(b.stride(1) == 1);
 
-#define FWD_PARAMS a, b, out_mm, out_sum
+  auto out_sum = at::empty({a.size(0)}, a.options());
+  auto out_mm = at::empty({a.size(0), b.size(1)}, a.options());
 
   if (!kIsMeta) {
     if (a.scalar_type() == at::ScalarType::Half) {
       TORCH_CHECK(b.scalar_type() == at::ScalarType::Half);
-      TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::Half);
-      TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::Half);
-      gemm_fused_operand_sum_<cutlass::half_t>(FWD_PARAMS);
+      gemm_fused_operand_sum_<cutlass::half_t>(a, b, out_mm, out_sum);
     } else {
       TORCH_CHECK(
           a.scalar_type() == at::ScalarType::BFloat16,
           "Only supports bf16/f16");
       TORCH_CHECK(b.scalar_type() == at::ScalarType::BFloat16);
-      TORCH_CHECK(out_mm.scalar_type() == at::ScalarType::BFloat16);
-      TORCH_CHECK(out_sum.scalar_type() == at::ScalarType::BFloat16);
-      gemm_fused_operand_sum_<cutlass::bfloat16_t>(FWD_PARAMS);
+      gemm_fused_operand_sum_<cutlass::bfloat16_t>(a, b, out_mm, out_sum);
     }
   }
   return std::make_tuple(out_mm, out_sum);
@@ -239,16 +232,12 @@ std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
 
 std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum_autocast(
     const at::Tensor& a,
-    const at::Tensor& b,
-    at::Tensor& out_mm,
-    at::Tensor& out_sum) {
+    const at::Tensor& b) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
   return gemm_fused_operand_sum(
       at::autocast::cached_cast(exec_type, a),
-      at::autocast::cached_cast(exec_type, b),
-      out_mm,
-      out_sum);
+      at::autocast::cached_cast(exec_type, b));
 }
 } // namespace
 

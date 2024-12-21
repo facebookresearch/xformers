@@ -3,8 +3,10 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import ast
 import logging
 import sys
+from typing import Any, List
 
 import pytest
 import torch
@@ -15,7 +17,7 @@ try:
     import triton
     import triton.language as tl
 
-    from xformers.triton.vararg_kernel import unroll_varargs
+    from xformers.triton.vararg_kernel import _VisitorConditionalKernel, unroll_varargs
 
     _triton_available = xformers._is_triton_available()
 except ImportError as e:
@@ -91,3 +93,40 @@ def test_triton_multiple_varargs_kernel():
     kernel[(1,)](output, *a, *b_list, BLOCK_SIZE=32)
     expected_output = (torch.stack(a) * torch.stack(b).unsqueeze(1)).sum(0)
     assert torch.allclose(expected_output, output)
+
+
+@pytest.mark.skipif(not enable_tests, reason="moe not supported")
+def test_triton_varargs_conditional():
+    # to make linter happy
+    VAR_ARGS_ARRAY = List[Any]
+
+    @triton.jit
+    def kernel(
+        x_ptrs: "VAR_ARGS_ARRAY",  # noqa: F821
+        y_ptrs: "VAR_ARGS_ARRAY",  # noqa: F821
+        numel,
+        BLOCK_SIZE: tl.constexpr,
+    ):
+        pid = tl.program_id(axis=0)
+        offsets = BLOCK_SIZE * pid + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < numel
+        for i in range(len(x_ptrs)):
+            x_ptr = x_ptrs[i]
+            y_ptr = y_ptrs[i]
+
+            data = tl.load(x_ptr + offsets, mask)
+            result = data * data
+            tl.store(y_ptr + offsets, result, mask)
+
+    k = triton.JITFunction(kernel.fn)
+    parsed = ast.parse(k.src)
+    visitor = _VisitorConditionalKernel(N=3)
+    parsed = visitor.visit(parsed)
+    parsed = ast.fix_missing_locations(parsed)
+    new_src = ast.unparse(parsed)  # type: ignore
+
+    assert "x_ptrs0, x_ptrs1, x_ptrs2" in new_src
+    assert "y_ptrs0, y_ptrs1, y_ptrs2", new_src
+    assert "for i in range(3):" in new_src
+    assert "x_ptr = x_ptrs0 if i == 0 else x_ptrs1 if i == 1 else x_ptrs2" in new_src
+    assert "y_ptr = y_ptrs0 if i == 0 else y_ptrs1 if i == 1 else y_ptrs2" in new_src

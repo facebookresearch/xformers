@@ -50,6 +50,7 @@ except ImportError:
         # We end up here is arch is not 90a
         _C_flashattention3 = None
 
+
 if _C_flashattention3 is not None:
     # returns: out, q_padded, k_padded, v_padded, out_padded, softmax_lse, p
     @torch.library.custom_op(
@@ -68,7 +69,9 @@ if _C_flashattention3 is not None:
         softmax_scale: float,
         is_causal: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor,]:
+        win_left = win_right = -1
         if cu_seqlens_q is None:
+            use_gqa_packing = False
             assert cu_seqlens_k is None
             assert seqused_k is None
             (
@@ -80,9 +83,21 @@ if _C_flashattention3 is not None:
                 softmax_lse,
                 p,
             ) = _C_flashattention3.fwd(
-                query, key, value, None, softmax_scale, is_causal
+                query,
+                key,
+                value,
+                None,
+                softmax_scale,
+                None,
+                None,
+                None,
+                is_causal,
+                win_left,
+                win_right,
+                use_gqa_packing,
             )
         else:
+            seqused_q = block_table = None
             out, q, k, v, out_padded, softmax_lse = _C_flashattention3.varlen_fwd(
                 query,
                 key,
@@ -90,11 +105,15 @@ if _C_flashattention3 is not None:
                 None,
                 cu_seqlens_q,
                 cu_seqlens_k,
+                seqused_q,
                 seqused_k,
+                block_table,
                 max_seqlen_q,
                 max_seqlen_k,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
             )
         return out, softmax_lse
 
@@ -157,6 +176,8 @@ if _C_flashattention3 is not None:
         softmax_scale: float,
         is_causal: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        win_left = win_right = -1
+        seqused_q = seqused_k = None
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         is_deterministic = False
         if cu_seqlens_q is None:
@@ -173,6 +194,8 @@ if _C_flashattention3 is not None:
                 dv,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
                 is_deterministic,
             )
         else:
@@ -188,10 +211,14 @@ if _C_flashattention3 is not None:
                 dv,
                 cu_seqlens_q,
                 cu_seqlens_k,
+                seqused_q,
+                seqused_k,
                 max_seqlen_q,
                 max_seqlen_k,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
                 is_deterministic,
             )
         return dq, dk, dv
@@ -316,7 +343,9 @@ class FwOp(AttentionFwOpBase):
             return out, None
         ctx = Context(
             out=out,
-            lse=_post_process_lse(softmax_lse, inp, tuple(original_query_shape)),
+            lse=_post_process_lse(
+                softmax_lse, inp, tuple(original_query_shape), varlen_lse_packed=True
+            ),
         )
         return (out, ctx)
 

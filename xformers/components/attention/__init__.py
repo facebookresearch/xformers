@@ -96,24 +96,10 @@ def sparsify(matrix):
     return matrix.to_sparse()
 
 
-from .favor import FavorAttention  # noqa
-from .global_tokens import GlobalAttention  # noqa
-from .linformer import LinformerAttention  # noqa
-from .local import LocalAttention  # noqa
-from .nystrom import NystromAttention  # noqa
-from .ortho import OrthoFormerAttention  # noqa
-from .random import RandomAttention  # noqa
 from .scaled_dot_product import ScaledDotProduct  # noqa
 
 __all__ = [
     "ScaledDotProduct",
-    "LocalAttention",
-    "LinformerAttention",
-    "NystromAttention",
-    "RandomAttention",
-    "OrthoFormerAttention",
-    "GlobalAttention",
-    "FavorAttention",
     "Attention",
     "AttentionMask",
     "build_attention",
