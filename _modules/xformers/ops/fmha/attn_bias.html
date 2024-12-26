@@ -1812,18 +1812,8 @@
     <span class="n">_subtensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">_subtensor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">_subtensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="n">_get_default_bias_device</span><span class="p">())</span>
-        <span class="n">tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="o">.</span><span class="n">_make_wrapper_subclass</span><span class="p">(</span>  <span class="c1"># type: ignore[attr-defined]</span>
-            <span class="bp">cls</span><span class="p">,</span>
-            <span class="p">[],</span>
-            <span class="n">device</span><span class="o">=</span><span class="n">_subtensor</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
-            <span class="n">dtype</span><span class="o">=</span><span class="n">_subtensor</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
-            <span class="n">requires_grad</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">tensor</span><span class="o">.</span><span class="n">_subtensor</span> <span class="o">=</span> <span class="n">_subtensor</span>
-        <span class="k">return</span> <span class="n">tensor</span>
+    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
     <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
@@ -1889,6 +1879,24 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">False</span>
+
+<div class="viewcode-block" id="LowerTriangularMask.__new__"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.__new__">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Note: create on CPU by default to avoid initializing CUDA context</span>
+<span class="sd">        by mistake.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">_subtensor</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">_subtensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,),</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="o">.</span><span class="n">_make_wrapper_subclass</span><span class="p">(</span>  <span class="c1"># type: ignore[attr-defined]</span>
+            <span class="bp">cls</span><span class="p">,</span>
+            <span class="p">[],</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">_subtensor</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">_subtensor</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+            <span class="n">requires_grad</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">tensor</span><span class="o">.</span><span class="n">_subtensor</span> <span class="o">=</span> <span class="n">_subtensor</span>
+        <span class="k">return</span> <span class="n">tensor</span></div>
 
     <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
