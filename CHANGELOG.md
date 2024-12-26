@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.28.post3] - TBD
+### Fixed:
+- Creating a `LowerTriangularMask` no longer creates a CUDA tensor
 ### Removed:
 - Following PyTorch, xFormers no longer builds binaries for conda. Pip is now the only recommended way to get xFormers
 

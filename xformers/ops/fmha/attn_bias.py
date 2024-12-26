@@ -1589,18 +1589,8 @@ class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
     _subtensor: torch.Tensor
 
     @staticmethod
-    def __new__(cls, *, _subtensor=None):
-        if _subtensor is None:
-            _subtensor = torch.empty((0,), device=_get_default_bias_device())
-        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
-            cls,
-            [],
-            device=_subtensor.device,
-            dtype=_subtensor.dtype,
-            requires_grad=False,
-        )
-        tensor._subtensor = _subtensor
-        return tensor
+    def __new__(cls, *, _subtensor=None, device=None, **kwargs):
+        raise NotImplementedError()
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__()
@@ -1666,6 +1656,24 @@ class LowerTriangularMask(AttentionBiasSubTensor):
     """
 
     HOLDS_DENSE_TENSOR = False
+
+    @staticmethod
+    def __new__(cls, *, _subtensor=None, device="cpu", **kwargs):
+        """
+        Note: create on CPU by default to avoid initializing CUDA context
+        by mistake.
+        """
+        if _subtensor is None:
+            _subtensor = torch.empty((0,), device=device)
+        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
+            cls,
+            [],
+            device=_subtensor.device,
+            dtype=_subtensor.dtype,
+            requires_grad=False,
+        )
+        tensor._subtensor = _subtensor
+        return tensor
 
     def materialize(
         self,
