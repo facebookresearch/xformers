@@ -91,26 +91,10 @@ struct grouped_infer_mask_bias_dropout_dispatch {
                     kPadSeqLenQ,
                     kPadHeadDimV>>;
 
-            if (param.seqlen_k_dev_ptr !=
-                nullptr) { // seqlen_k of batches are padded
-              using FmhaTilePartitioner =
-                  ck_tile::FmhaFwdTilePartitioner_HBS<FmhaShape>;
-              using FmhaKernel = ck_tile::FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
-              RunWithKernel<FmhaKernel>(param, stream);
-            } else {
-              using FmhaTilePartitioner =
-                  ck_tile::FmhaFwdTilePartitioner_SHB<FmhaShape>;
-              using FmhaKernel = ck_tile::FmhaFwdKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
-
-              RunWithKernel<FmhaKernel>(param, stream);
-            }
+            RunWithKernel<FmhaKernel>(param, stream);
           });
     } else {
       using FmhaTraits = ck_tile::TileFmhaTraits<
@@ -137,21 +121,9 @@ struct grouped_infer_mask_bias_dropout_dispatch {
               true,
               true>>;
 
-      if (param.seqlen_k_dev_ptr != nullptr) { // seqlen_k of batches are padded
-        using FmhaTilePartitioner =
-            ck_tile::FmhaFwdTilePartitioner_HBS<FmhaShape>;
-        using FmhaKernel = ck_tile::
-            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+      using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
-        RunWithKernel<FmhaKernel>(param, stream);
-      } else {
-        using FmhaTilePartitioner =
-            ck_tile::FmhaFwdTilePartitioner_SHB<FmhaShape>;
-        using FmhaKernel = ck_tile::
-            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
-
-        RunWithKernel<FmhaKernel>(param, stream);
-      }
+      RunWithKernel<FmhaKernel>(param, stream);
     }
   };
 
@@ -201,7 +173,11 @@ struct grouped_infer_mask_bias_dropout_dispatch {
     }();
 
     dim3 kGridSize = FmhaKernel::GridSize(
-        param.num_batches, param.Hq, param.max_seqlen_q, param.Kv);
+        param.num_batches,
+        param.Hq,
+        param.max_seqlen_q,
+        param.Kv,
+        param.seqlen_k_dev_ptr != nullptr);
     constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
 

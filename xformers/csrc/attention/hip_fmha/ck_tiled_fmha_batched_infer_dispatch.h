@@ -47,7 +47,6 @@ struct batched_infer_mask_bias_dropout_dispatch {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
     using FmhaShape = typename FmhaFwdShape<MaxK, MTile>::Type;
-    using FmhaTilePartitioner = ck_tile::FmhaFwdTilePartitioner<FmhaShape>;
     constexpr ck_tile::index_t occupancy =
         (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
@@ -103,8 +102,8 @@ struct batched_infer_mask_bias_dropout_dispatch {
                     kPadSeqLenQ,
                     kPadHeadDim>>;
 
-            using FmhaKernel = ck_tile::
-                FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
             RunWithKernel<FmhaKernel>(param, stream);
           });
@@ -135,8 +134,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
                 true,
                 true>>;
 
-        using FmhaKernel = ck_tile::
-            FmhaFwdKernel<FmhaTilePartitioner, FmhaPipeline, FmhaEpilogue>;
+        using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
         RunWithKernel<FmhaKernel>(param, stream);
       });
@@ -195,7 +193,8 @@ struct batched_infer_mask_bias_dropout_dispatch {
           std::make_pair(param.philox_seed, param.philox_offset));
     }();
 
-    dim3 kGridSize = FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
+    dim3 kGridSize =
+        FmhaKernel::GridSize(param.B, param.Hq, param.M, param.Kv, false);
     constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
 

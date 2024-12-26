@@ -46,8 +46,6 @@ struct batched_forward_mask_bias_dropout_dispatch {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
     using FmhaFwdShape_ = typename FmhaFwdShape<MaxK, MTile>::Type;
-    using FmhaFwdTilePartitioner_ =
-        ck_tile::FmhaFwdTilePartitioner<FmhaFwdShape_>;
     constexpr ck_tile::index_t occupancy =
         (MaxK == 64) ? 3 : ((MaxK == 256) ? 1 : 2);
 
@@ -101,10 +99,8 @@ struct batched_forward_mask_bias_dropout_dispatch {
                   kPadSeqLenQ,
                   kPadHeadDim>>;
 
-          using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
-              FmhaFwdTilePartitioner_,
-              FmhaFwdPipeline_,
-              FmhaFwdEpilogue_>;
+          using FmhaFwdKernel_ =
+              ck_tile::FmhaFwdKernel<FmhaFwdPipeline_, FmhaFwdEpilogue_>;
 
           RunWithKernel<FmhaFwdKernel_>(param, stream);
         });
@@ -163,7 +159,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
     }();
 
     dim3 kGridSize =
-        FmhaFwdKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
+        FmhaFwdKernel::GridSize(param.B, param.Hq, param.M, param.Kv, false);
     constexpr dim3 kBlockSize = FmhaFwdKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaFwdKernel::kBlockPerCu;
 
