@@ -62,8 +62,6 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
 
       using FmhaTileShape =
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
-      using FmhaTilePartitioner =
-          ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
       constexpr ck_tile::index_t occupancy = -1;
 
       constexpr auto kBiasEnum = kHasBias
@@ -122,10 +120,8 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdSplitKVKernel<FmhaPipeline, FmhaEpilogue>;
 
               RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
             } else {
@@ -146,10 +142,8 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdSplitKVKernel<FmhaPipeline, FmhaEpilogue>;
 
               RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
             }
@@ -166,8 +160,6 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
               typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
               kN1>::kM0;
 
-      using FmhaTilePartitioner =
-          ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
       constexpr ck_tile::index_t occupancy = -1;
 
       const bool pad_seqlen_q = !(param.M % kM0 == 0);
@@ -199,10 +191,8 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
                           kPadSeqLenQ,
                           kPadHeadDimV>>;
 
-                  using FmhaKernel = ck_tile::FmhaFwdSplitKVCombineKernel<
-                      FmhaTilePartitioner,
-                      FmhaPipeline,
-                      FmhaEpilogue>;
+                  using FmhaKernel = ck_tile::
+                      FmhaFwdSplitKVCombineKernel<FmhaPipeline, FmhaEpilogue>;
 
                   RunWithSplitKVCombineKernel<FmhaKernel>(param, stream);
                 });
