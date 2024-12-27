@@ -462,6 +462,8 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         fmt="BMHK" if packed else fmt,
         **kwargs,
     )
+    if attn_bias is not None:
+        assert type(attn_bias.to(query.device)) is type(attn_bias)
 
     if packed:
         c = torch.stack([query, key, value], 2)
