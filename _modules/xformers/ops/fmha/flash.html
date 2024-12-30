@@ -285,7 +285,7 @@
             <span class="p">)</span>
 
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
-            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
             <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
             <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
             <span class="k">if</span> <span class="p">(</span>
@@ -359,16 +359,7 @@
             <span class="k">if</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="n">cu_seqlens_k</span> <span class="ow">is</span> <span class="kc">None</span>
                 <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="p">(</span>
-                    <span class="n">out</span><span class="p">,</span>
-                    <span class="n">q_padded</span><span class="p">,</span>
-                    <span class="n">k_padded</span><span class="p">,</span>
-                    <span class="n">v_padded</span><span class="p">,</span>
-                    <span class="n">out_padded</span><span class="p">,</span>
-                    <span class="n">softmax_lse</span><span class="p">,</span>
-                    <span class="n">p</span><span class="p">,</span>
-                    <span class="n">rng_state</span><span class="p">,</span>
-                <span class="p">)</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">value</span><span class="p">,</span>
@@ -384,16 +375,7 @@
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># rng</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="p">(</span>
-                    <span class="n">out</span><span class="p">,</span>
-                    <span class="n">q_padded</span><span class="p">,</span>
-                    <span class="n">k_padded</span><span class="p">,</span>
-                    <span class="n">v_padded</span><span class="p">,</span>
-                    <span class="n">out_padded</span><span class="p">,</span>
-                    <span class="n">softmax_lse</span><span class="p">,</span>
-                    <span class="n">p</span><span class="p">,</span>
-                    <span class="n">rng_state</span><span class="p">,</span>
-                <span class="p">)</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">value</span><span class="p">,</span>
