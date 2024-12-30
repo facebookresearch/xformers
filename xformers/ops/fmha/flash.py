@@ -62,7 +62,7 @@ try:
             )
 
             FLASH_VERSION = flash_attn.__version__
-            FLASH_VER_MIN = (2, 6, 3)
+            FLASH_VER_MIN = (2, 7, 1)
             FLASH_VER_LAST = (2, 7, 2)  # last supported, inclusive
             flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
             if (
@@ -136,16 +136,7 @@ try:
             if cu_seqlens_q is None:
                 assert cu_seqlens_k is None
                 assert seqused_k is None
-                (
-                    out,
-                    q_padded,
-                    k_padded,
-                    v_padded,
-                    out_padded,
-                    softmax_lse,
-                    p,
-                    rng_state,
-                ) = _C_flashattention.fwd(
+                out, softmax_lse, p, rng_state = _C_flashattention.fwd(
                     query,
                     key,
                     value,
@@ -161,16 +152,7 @@ try:
                     None,  # rng
                 )
             else:
-                (
-                    out,
-                    q_padded,
-                    k_padded,
-                    v_padded,
-                    out_padded,
-                    softmax_lse,
-                    p,
-                    rng_state,
-                ) = _C_flashattention.varlen_fwd(
+                out, softmax_lse, p, rng_state = _C_flashattention.varlen_fwd(
                     query,
                     key,
                     value,
