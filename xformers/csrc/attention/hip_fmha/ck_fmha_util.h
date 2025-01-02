@@ -75,7 +75,7 @@ static inline size_t get_size_in_bytes(size_t n, at::ScalarType dtype) {
  * expand the bias as needed - be careful to only create a view with different
  * shape/strides, no copies allowed.
  */
-inline at::Tensor get_bias_4d_view(
+static inline at::Tensor get_bias_4d_view(
     const at::Tensor& bias,
     int batch_sz,
     int n_heads,
@@ -107,4 +107,16 @@ inline at::Tensor get_bias_4d_view(
     default:
       TORCH_CHECK(false, "bias can only have ndims in {2, 3, 4}");
   }
+}
+
+static inline int get_number_of_cu() {
+  int device;
+
+  HIP_CALL_CHECK(hipGetDevice(&device));
+
+  hipDeviceProp_t props;
+
+  HIP_CALL_CHECK(hipGetDeviceProperties(&props, device));
+
+  return props.multiProcessorCount;
 }

@@ -16,15 +16,17 @@ void batched_infer_fp16(BatchedForwardParams& param, hipStream_t stream) {
   const bool has_dropout = (param.dropout_prob > 0.0f);
   BOOL_SWITCH_2(param.has_attn_bias, kHasBias, has_dropout, kHasDropout, [&] {
     FMHA_FWD_HEADDIM_SWITCH(param.K, param.Kv, MaxK, [&] {
-      if (param.custom_mask_type == 0)
-        run_batched_infer_causalmask_bias_dropout_dispatch<
+      if (param.custom_mask_type == 0 && param.window_size <= 0)
+        run_batched_infer_mask_bias_dropout_dispatch<
             ck_tile::fp16_t,
             false,
             kHasBias,
             kHasDropout,
             MaxK>(param, stream);
-      else if (param.custom_mask_type == 1 || param.custom_mask_type == 2)
-        run_batched_infer_causalmask_bias_dropout_dispatch<
+      else if (
+          param.custom_mask_type == 1 || param.custom_mask_type == 2 ||
+          param.window_size > 0)
+        run_batched_infer_mask_bias_dropout_dispatch<
             ck_tile::fp16_t,
             true,
             kHasBias,

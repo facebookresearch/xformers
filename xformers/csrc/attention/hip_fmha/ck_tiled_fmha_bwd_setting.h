@@ -71,6 +71,14 @@ struct FmhaBwdBlockTile<64> {
 };
 
 template <>
+struct FmhaBwdBlockTile<96> {
+  using tile_lengths = ck_tile::sequence<16, 128, 96, 16, 96, 16, 32, 128, 128>;
+  using gemm02_warps = ck_tile::sequence<1, 4, 1>; // default for gemm0/gemm2
+  using gemm13_warps = ck_tile::sequence<4, 1, 1>; // default for gemm1/gemm3
+  using gemm4_warps = ck_tile::sequence<1, 4, 1>; // default for gemm4
+};
+
+template <>
 struct FmhaBwdBlockTile<128> {
   using tile_lengths =
       ck_tile::sequence<16, 128, 128, 16, 128, 16, 32, 128, 128>;
@@ -124,6 +132,20 @@ struct FmhaBwdShape<64> : ck_tile::TileFmhaBwdShape<
                               FmhaBwdWarpTile2> {};
 
 template <>
+struct FmhaBwdShape<96> : ck_tile::TileFmhaBwdShape<
+                              typename FmhaBwdBlockTile<96>::tile_lengths,
+                              typename FmhaBwdBlockTile<96>::gemm02_warps,
+                              FmhaBwdWarpTile2,
+                              typename FmhaBwdBlockTile<96>::gemm13_warps,
+                              FmhaBwdWarpTile3,
+                              typename FmhaBwdBlockTile<96>::gemm02_warps,
+                              FmhaBwdWarpTile2,
+                              typename FmhaBwdBlockTile<96>::gemm13_warps,
+                              FmhaBwdWarpTile3,
+                              typename FmhaBwdBlockTile<96>::gemm4_warps,
+                              FmhaBwdWarpTile2> {};
+
+template <>
 struct FmhaBwdShape<128> : ck_tile::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<128>::tile_lengths,
                                typename FmhaBwdBlockTile<128>::gemm02_warps,
@@ -151,7 +173,7 @@ struct FmhaBwdShape<256> : ck_tile::TileFmhaBwdShape<
                                typename FmhaBwdBlockTile<256>::gemm4_warps,
                                FmhaBwdWarpTile2> {};
 
-template <ck_tile::index_t MaxK, bool kPadHeadDimQK, bool kPadHeadDimV>
+template <ck_tile::index_t MaxK>
 struct FmhaBwdPipelineEnumSelector {
   static constexpr ck_tile::BlockFmhaBwdPipelineEnum value =
       ck_tile::BlockFmhaBwdPipelineEnum::KRKTRVR_IGLP;

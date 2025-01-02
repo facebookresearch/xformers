@@ -674,6 +674,8 @@ def test_backward(
     if op_bw == fmha.ck.BwOp:
         op_fw = fmha.ck.FwOp
         if dtype == torch.bfloat16:
+            # bfloat16 testing can be enabled by export ENABLE_HIP_FMHA_RTN_BF16_CONVERT=1 when
+            # building xformers and get accurate results
             pytest.skip(
                 "CK Fmha backward for bfloat16 currently is not very accurate for some cases!"
             )
@@ -1937,7 +1939,7 @@ def test_forward_gqa(opFW_biasT, Mq: int):
     "opBW",
     [
         fmha.flash.BwOp,
-        fmha.cutlass.BwOp,
+        fmha.ck.BwOp if torch.version.hip else fmha.cutlass.BwOp,
     ],
 )
 def test_backward_gqa(opBW):
@@ -1949,7 +1951,7 @@ def test_backward_gqa(opBW):
         attn_bias_requires_grad=False,
         fmt="BMHK",
     )
-    op = (fmha.cutlass.FwOp, opBW)
+    op = (fmha.ck.FwOp if torch.version.hip else fmha.cutlass.FwOp, opBW)
     key = key[:, :, :1].expand(-1, -1, H, -1)
     value = value[:, :, :1].expand(-1, -1, H, -1)
     key.requires_grad_(True)
@@ -2273,6 +2275,19 @@ def test_paged_attention(
     op: Type[AttentionFwOpBase],
     gappy: bool,
 ):
+    paged_attention_run_inner(
+        B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
+    )
+
+
+@cuda_only
+@pytest.mark.parametrize("B", [1, 5, 128])
+@pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
+@pytest.mark.parametrize("page_size", [128, 256])
+@pytest.mark.parametrize("gappy", [False, True], ids=lambda x: "gappy" if x else "")
+def test_paged_attention_ck(B, MAX_T: int, page_size: int, gappy: bool):
+    op = fmha.ck.FwOp
+    num_quant_groups = 0
     paged_attention_run_inner(
         B, MAX_T, num_quant_groups, page_size, op, bench=False, gappy=gappy
     )
