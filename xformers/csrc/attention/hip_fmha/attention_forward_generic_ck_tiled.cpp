@@ -6,6 +6,7 @@
  */
 #include <cmath>
 #include <mutex>
+#include <tuple>
 
 #include <ATen/Context.h>
 #include <ATen/ScalarOps.h>
@@ -19,6 +20,7 @@
 #include <ATen/cuda/CUDAGraphsUtils.cuh>
 
 #include "ck_fmha_util.h"
+#include "ck_tiled_fmha_fwd_splitkv_selector.h"
 #include "ck_tiled_fmha_params.h"
 
 extern void batched_forward_fp16(
@@ -65,7 +67,9 @@ efficient_attention_forward_ck(
     int64_t custom_mask_type,
     c10::optional<double> scale,
     const c10::optional<at::Tensor>& seqlen_k,
-    const c10::optional<int64_t> window_size) {
+    const c10::optional<int64_t> window_size,
+    const c10::optional<at::Tensor>& block_tables,
+    const c10::optional<int64_t> page_size) {
   TORCH_CHECK(query.dim() == 4);
   TORCH_CHECK(key.dim() == 4);
   TORCH_CHECK(value.dim() == 4);
@@ -92,20 +96,27 @@ efficient_attention_forward_ck(
     TORCH_CHECK(seqstart_q->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_k->scalar_type() == at::ScalarType::Int);
     TORCH_CHECK(seqstart_q->dim() == 1 && seqstart_k->dim() == 1);
-    TORCH_CHECK(seqstart_q->size(0) == seqstart_k->size(0));
+    TORCH_CHECK(
+        seqstart_q->size(0) == seqstart_k->size(0) ||
+        seqstart_q->size(0) == seqstart_k->size(0) + 1);
     TORCH_CHECK(query.size(0) == 1, "cu_seqlen only supports batch_size=1");
     TORCH_CHECK(max_seqlen_q_.has_value());
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_q));
     CHECK_NOSPARSE_CONTIGUOUS_CUDA((*seqstart_k));
   };
 
+  TORCH_CHECK(block_tables.has_value() == page_size.has_value());
+  TORCH_CHECK(!block_tables.has_value() || block_tables->dim() == 2);
+
+  // Currently xformers only use Paged-KVcache in grouped mode
+  TORCH_CHECK(seqstart_q.has_value() || !block_tables.has_value());
+
   // last dim is contiguous, device is kCUDA
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(query);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
-  // at::cuda::CUDAGuard device_guard(query.device());
-  hipStream_t stream = at::cuda::getCurrentHIPStream().stream();
+  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -120,6 +131,9 @@ efficient_attention_forward_ck(
   at::Tensor logsumexp;
 
   at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
+
+  at::Tensor logsumexp_acc;
+  at::Tensor out_acc;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
   int64_t philox_seed;
@@ -225,6 +239,38 @@ efficient_attention_forward_ck(
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0, 0};
     }
+
+    bool use_split_kv;
+    int num_kv_splits;
+
+    std::tie(use_split_kv, num_kv_splits) =
+        get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 8);
+
+    // 1) fmha fwd split-kv kernel does not support dropout
+    p.use_split_kv = (!use_dropout && use_split_kv) ? true : false;
+
+    p.num_kv_splits = num_kv_splits;
+
+    if (p.use_split_kv && p.num_kv_splits > 1) {
+      out_acc =
+          at::empty({p.num_kv_splits, B, M, Hq, Kv}, opts.dtype(at::kFloat));
+      p.out_acc_ptr = out_acc.data_ptr();
+      p.out_acc_strides = {
+          static_cast<int>(out_acc.stride(0)),
+          static_cast<int>(out_acc.stride(1)),
+          static_cast<int>(out_acc.stride(2)),
+          static_cast<int>(out_acc.stride(3)),
+          static_cast<int>(out_acc.stride(4))};
+
+      logsumexp_acc =
+          at::empty({p.num_kv_splits, B, Hq, M}, opts.dtype(at::kFloat));
+      p.logsumexp_acc_ptr = logsumexp_acc.data_ptr();
+      p.lse_acc_strides = {
+          static_cast<int>(logsumexp_acc.stride(0)),
+          static_cast<int>(logsumexp_acc.stride(1)),
+          static_cast<int>(logsumexp_acc.stride(2)),
+          static_cast<int>(logsumexp_acc.stride(3))};
+    }
   };
 
   auto set_grouped_forward_params = [&](GroupedForwardParams& p) {
@@ -305,6 +351,22 @@ efficient_attention_forward_ck(
     } else
       p.seqlen_k_dev_ptr = nullptr;
 
+    p.is_gappy = false;
+    if (block_tables.has_value()) {
+      p.block_table_ptr = block_tables->data_ptr();
+      p.page_block_size = *page_size;
+      p.batch_stride_block_table = block_tables->stride(0);
+      p.use_paged_kvcache = true;
+
+      TORCH_CHECK(seqlen_k.has_value());
+
+      // PageBlockDiagonalGappyKeysMask has special way to use seqstart_k,
+      // somehow ck_tile kernel need know this
+      if (seqstart_k->size(0) == seqlen_k->size(0))
+        p.is_gappy = true;
+    } else
+      p.use_paged_kvcache = false;
+
     p.philox_seed = philox_seed;
     p.philox_offset = philox_offset;
     p.compute_logsumexp = compute_logsumexp;
@@ -324,6 +386,38 @@ efficient_attention_forward_ck(
     } else {
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0};
+    }
+
+    bool use_split_kv;
+    int num_kv_splits;
+
+    // added for support split_kv
+    std::tie(use_split_kv, num_kv_splits) = get_num_kv_splits_heuristic(
+        p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 8);
+
+    // 1) fmha fwd split-kv kernel does not support dropout
+    // 2) Paged-KVcache is only available from the split-kv kernel at present
+    p.use_split_kv =
+        (p.use_paged_kvcache || (!use_dropout && use_split_kv)) ? true : false;
+
+    p.num_kv_splits = num_kv_splits;
+
+    if (p.use_split_kv && p.num_kv_splits > 1) {
+      out_acc = at::empty({p.num_kv_splits, M, Hq, Kv}, opts.dtype(at::kFloat));
+      p.out_acc_ptr = out_acc.data_ptr();
+      p.out_acc_strides = {
+          static_cast<int>(out_acc.stride(0)),
+          static_cast<int>(out_acc.stride(1)),
+          static_cast<int>(out_acc.stride(2)),
+          static_cast<int>(out_acc.stride(3))};
+
+      logsumexp_acc =
+          at::empty({p.num_kv_splits, 1, Hq, M}, opts.dtype(at::kFloat));
+      p.logsumexp_acc_ptr = logsumexp_acc.data_ptr();
+      p.lse_acc_strides = {
+          static_cast<int>(logsumexp_acc.stride(0)),
+          static_cast<int>(logsumexp_acc.stride(2)),
+          static_cast<int>(logsumexp_acc.stride(3))};
     }
   };
 
@@ -398,7 +492,9 @@ efficient_attention_forward_ck_meta(
     int64_t custom_mask_type,
     c10::optional<double> scale,
     const c10::optional<at::Tensor>& seqlen_k,
-    const c10::optional<int64_t> window_size) {
+    const c10::optional<int64_t> window_size,
+    const c10::optional<at::Tensor>& block_tables,
+    const c10::optional<int64_t> page_size) {
   int64_t B = query.size(0);
   int64_t M = query.size(1);
   int64_t N = key.size(1);

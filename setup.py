@@ -381,11 +381,12 @@ def get_extensions():
     ]
 
     source_hip = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cpp"),
+        os.path.join(extensions_dir, "attention", "hip_*", "**", "*.cpp"),
         recursive=True,
     )
+
     source_hip_generated = glob.glob(
-        os.path.join(extensions_dir, "attention", "hip_fmha", "**", "*.cu"),
+        os.path.join(extensions_dir, "attention", "hip_*", "**", "*.cu"),
         recursive=True,
     )
     # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
@@ -539,7 +540,8 @@ def get_extensions():
         extension = CUDAExtension
         sources += source_hip_cu
         include_dirs += [
-            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha"
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_fmha",
+            Path(this_dir) / "xformers" / "csrc" / "attention" / "hip_decoder",
         ]
 
         include_dirs += [
@@ -557,12 +559,17 @@ def get_extensions():
 
         arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
 
+        offload_compress_flag = []
+        if hip_version >= "6.2.":
+            offload_compress_flag = ["--offload-compress"]
+
         extra_compile_args = {
             "cxx": ["-O3", "-std=c++17"] + generator_flag,
             "nvcc": [
                 "-O3",
                 "-std=c++17",
                 *[f"--offload-arch={arch}" for arch in arch_list],
+                *offload_compress_flag,
                 "-U__CUDA_NO_HALF_OPERATORS__",
                 "-U__CUDA_NO_HALF_CONVERSIONS__",
                 "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",

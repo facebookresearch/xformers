@@ -7,7 +7,8 @@
 #pragma once
 
 #include <ck_tile/core/numeric/integer.hpp>
-#include <ck_tile/host.hpp>
+#include <ck_tile/host/kernel_launch.hpp>
+#include <ck_tile/host/stream_config.hpp>
 #include <ck_tile/ops/epilogue.hpp>
 #include <ck_tile/ops/fmha.hpp>
 
@@ -17,12 +18,12 @@
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     bool kHasBiasGrad,
     bool kHasDropout,
     ck_tile::index_t MaxK>
-struct grouped_backward_causalmask_bias_dropout_dispatch {
+struct grouped_backward_mask_bias_dropout_dispatch {
   using FmhaBlockDropout =
       typename FmhaBwdBlockDropoutMaker<kHasDropout, MaxK>::dropout;
 
@@ -57,7 +58,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
   static void Run(GroupedBackwardParams& param, hipStream_t stream) {
     {
       constexpr ck_tile::index_t kBlockSize = 64;
-      bool pad_headdim_v = !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddim == 0);
+      bool pad_headdim_v = !(param.Kv % MaxK == 0);
 
       constexpr bool kPadSeqLenQ = true;
 
@@ -73,7 +74,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
                 typename FmhaBwdTypeConfig<ScalarType>::OGradDataType,
                 typename FmhaBwdTypeConfig<ScalarType>::DDataType,
                 kBlockSize,
-                FmhaBwdShape<MaxK>::kVHeaddim,
+                MaxK, // kVHeaddim
                 true, // kIsGroupMode
                 FmhaOGradDotOTraits_>;
 
@@ -89,85 +90,75 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
     };
 
     {
-      const bool has_local_attention = (param.window_size > 0) ? true : false;
+      constexpr ck_tile::index_t occupancy = 1;
+      const bool has_dropout = (param.dropout_prob > 0.0f);
 
-      BOOL_SWITCH(has_local_attention, USE_LOCAL_ATTENTION, [&] {
-        constexpr ck_tile::index_t occupancy = 1;
-        constexpr bool has_masking = kHasCausalMask || USE_LOCAL_ATTENTION;
-        const bool has_dropout = (param.dropout_prob > 0.0f);
+      using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-        using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<has_masking>;
+      constexpr auto kBiasEnum = kHasBias
+          ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
+          : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-        constexpr auto kBiasEnum = kHasBias
-            ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
-            : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
+      constexpr bool kPadSeqLenQ = true;
+      constexpr bool kPadSeqLenK = true;
 
-        constexpr bool kPadSeqLenQ = true;
-        constexpr bool kPadSeqLenK = true;
+      const bool pad_headdim_q =
+          !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
+      const bool pad_headdim_v =
+          !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddim == 0);
 
-        const bool pad_headdim_q =
-            !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
-        const bool pad_headdim_v =
-            !(param.Kv % FmhaBwdShape<MaxK>::kVHeaddim == 0);
+      BOOL_SWITCH_2(
+          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+            using FmhaBwdTraits_ = ck_tile::TileFmhaTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ,
+                kPadHeadDimV,
+                kBiasEnum,
+                kHasBiasGrad,
+                false, // kStoreLSE
+                false, // place-holder for kHasDropout, not used actually
+                false, // kDoFp8StaticQuant place-holder
+                occupancy>;
 
-        // usually headdim_q and headdim_v are same, consider them together
-        // to determine whether to do padding saving some compiling time
-        const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+            using FmhaBwdPipelineProblem =
+                FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
 
-        BOOL_SWITCH(pad_headdim, kPadHeadDim, [&] {
-          using FmhaBwdTraits_ = ck_tile::TileFmhaTraits<
-              kPadSeqLenQ,
-              kPadSeqLenK,
-              kPadHeadDim, // kPadHeadDimQ,
-              kPadHeadDim, // kPadHeadDimV,
-              kBiasEnum,
-              kHasBiasGrad,
-              false, // kStoreLSE
-              false, // place-holder for kHasDropout, not used actually
-              false, // kDoFp8StaticQuant place-holder
-              occupancy>;
+            constexpr auto FmhaBwdPipelineEnum_ =
+                FmhaBwdPipelineEnumSelector<MaxK>::value;
 
-          using FmhaBwdPipelineProblem =
-              FmhaBwdPipelineProblemTemp<FmhaBwdTraits_, FmhaMask>;
+            using FmhaBwdPipeline_ = typename FmhaBwdPipelineMaker<
+                FmhaBwdPipelineEnum_,
+                FmhaBwdPipelineProblem>::pipeline;
 
-          constexpr auto FmhaBwdPipelineEnum_ =
-              FmhaBwdPipelineEnumSelector<MaxK, kPadHeadDim, kPadHeadDim>::
-                  value;
+            using FmhaBwdKGradEpilogue_ =
+                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                    typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
+                    kPadSeqLenK,
+                    kPadHeadDimQ>>;
 
-          using FmhaBwdPipeline_ = typename FmhaBwdPipelineMaker<
-              FmhaBwdPipelineEnum_,
-              FmhaBwdPipelineProblem>::pipeline;
+            using FmhaBwdVGradEpilogue_ =
+                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                    typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
+                    typename FmhaBwdTypeConfig<ScalarType>::VGradDataType,
+                    kPadSeqLenK,
+                    kPadHeadDimV>>;
 
-          using FmhaBwdKGradEpilogue_ =
-              ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                  typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
-                  typename FmhaBwdTypeConfig<ScalarType>::KGradDataType,
-                  kPadSeqLenK,
-                  kPadHeadDim>>;
+            using FmhaBwdDQDKDVKernel_ = ck_tile::FmhaBwdDQDKDVKernel<
+                FmhaBwdPipeline_,
+                FmhaBwdKGradEpilogue_,
+                FmhaBwdVGradEpilogue_>;
 
-          using FmhaBwdVGradEpilogue_ =
-              ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                  typename FmhaBwdTypeConfig<ScalarType>::AccDataType,
-                  typename FmhaBwdTypeConfig<ScalarType>::VGradDataType,
-                  kPadSeqLenK,
-                  kPadHeadDim>>;
-
-          using FmhaBwdDQDKDVKernel_ = ck_tile::FmhaBwdDQDKDVKernel<
-              FmhaBwdPipeline_,
-              FmhaBwdKGradEpilogue_,
-              FmhaBwdVGradEpilogue_>;
-
-          RunWithBwdDQDKDVKernel<FmhaBwdDQDKDVKernel_>(param, stream);
-        });
-      });
+            RunWithBwdDQDKDVKernel<FmhaBwdDQDKDVKernel_>(param, stream);
+          });
     };
 
     if constexpr (NeedConvertGradQ) {
       constexpr ck_tile::index_t kBlockSize = 128;
 
       const bool pad_seqlen_q = true;
-      const bool pad_headdim_q =
-          !(param.K % FmhaBwdShape<MaxK>::kQKHeaddim == 0);
+      const bool pad_headdim_q = !(param.K % MaxK == 0);
 
       BOOL_SWITCH_2(
           pad_seqlen_q, kPadSeqLenQ, pad_headdim_q, kPadHeadDimQ, [&] {
@@ -186,7 +177,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
                     kBlockSize,
                     64, // kM0
                     1, // kN0, no use
-                    FmhaBwdShape<MaxK>::kQKHeaddim,
+                    MaxK, // kQKHeaddim
                     true, // kIsGroupMode
                     false, // kIsDeterministic
                     FmhaBwdConvertQGradTraits_>;
@@ -292,7 +283,7 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
           param.custom_mask_type,
           param.dropout_prob, // dropout ratio
-          {param.philox_seed, param.philox_offset});
+          std::make_pair(param.philox_seed, param.philox_offset));
     }();
 
     dim3 kGridSize = FmhaBwdDQDKDVKernel::GridSize(
@@ -339,17 +330,17 @@ struct grouped_backward_causalmask_bias_dropout_dispatch {
 
 template <
     typename ScalarType,
-    bool kHasCausalMask,
+    bool kHasMask,
     bool kHasBias,
     bool kHasBiasGrad,
     bool kHasDropout,
     ck_tile::index_t MaxK>
-void run_grouped_backward_causalmask_bias_dropout_dispatch(
+void run_grouped_backward_mask_bias_dropout_dispatch(
     GroupedBackwardParams& param,
     hipStream_t stream) {
-  grouped_backward_causalmask_bias_dropout_dispatch<
+  grouped_backward_mask_bias_dropout_dispatch<
       ScalarType,
-      kHasCausalMask,
+      kHasMask,
       kHasBias,
       kHasBiasGrad,
       kHasDropout,

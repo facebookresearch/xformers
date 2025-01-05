@@ -23,6 +23,9 @@
     } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {                   \
       constexpr ck_tile::index_t CONST_NAME = 64;                      \
       __VA_ARGS__();                                                   \
+    } else if (HEAD_DIM1 <= 96 && HEAD_DIM2 <= 96) {                   \
+      constexpr ck_tile::index_t CONST_NAME = 96;                      \
+      __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128) {                 \
       constexpr ck_tile::index_t CONST_NAME = 128;                     \
       __VA_ARGS__();                                                   \
@@ -38,6 +41,9 @@
       __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {                   \
       constexpr ck_tile::index_t CONST_NAME = 64;                      \
+      __VA_ARGS__();                                                   \
+    } else if (HEAD_DIM1 <= 96 && HEAD_DIM2 <= 96) {                   \
+      constexpr ck_tile::index_t CONST_NAME = 96;                      \
       __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128) {                 \
       constexpr ck_tile::index_t CONST_NAME = 128;                     \
@@ -57,6 +63,9 @@
     } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {                   \
       constexpr ck_tile::index_t CONST_NAME = 64;                      \
       __VA_ARGS__();                                                   \
+    } else if (HEAD_DIM1 <= 96 && HEAD_DIM2 <= 96) {                   \
+      constexpr ck_tile::index_t CONST_NAME = 96;                      \
+      __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128) {                 \
       constexpr ck_tile::index_t CONST_NAME = 128;                     \
       __VA_ARGS__();                                                   \
@@ -75,6 +84,9 @@
       __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 64 && HEAD_DIM2 <= 64) {                   \
       constexpr ck_tile::index_t CONST_NAME = 64;                      \
+      __VA_ARGS__();                                                   \
+    } else if (HEAD_DIM1 <= 96 && HEAD_DIM2 <= 96) {                   \
+      constexpr ck_tile::index_t CONST_NAME = 96;                      \
       __VA_ARGS__();                                                   \
     } else if (HEAD_DIM1 <= 128 && HEAD_DIM2 <= 128) {                 \
       constexpr ck_tile::index_t CONST_NAME = 128;                     \

@@ -7,27 +7,30 @@
 #include <ck_tile/ops/fmha.hpp>
 #include <ck_tile/ops/fmha/block/block_dropout.hpp>
 #include <ck_tile/ops/gemm/block/block_gemm_areg_bsmem_creg_v2.hpp>
-#include <ck_tile/ops/gemm/pipeline/block_gemm_pipeline_problem.hpp>
+#include <ck_tile/ops/gemm/block/block_gemm_problem.hpp>
 
-template <
-    ck_tile::index_t MPerBlockTile,
-    ck_tile::index_t NPerBlockTile,
-    ck_tile::index_t KPerBlockTile,
-    typename RandValOutputDataType,
-    bool kIsGroupMode>
+template <typename RandValOutputDataType, bool kIsGroupMode>
 struct FmhaRandUniformKernel {
-  static constexpr ck_tile::index_t kBlockSize = 256;
+  using BlockTile = ck_tile::sequence<128, 64, 32>;
+  using WarpTile = ck_tile::sequence<32, 32, 8>;
+  using BlockWarps = ck_tile::sequence<4, 1, 1>;
+
+  using BlockGemmTileShape =
+      ck_tile::TileGemmShape<BlockTile, BlockWarps, WarpTile>;
+
+  static constexpr ck_tile::index_t kBlockSize =
+      BlockGemmTileShape::NumWarps * ck_tile::get_warp_size();
   static constexpr ck_tile::index_t kBlockPerCu = 1;
 
   __device__ static constexpr auto GetBlockGemm() {
     using namespace ck_tile;
 
-    using BlockGemmProblem_ = ck_tile::BlockGemmPipelineProblem<
+    using BlockGemmProblem_ = ck_tile::BlockGemmProblem<
         ck_tile::fp16_t,
         ck_tile::fp16_t,
         float,
         kBlockSize,
-        ck_tile::TileGemmShape<MPerBlockTile, NPerBlockTile, KPerBlockTile>>;
+        BlockGemmTileShape>;
 
     // using the default policy, which use M32xN32xK8 warp_tile
     return ck_tile::BlockGemmARegBSmemCRegV2<BlockGemmProblem_>{};
