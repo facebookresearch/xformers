@@ -86,6 +86,7 @@ struct grouped_forward_splitkv_smallq_mask_bias_dropout_dispatch {
                 false, // kDoFp8StaticQuant place-holder
                 false, // kIsPagedKV
                 true, // kHasUnevenSplits
+                false, // kMergeNumHeadGroupsSeqLenQ
                 occupancy>;
 
             if (param.num_kv_splits > 1) {
@@ -282,6 +283,7 @@ struct grouped_forward_splitkv_smallq_mask_bias_dropout_dispatch {
     dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(
         param.num_batches,
         param.Hq,
+        param.Hkv,
         param.max_seqlen_q,
         param.Kv,
         param.num_kv_splits);
