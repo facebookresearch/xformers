@@ -13,7 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -45,19 +45,15 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
-  template <
-      ck_tile::index_t kM0,
-      ck_tile::index_t kN1,
-      typename FmhaSplitKVCombineTraits>
+  template <ck_tile::index_t kN1, typename FmhaSplitKVCombineTraits>
   using FmhaSplitKVCombinePipelineProblemTemp =
       ck_tile::BlockFmhaSplitKVCombinePipelineProblem<
           typename FmhaFwdTypeConfig<ScalarType>::LSEDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           typename FmhaFwdTypeConfig<ScalarType>::ODataType,
           MaxK, // headdim_v
-          kM0,
-          kN1,
           false, // kIsGroupMode
+          kN1,
           FmhaSplitKVCombineTraits>;
 
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
@@ -66,8 +62,6 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
 
       using FmhaTileShape =
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
-      using FmhaTilePartitioner =
-          ck_tile::FmhaFwdSplitKVTilePartitioner<FmhaTileShape>;
       constexpr ck_tile::index_t occupancy = -1;
 
       constexpr auto kBiasEnum = kHasBias
@@ -107,6 +101,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   false, // kDoFp8StaticQuant place-holder
                   false, // kIsPagedKV
                   kHasUnevenSplits,
+                  false, // kMergeNumHeadGroupsSeqLenQ
                   occupancy>;
 
               using ODataType =
@@ -126,10 +121,8 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdSplitKVKernel<FmhaPipeline, FmhaEpilogue>;
 
               RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
             } else {
@@ -144,6 +137,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   false, // kDoFp8StaticQuant place-holder
                   false, // kIsPagedKV
                   kHasUnevenSplits,
+                  false, // kMergeNumHeadGroupsSeqLenQ
                   occupancy>;
 
               using ODataType =
@@ -163,10 +157,8 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                       false,
                       false>>;
 
-              using FmhaKernel = ck_tile::FmhaFwdSplitKVKernel<
-                  FmhaTilePartitioner,
-                  FmhaPipeline,
-                  FmhaEpilogue>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdSplitKVKernel<FmhaPipeline, FmhaEpilogue>;
 
               RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
             }
@@ -177,11 +169,12 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
       using FmhaTileShape =
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
 
-      constexpr ck_tile::index_t kM0 = FmhaTileShape::kM0 / 2;
-      constexpr ck_tile::index_t kN1 = FmhaTileShape::kN1 / 2;
+      constexpr ck_tile::index_t kN1 = 32;
+      constexpr ck_tile::index_t kM0 =
+          ck_tile::BlockFmhaSplitKVCombinePipelineTileSizes<
+              typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+              kN1>::kM0;
 
-      using FmhaTilePartitioner =
-          ck_tile::FmhaFwdSplitKVCombineTilePartitioner<kM0, kN1>;
       constexpr ck_tile::index_t occupancy = -1;
 
       const bool pad_seqlen_q = !(param.M % kM0 == 0);
@@ -200,10 +193,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                       -1>;
 
                   using FmhaPipelineProblem =
-                      FmhaSplitKVCombinePipelineProblemTemp<
-                          kM0,
-                          kN1,
-                          FmhaTraits>;
+                      FmhaSplitKVCombinePipelineProblemTemp<kN1, FmhaTraits>;
 
                   using FmhaPipeline =
                       ck_tile::BlockFmhaFwdSplitKVCombinePipeline<
@@ -216,10 +206,8 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                           kPadSeqLenQ,
                           kPadHeadDimV>>;
 
-                  using FmhaKernel = ck_tile::FmhaFwdSplitKVCombineKernel<
-                      FmhaTilePartitioner,
-                      FmhaPipeline,
-                      FmhaEpilogue>;
+                  using FmhaKernel = ck_tile::
+                      FmhaFwdSplitKVCombineKernel<FmhaPipeline, FmhaEpilogue>;
 
                   RunWithSplitKVCombineKernel<FmhaKernel>(param, stream);
                 });
@@ -332,7 +320,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
     }();
 
     dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(
-        param.B, param.Hq, param.M, param.Kv, param.num_kv_splits);
+        param.B, param.Hq, param.Hkv, param.M, param.Kv, param.num_kv_splits);
     constexpr dim3 kBlockSize = FmhaFwdSplitKVKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaFwdSplitKVKernel::kBlockPerCu;
 

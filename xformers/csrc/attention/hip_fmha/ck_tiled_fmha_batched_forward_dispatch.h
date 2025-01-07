@@ -21,7 +21,8 @@ template <
     bool kHasMask,
     bool kHasBias,
     bool kHasDropout,
-    ck_tile::index_t MaxK>
+    ck_tile::index_t MaxK,
+    ck_tile::index_t MTile>
 struct batched_forward_mask_bias_dropout_dispatch {
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
@@ -36,7 +37,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::PDataType,
       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-      FmhaFwdShape<MaxK>,
+      typename FmhaFwdShape<MaxK, MTile>::Type,
       false, // kIsGroupMode
       FmhaMask,
       FmhaTraits>;
@@ -44,9 +45,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    using FmhaFwdShape_ = FmhaFwdShape<MaxK>;
-    using FmhaFwdTilePartitioner_ =
-        ck_tile::FmhaFwdTilePartitioner<FmhaFwdShape_>;
+    using FmhaFwdShape_ = typename FmhaFwdShape<MaxK, MTile>::Type;
     constexpr ck_tile::index_t occupancy =
         (MaxK == 64) ? 3 : ((MaxK >= 256) ? 1 : 2);
 
@@ -100,10 +99,8 @@ struct batched_forward_mask_bias_dropout_dispatch {
                   kPadSeqLenQ,
                   kPadHeadDim>>;
 
-          using FmhaFwdKernel_ = ck_tile::FmhaFwdKernel<
-              FmhaFwdTilePartitioner_,
-              FmhaFwdPipeline_,
-              FmhaFwdEpilogue_>;
+          using FmhaFwdKernel_ =
+              ck_tile::FmhaFwdKernel<FmhaFwdPipeline_, FmhaFwdEpilogue_>;
 
           RunWithKernel<FmhaFwdKernel_>(param, stream);
         });
@@ -162,7 +159,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
     }();
 
     dim3 kGridSize =
-        FmhaFwdKernel::GridSize(param.B, param.Hq, param.M, param.Kv);
+        FmhaFwdKernel::GridSize(param.B, param.Hq, param.M, param.Kv, false);
     constexpr dim3 kBlockSize = FmhaFwdKernel::BlockSize();
     constexpr ck_tile::index_t kBlockPerCu = FmhaFwdKernel::kBlockPerCu;
 

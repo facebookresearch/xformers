@@ -212,62 +212,50 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        if inp.query.ndim in [3, 4]:
+        if inp.query.ndim in [1, 2, 3]:
+            raise NotImplementedError("Unsupported number of dimensions")
+        if inp.query.ndim in [4]:
             return cls.apply_bmhk(inp, needs_gradient=needs_gradient)
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
-        # XXX: Hackfix for BMGHK with H=1
-        # In that case we don't want to run G different streams because it adds
-        # some overhead
-        if inp.query.ndim == 5 and inp.query.shape[3] == 1:
-            slice_op = partial(torch.squeeze, dim=3)
-            inp = replace(
-                inp,
-                query=slice_op(inp.query),
-                key=slice_op(inp.key),
-                value=slice_op(inp.value),
-                attn_bias=_attn_bias_apply(
-                    inp.attn_bias, partial(torch.squeeze, dim=2)
-                ),
-            )
-            out, ctx = cls.apply_bmhk(inp, needs_gradient=needs_gradient)
-            out = out.unsqueeze(3)
-            if ctx is not None:
-                ctx = replace(ctx, lse=ctx.lse.unsqueeze(1), out=out)
-            return out, ctx
 
-        # Workaround until this is properly implemented in C++
-        # run each head group in a different stream
-        n_groups = inp.key.shape[2]
-        main_stream = torch.cuda.current_stream()
-        streams = [main_stream] + [
-            torch.cuda.Stream(device=inp.query.device) for _ in range(n_groups - 1)
-        ]
-        outs = []
-        for group, stream in enumerate(streams):
-            stream.wait_stream(main_stream)
-            with torch.cuda.stream(stream):
-                query = inp.query[:, :, group]
-                key = inp.key[:, :, group]
-                value = inp.value[:, :, group]
-                bias = _attn_bias_apply(
-                    inp.attn_bias, partial(torch.select, dim=1, index=group)
-                )
-                outs.append(
-                    cls.apply_bmhk(
-                        replace(inp, query=query, key=key, value=value, attn_bias=bias),
-                        needs_gradient=needs_gradient,
-                    )
-                )
-        for s in streams[1:]:
-            main_stream.wait_stream(s)
-        out = torch.stack([o[0] for o in outs], dim=2)
-        if needs_gradient:
-            ctx = Context(
-                out=out,
-                lse=torch.stack([o[1].lse for o in outs], dim=1),  # type: ignore
-                op_bw=outs[0][1].op_bw,  # type: ignore
+        ## consider for expanded 5-D inputted
+        if inp.key.stride()[3] == 0:
+            assert (
+                inp.value.stride()[3] == 0
+            ), "key and value should be expanded in the same way"
+            k_shape = inp.key.size()
+            k_stride = inp.key.stride()
+            key = inp.key.as_strided(
+                (k_shape[0], k_shape[1], k_shape[2], k_shape[4]),
+                (k_stride[0], k_stride[1], k_stride[2], k_stride[4]),
             )
+            v_shape = inp.value.size()
+            v_stride = inp.value.stride()
+            value = inp.value.as_strided(
+                (v_shape[0], v_shape[1], v_shape[2], v_shape[4]),
+                (v_stride[0], v_stride[1], v_stride[2], v_stride[4]),
+            )
+        else:
+            key = inp.key.flatten(2, 3)
+            value = inp.value.flatten(2, 3)
+
+        [_, _, G, Hq, _] = inp.query.shape
+        attn_bias_replace = inp.attn_bias
+        if isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim != 0:
+            attn_bias_replace = inp.attn_bias.flatten(1, 2)
+        inp = replace(
+            inp,
+            query=inp.query.flatten(2, 3),
+            key=key,
+            value=value,
+            attn_bias=attn_bias_replace,
+        )
+        out, ctx = cls.apply_bmhk(inp, needs_gradient=needs_gradient)
+        out = out.unflatten(2, (G, Hq))
+        if ctx is not None:
+            lse = ctx.lse.unflatten(1, (G, Hq))
+            ctx = replace(ctx, lse=lse, out=out)
         return out, ctx
 
     @classmethod
