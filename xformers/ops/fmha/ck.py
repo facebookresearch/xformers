@@ -6,7 +6,6 @@
 
 from dataclasses import replace
 from enum import Enum
-from functools import partial
 from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import torch
@@ -38,7 +37,6 @@ from .common import (
     Context,
     Gradients,
     Inputs,
-    _attn_bias_apply,
     check_lastdim_alignment_stride1,
 )
 
@@ -218,7 +216,7 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
-        ## consider for expanded 5-D inputted
+        # when the input is expanded 5-D, the group dimension has zero stride
         if inp.key.stride()[3] == 0:
             assert (
                 inp.value.stride()[3] == 0
