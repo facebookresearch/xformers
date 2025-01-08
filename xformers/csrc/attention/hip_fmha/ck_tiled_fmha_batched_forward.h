@@ -23,9 +23,9 @@ template <
 void run_batched_forward_mask_bias_dropout_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  // currently split-kv implementation does not support: 
+  // currently split-kv implementation does not support:
   // (*) dropout
-  // (*) head dimension > 256 
+  // (*) head dimension > 256
   if constexpr (!kHasDropout) {
     if (param.use_split_kv && MaxK <= 256) {
       if constexpr (MaxK <= 256) {
@@ -46,7 +46,8 @@ void run_batched_forward_mask_bias_dropout_dispatch(
           });
         }
       } else {
-        // Unreachable. Do not instantiate split-kv pipelines with head dimension > 256
+        // Unreachable. Do not instantiate split-kv pipelines with head
+        // dimension > 256
       }
     } else {
       if (get_fmha_fwd_mtile(param.B, param.Hq, param.M) == 128)
