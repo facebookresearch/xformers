@@ -111,6 +111,8 @@ jobs:
           - cu121
           - cu124
           - rocm6.1
+          - rocm6.2
+          - rocm6.3
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
