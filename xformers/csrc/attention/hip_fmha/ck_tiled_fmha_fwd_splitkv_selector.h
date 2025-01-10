@@ -47,6 +47,10 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   mtile_size_for_splitkv_smallq =
       get_mtile_size_for_splitkv_smallq(max_headdim);
 
+  // hdim-512 is not supported by splitkv-kernel at present
+  if (max_headdim > 256)
+    return std::make_pair(false, 1);
+
   if (max_seqlen_q >= mtile_size_for_pipeline_default) {
     int batch_nhead_mblocks = num_batches * num_heads *
         ceildiv(max_seqlen_q, mtile_size_for_pipeline_default);
