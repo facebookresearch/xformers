@@ -422,14 +422,6 @@ def get_extensions():
     elif torch.version.hip and (
         torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
     ):
-        disable_hd256_hip_fmha = os.getenv("DISABLE_HD256_HIP_FMHA", "0")
-        if disable_hd256_hip_fmha == "1":
-            source_hip_maxk_256 = []
-            for ff in source_hip:
-                if ff.endswith("maxk_256.cpp"):
-                    source_hip_maxk_256 += [ff]
-            source_hip = list(set(source_hip) - set(source_hip_maxk_256))
-
         rename_cpp_cu(source_hip)
         hip_version = get_hip_version(ROCM_HOME)
 
@@ -449,8 +441,6 @@ def get_extensions():
         ]
 
         generator_flag = []
-        if disable_hd256_hip_fmha == "1":
-            generator_flag += ["-DFMHA_SUPPORT_MAX_HEADDIM_128=1"]
 
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
