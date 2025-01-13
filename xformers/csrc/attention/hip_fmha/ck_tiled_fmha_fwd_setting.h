@@ -68,7 +68,7 @@ template struct FmhaFwdBlockTile<256>;
 
 template <ck_tile::index_t MTile>
 struct FmhaFwdBlockTile<512, MTile> {
-  using type = ck_tile::sequence<128, 128, 32, 512, 32, 512>;
+  using type = ck_tile::sequence<64, 128, 32, 512, 32, 512>;
   using gemm0_warps = ck_tile::sequence<4, 1, 1>;
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
@@ -164,9 +164,9 @@ struct FmhaFwdShape<512, MTile> {
   using Type = ck_tile::TileFmhaShape<
       typename FmhaFwdBlockTile<512>::type,
       typename FmhaFwdBlockTile<512>::gemm0_warps,
-      FmhaFwdWarpTile1,
+      FmhaFwdWarpTile2,
       typename FmhaFwdBlockTile<512>::gemm1_warps,
-      FmhaFwdWarpTile1,
+      FmhaFwdWarpTile2,
       IsVLayoutRowMajor>;
 };
 
