@@ -23,24 +23,31 @@ template <
 void run_batched_forward_mask_bias_dropout_dispatch(
     BatchedForwardParams& param,
     hipStream_t stream) {
-  // currently split-kv implementation does not support dropout
+  // currently split-kv implementation does not support:
+  // (*) dropout
+  // (*) head dimension > 256
   if constexpr (!kHasDropout) {
-    if (param.use_split_kv) {
-      if (use_splitkv_smallq(param.M, std::max(param.K, param.Kv))) {
-        batched_forward_splitkv_smallq_mask_bias_dropout_dispatch<
-            ScalarType,
-            kHasMask,
-            kHasBias,
-            MaxK>::Run(param, stream);
-      } else {
-        FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
-          batched_forward_splitkv_mask_bias_dropout_dispatch<
+    if (param.use_split_kv && MaxK <= 256) {
+      if constexpr (MaxK <= 256) {
+        if (use_splitkv_smallq(param.M, std::max(param.K, param.Kv))) {
+          batched_forward_splitkv_smallq_mask_bias_dropout_dispatch<
               ScalarType,
               kHasMask,
               kHasBias,
-              MaxK,
-              MaxSeqlenQ>::Run(param, stream);
-        });
+              MaxK>::Run(param, stream);
+        } else {
+          FMHA_FWD_SEQLEN_Q_SWITCH(param.M, MaxSeqlenQ, [&] {
+            batched_forward_splitkv_mask_bias_dropout_dispatch<
+                ScalarType,
+                kHasMask,
+                kHasBias,
+                MaxK,
+                MaxSeqlenQ>::Run(param, stream);
+          });
+        }
+      } else {
+        // Unreachable. Do not instantiate split-kv pipelines with head
+        // dimension > 256
       }
     } else {
       if (get_fmha_fwd_mtile(param.B, param.Hq, param.M) == 128)
