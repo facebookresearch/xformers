@@ -475,6 +475,7 @@ def get_extensions():
                 "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
                 "-fgpu-flush-denormals-to-zero",
                 "-Werror",
+                "-Wc++11-narrowing",
                 "-Woverloaded-virtual",
                 "-mllvm",
                 "-enable-post-misched=0",
