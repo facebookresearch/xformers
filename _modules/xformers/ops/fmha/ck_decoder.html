@@ -226,17 +226,17 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="n">AttentionFwOpBase</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">Inputs</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..common</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="n">AttentionFwOpBase</span><span class="p">,</span> <span class="n">Context</span><span class="p">,</span> <span class="n">Inputs</span>
 
 
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.ck_decoder.FwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    An operator optimized for K=256 (so the contiguous dim fits into registers).</span>
 <span class="sd">    Tested to work on MI250x.</span>
@@ -256,7 +256,7 @@
     <span class="n">NAME</span> <span class="o">=</span> <span class="s2">&quot;ck_decoderF&quot;</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
 
         <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span>
@@ -308,7 +308,7 @@
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="k">if</span> <span class="n">needs_gradient</span><span class="p">:</span>

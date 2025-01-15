@@ -289,7 +289,7 @@ The kernel can run these inputs only if the returned list is empty</p>
 <dt class="field-odd">Examples</dt>
 <dd class="field-odd"><p></p></dd>
 </dl>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">xformers.ops</span> <span class="k">as</span> <span class="nn">xops</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">xformers.ops</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xops</span>
 
 <span class="c1"># Compute regular attention</span>
 <span class="n">y</span> <span class="o">=</span> <span class="n">xops</span><span class="o">.</span><span class="n">memory_efficient_attention</span><span class="p">(</span><span class="n">q</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span>
@@ -320,8 +320,8 @@ to broadcast it manually before calling <cite>memory_efficient_attention</cite>.
 <dt class="field-odd">GQA/MQA example</dt>
 <dd class="field-odd"><p></p></dd>
 </dl>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">import</span> <span class="nn">xformers.ops</span> <span class="k">as</span> <span class="nn">xops</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">xformers.ops</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">xops</span>
 
 <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">K</span> <span class="o">=</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">32</span><span class="p">,</span> <span class="mi">128</span>
 <span class="n">kwargs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda&quot;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float16</span><span class="p">)</span>
@@ -472,8 +472,8 @@ and we don’t attempt to make it fast. Only use for debugging/testing.</p>
 <dt class="field-odd">Example</dt>
 <dd class="field-odd"><p></p></dd>
 </dl>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">xformers.ops</span> <span class="kn">import</span> <span class="n">fmha</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xformers.ops</span><span class="w"> </span><span class="kn">import</span> <span class="n">fmha</span>
 
 <span class="n">bias</span> <span class="o">=</span> <span class="n">fmha</span><span class="o">.</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">window_left</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">window_right</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">bias</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">4</span><span class="p">))</span><span class="o">.</span><span class="n">exp</span><span class="p">())</span>
@@ -574,8 +574,8 @@ different lengths, via <a class="reference internal" href="#xformers.ops.fmha.at
 <dt class="field-odd">Example</dt>
 <dd class="field-odd"><p></p></dd>
 </dl>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
-<span class="kn">from</span> <span class="nn">xformers.ops</span> <span class="kn">import</span> <span class="n">fmha</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xformers.ops</span><span class="w"> </span><span class="kn">import</span> <span class="n">fmha</span>
 
 <span class="n">K</span> <span class="o">=</span> <span class="mi">16</span>
 <span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float16</span>

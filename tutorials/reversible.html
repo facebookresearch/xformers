@@ -262,19 +262,19 @@ but in practice if <cite>dim(x1) == dim(x2) == dim(model)</cite>, the accuracy s
 <section id="in-practice">
 <h2>In practice<a class="headerlink" href="#in-practice" title="Permalink to this heading">¶</a></h2>
 <p>This repository exposes two main helpers in <cite>xformers.components.reversible</cite>: ReversibleBlock and ReversibleSequence. <cite>ReversibleBlock</cite> will take <cite>f</cite> and <cite>g</cite> as defined above, and <cite>ReversibleSequence</cite> can combine them sequentially, similarly to <cite>torch.nn.ModuleList</cite>.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">ReversibleBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">g</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">ReversibleBlock</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">f</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">,</span> <span class="n">g</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
         <span class="o">...</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">f_args</span><span class="o">=</span><span class="p">{},</span> <span class="n">g_args</span><span class="o">=</span><span class="p">{}):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">f_args</span><span class="o">=</span><span class="p">{},</span> <span class="n">g_args</span><span class="o">=</span><span class="p">{}):</span>
         <span class="o">...</span>
 
 
-<span class="k">class</span> <span class="nc">ReversibleSequence</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">blocks</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ReversibleSequence</span><span class="p">(</span><span class="n">nn</span><span class="o">.</span><span class="n">Module</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">blocks</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">ModuleList</span><span class="p">):</span>
         <span class="o">...</span>
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">arg_route</span><span class="o">=</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">,</span> <span class="n">arg_route</span><span class="o">=</span><span class="p">(</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        arg_route: whether to route the kwargs to f and g</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -282,7 +282,7 @@ but in practice if <cite>dim(x1) == dim(x2) == dim(model)</cite>, the accuracy s
 </pre></div>
 </div>
 <p>Reversible layers are also exposed as a boolean option in when building complete xFormers (which is optional), as defined in <cite>xformers.factory.model_factory</cite>. Please note that the reversible layer is not yet compatible with the use of multiple forward passes and DDP.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span> <span class="nc">xFormerStackConfig</span><span class="p">:</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">class</span><span class="w"> </span><span class="nc">xFormerStackConfig</span><span class="p">:</span>
     <span class="n">block_config</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">xFormerEncoderConfig</span><span class="p">,</span> <span class="n">xFormerDecoderConfig</span><span class="p">]</span>
     <span class="n">num_layers</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">reversible</span><span class="p">:</span> <span class="nb">bool</span>  <span class="c1"># the sequence of layers becomes reversible</span>

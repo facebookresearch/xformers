@@ -227,14 +227,14 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">TypeVar</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">TypeVar</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 <span class="n">Self</span> <span class="o">=</span> <span class="n">TypeVar</span><span class="p">(</span><span class="s2">&quot;Self&quot;</span><span class="p">,</span> <span class="n">bound</span><span class="o">=</span><span class="s2">&quot;AttentionMask&quot;</span><span class="p">)</span>
 
 
-<div class="viewcode-block" id="AttentionMask"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask">[docs]</a><span class="k">class</span> <span class="nc">AttentionMask</span><span class="p">:</span>
+<div class="viewcode-block" id="AttentionMask"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">AttentionMask</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Holds an attention mask, along with a couple of helpers and attributes.</span>
 
@@ -246,7 +246,7 @@
 <span class="sd">        `[to_sequence, from_sequence]`, or anything broadcastable in between</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">additive_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">is_causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">additive_mask</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">is_causal</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">additive_mask</span><span class="o">.</span><span class="n">is_floating_point</span><span class="p">(),</span> <span class="n">additive_mask</span><span class="o">.</span><span class="n">dtype</span>
         <span class="k">assert</span> <span class="ow">not</span> <span class="n">additive_mask</span><span class="o">.</span><span class="n">requires_grad</span>
 
@@ -258,14 +258,14 @@
         <span class="bp">self</span><span class="o">.</span><span class="n">seq_len</span> <span class="o">=</span> <span class="n">additive_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">to_seq_len</span> <span class="o">=</span> <span class="n">additive_mask</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
 
-<div class="viewcode-block" id="AttentionMask.to_bool"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.to_bool">[docs]</a>    <span class="k">def</span> <span class="nf">to_bool</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<div class="viewcode-block" id="AttentionMask.to_bool"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.to_bool">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">to_bool</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        .. warning: we assume here that True implies that the value should be computed</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">values</span> <span class="o">!=</span> <span class="nb">float</span><span class="p">(</span><span class="s2">&quot;-inf&quot;</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="AttentionMask.from_bool"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.from_bool">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_bool</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_bool</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Create an AttentionMask given a boolean pattern.</span>
 <span class="sd">        .. warning: we assume here that True implies that the value should be computed</span>
@@ -279,7 +279,7 @@
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">additive_mask</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="AttentionMask.from_multiplicative"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.from_multiplicative">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_multiplicative</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_multiplicative</span><span class="p">(</span><span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Create an AttentionMask given a multiplicative attention mask.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
@@ -294,7 +294,7 @@
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">additive_mask</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="AttentionMask.make_causal"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.make_causal">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">make_causal</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_causal</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">:</span> <span class="n">Type</span><span class="p">[</span><span class="n">Self</span><span class="p">],</span>
         <span class="n">seq_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
         <span class="n">to_seq_len</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -310,7 +310,7 @@
         <span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">additive_mask</span><span class="o">=</span><span class="n">additive_mask</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="AttentionMask.make_crop"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.make_crop">[docs]</a>    <span class="k">def</span> <span class="nf">make_crop</span><span class="p">(</span>
+<div class="viewcode-block" id="AttentionMask.make_crop"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.make_crop">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_crop</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">seq_len</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">to_seq_len</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;AttentionMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -324,33 +324,33 @@
             <span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">[:,</span> <span class="p">:</span><span class="n">seq_len</span><span class="p">,</span> <span class="p">:</span><span class="n">to_seq_len</span><span class="p">],</span> <span class="n">is_causal</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">is_causal</span>
         <span class="p">)</span></div>
 
-    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;AttentionMask - causal </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">is_causal</span><span class="si">}</span><span class="s2"> - mask &quot;</span> <span class="o">+</span> <span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">device</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">device</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">is_sparse</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_sparse</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">False</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">ndim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">ndim</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">dtype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">dtype</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">dtype</span>
 
     <span class="nd">@property</span>
-    <span class="k">def</span> <span class="nf">shape</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">shape</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">shape</span>
 
-    <span class="k">def</span> <span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">AttentionMask</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">values</span> <span class="o">+</span> <span class="n">other</span><span class="o">.</span><span class="n">values</span><span class="p">,</span> <span class="n">is_causal</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
 
-<div class="viewcode-block" id="AttentionMask.to"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.to">[docs]</a>    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span>
+<div class="viewcode-block" id="AttentionMask.to"><a class="viewcode-back" href="../../../../components/attentions.html#xformers.components.attention.AttentionMask.to">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">dtype</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;AttentionMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>

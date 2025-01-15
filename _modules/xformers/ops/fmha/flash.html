@@ -227,14 +227,14 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">zip_longest</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">zip_longest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..common</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">VARLEN_BIASES</span><span class="p">,</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
@@ -254,7 +254,7 @@
     <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
     <span class="n">Context</span><span class="p">,</span>
@@ -262,7 +262,7 @@
     <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.torch_attention_compat</span> <span class="kn">import</span> <span class="n">is_pt_flash_compatible</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.torch_attention_compat</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_pt_flash_compatible</span>
 
 <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="s2">&quot;0.0.0&quot;</span>
 <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
@@ -271,16 +271,16 @@
 
 <span class="k">try</span><span class="p">:</span>
     <span class="k">try</span><span class="p">:</span>
-        <span class="kn">from</span> <span class="nn">...</span> <span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
-        <span class="kn">from</span> <span class="nn">..._cpp_lib</span> <span class="kn">import</span> <span class="n">_build_metadata</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">...</span><span class="w"> </span><span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
+        <span class="kn">from</span><span class="w"> </span><span class="nn">..._cpp_lib</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_metadata</span>
 
         <span class="k">if</span> <span class="n">_build_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">_build_metadata</span><span class="o">.</span><span class="n">flash_version</span>
         <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
-            <span class="kn">import</span> <span class="nn">flash_attn</span>
-            <span class="kn">from</span> <span class="nn">flash_attn.flash_attn_interface</span> <span class="kn">import</span> <span class="p">(</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn</span>
+            <span class="kn">from</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
                 <span class="n">flash_attn_cuda</span> <span class="k">as</span> <span class="n">_C_flashattention</span><span class="p">,</span>
             <span class="p">)</span>
 
@@ -311,7 +311,7 @@
         <span class="n">mutates_args</span><span class="o">=</span><span class="p">(),</span>
         <span class="n">device_types</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;cuda&quot;</span><span class="p">],</span>
     <span class="p">)</span>
-    <span class="k">def</span> <span class="nf">_flash_fwd</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flash_fwd</span><span class="p">(</span>
         <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -401,7 +401,7 @@
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">rng_state</span>
 
     <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">register_fake</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">_flash_fwd_abstract</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flash_fwd_abstract</span><span class="p">(</span>
         <span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="p">,</span>
         <span class="n">value</span><span class="p">,</span>
@@ -438,7 +438,7 @@
         <span class="n">mutates_args</span><span class="o">=</span><span class="p">(),</span>
         <span class="n">device_types</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;cuda&quot;</span><span class="p">],</span>
     <span class="p">)</span>
-    <span class="k">def</span> <span class="nf">_flash_bwd</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flash_bwd</span><span class="p">(</span>
         <span class="n">grads_share_storage</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
         <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -539,7 +539,7 @@
         <span class="k">return</span> <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span>
 
     <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">register_fake</span><span class="p">(</span><span class="s2">&quot;xformers_flash::flash_bwd&quot;</span><span class="p">)</span>
-    <span class="k">def</span> <span class="nf">_flash_bwd_abstract</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_flash_bwd_abstract</span><span class="p">(</span>
         <span class="n">grads_share_storage</span><span class="p">,</span>
         <span class="n">grad</span><span class="p">,</span>
         <span class="n">query</span><span class="p">,</span>
@@ -550,7 +550,7 @@
     <span class="p">):</span>
         <span class="k">return</span> <span class="n">_create_dq_dk_dv</span><span class="p">(</span><span class="n">grads_share_storage</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_dq_dk_dv</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_dq_dk_dv</span><span class="p">(</span>
         <span class="n">grads_share_storage</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="c1"># Create dq,dk,dv</span>
@@ -569,7 +569,7 @@
     <span class="k">pass</span>
 
 
-<span class="k">def</span> <span class="nf">_convert_input_format</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_convert_input_format</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">supports_mqa</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
@@ -621,7 +621,7 @@
         <span class="k">assert</span> <span class="n">supports_mqa</span>
 
         <span class="c1"># Fold the group/head_in_group dimensions together</span>
-        <span class="k">def</span> <span class="nf">fold</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
+        <span class="k">def</span><span class="w"> </span><span class="nf">fold</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
             <span class="c1"># Either the head is replicated</span>
             <span class="k">if</span> <span class="n">x</span><span class="o">.</span><span class="n">stride</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="k">return</span> <span class="n">x</span><span class="p">[:,</span> <span class="p">:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span>
@@ -666,7 +666,7 @@
     <span class="k">return</span> <span class="n">new_inp</span><span class="p">,</span> <span class="n">cu_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">cu_seqlen_k</span><span class="p">,</span> <span class="n">max_seqlen_k</span><span class="p">,</span> <span class="n">seqused_k</span>
 
 
-<span class="k">def</span> <span class="nf">_is_causal</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_causal</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">return</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">attn_bias</span><span class="p">,</span>
         <span class="p">(</span>
@@ -685,14 +685,14 @@
     <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_is_paged_attention_supported</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_is_paged_attention_supported</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">):</span>
         <span class="k">return</span> <span class="n">FLASH_VERSION</span> <span class="o">&gt;</span> <span class="s2">&quot;2.5.6&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_USE_PT_FLASH_ATTN</span>
 
     <span class="k">return</span> <span class="kc">True</span>
 
 
-<span class="k">def</span> <span class="nf">_window_size</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_window_size</span><span class="p">(</span>
     <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
     <span class="n">win_left</span> <span class="o">=</span> <span class="o">-</span><span class="mi">1</span>
@@ -713,7 +713,7 @@
     <span class="k">return</span> <span class="p">(</span><span class="n">win_left</span><span class="p">,</span> <span class="n">win_right</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="c1"># Flash does not support TopLeft, so only allow causal masks with TopLeft</span>
     <span class="c1"># if each batch element has equal number of queries and keys.</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
@@ -735,7 +735,7 @@
             <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_strides_for_bmghk</span><span class="p">(</span><span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    We want to be able to collapse the G/H dimensions together</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -753,7 +753,7 @@
             <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">_post_process_lse</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_post_process_lse</span><span class="p">(</span>
     <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">original_query_shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
@@ -787,7 +787,7 @@
 
 
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.flash.FwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Operator that computes memory-efficient attention using \</span>
 <span class="sd">        `Flash-Attention &lt;https://github.com/HazyResearch/flash-attention&gt;`_ \</span>
 <span class="sd">        implementation.</span>
@@ -832,7 +832,7 @@
     <span class="n">VERSION</span> <span class="o">=</span> <span class="n">FLASH_VERSION</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
         <span class="n">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
@@ -852,7 +852,7 @@
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="n">return_softmax</span> <span class="o">=</span> <span class="kc">False</span>
@@ -922,7 +922,7 @@
 
 
 <div class="viewcode-block" id="BwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.flash.BwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
     <span class="vm">__doc__</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="vm">__doc__</span>
 
     <span class="n">OPERATOR</span> <span class="o">=</span> <span class="n">get_operator</span><span class="p">(</span><span class="s2">&quot;xformers_flash&quot;</span><span class="p">,</span> <span class="s2">&quot;flash_bwd&quot;</span><span class="p">)</span>
@@ -955,7 +955,7 @@
     <span class="n">MAX_HEADDIM_DROPOUT_SM8x</span> <span class="o">=</span> <span class="mi">224</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="mi">8</span><span class="p">)</span>
         <span class="n">_check_needs_no_topleft</span><span class="p">(</span><span class="n">d</span><span class="p">,</span> <span class="n">reasons</span><span class="p">)</span>
@@ -975,7 +975,7 @@
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
         <span class="n">dq_shape</span><span class="p">,</span> <span class="n">dk_shape</span><span class="p">,</span> <span class="n">dv_shape</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span> <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span>
         <span class="p">(</span>
             <span class="n">inp</span><span class="p">,</span>

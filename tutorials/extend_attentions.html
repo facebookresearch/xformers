@@ -233,12 +233,12 @@ like to share at this point, or directly in xFormers in order to submit a <a cla
 (not all blocks expose the exact same interface).</p>
 <p>Let’s consider for instance the Nystrom-based attention mechanism:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">NystromSelfAttentionConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NystromSelfAttentionConfig</span><span class="p">(</span><span class="n">AttentionConfig</span><span class="p">):</span>
     <span class="o">...</span>
 
 <span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;nystrom&quot;</span><span class="p">,</span> <span class="n">NystromSelfAttentionConfig</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">NystromAttention</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NystromAttention</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">dropout</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
         <span class="n">num_heads</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -256,7 +256,7 @@ like to share at this point, or directly in xFormers in order to submit a <a cla
         <span class="o">...</span>
 
 
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">q</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">k</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">v</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span>
     <span class="p">):</span>
         <span class="o">...</span>
@@ -270,7 +270,7 @@ like to share at this point, or directly in xFormers in order to submit a <a cla
 <li><p>The registration is done with the following snippet, which both registers this attention with a given name, and ties a configuration to it. The same would apply to the other component types.</p></li>
 </ul>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="nd">@register_attention</span><span class="p">(</span><span class="s2">&quot;nystrom&quot;</span><span class="p">,</span> <span class="n">NystromSelfAttentionConfig</span><span class="p">)</span>
-<span class="k">class</span> <span class="nc">NystromAttention</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">NystromAttention</span><span class="p">(</span><span class="n">Attention</span><span class="p">):</span>
 </pre></div>
 </div>
 <p>Doing this opens up at least three tools in the xFormers toolbox:</p>

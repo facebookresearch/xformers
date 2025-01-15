@@ -230,10 +230,10 @@
 <p>Let’s say you’re used to working with a given Transformer based model, and want to experiment with one of the attention mechanisms supported by xFormers.</p>
 <p>The following example shows how to do that in a particular example (reusing a reference ViT from <a class="reference external" href="https://github.com/rwightman/pytorch-image-models">pytorch-image-models</a>), but some aspects will translate just as well
 when considering other model sources. In any case, please check the notebooks in the <a class="reference external" href="https://github.com/facebookresearch/xformers">repository</a> for a more exhaustive take.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">timm</span>
-<span class="kn">from</span> <span class="nn">timm.models.vision_transformer</span> <span class="kn">import</span> <span class="n">VisionTransformer</span>
-<span class="kn">from</span> <span class="nn">xformers.components.attention</span> <span class="kn">import</span> <span class="n">ScaledDotProduct</span>
-<span class="kn">from</span> <span class="nn">xformers.helpers.timm_sparse_attention</span> <span class="kn">import</span> <span class="n">TimmSparseAttention</span>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">timm</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">timm.models.vision_transformer</span><span class="w"> </span><span class="kn">import</span> <span class="n">VisionTransformer</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xformers.components.attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScaledDotProduct</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xformers.helpers.timm_sparse_attention</span><span class="w"> </span><span class="kn">import</span> <span class="n">TimmSparseAttention</span>
 <span class="n">img_size</span> <span class="o">=</span> <span class="mi">224</span>
 <span class="n">patch_size</span> <span class="o">=</span> <span class="mi">16</span>
 
@@ -249,7 +249,7 @@ when considering other model sources. In any case, please check the notebooks in
 <span class="n">my_fancy_mask</span> <span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>  <span class="c1"># This would be for you to define</span>
 
 <span class="c1"># Define a recursive monkey patching function</span>
-<span class="k">def</span> <span class="nf">replace_attn_with_xformers_one</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">att_mask</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">replace_attn_with_xformers_one</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">att_mask</span><span class="p">):</span>
     <span class="n">module_output</span> <span class="o">=</span> <span class="n">module</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">module</span><span class="p">,</span> <span class="n">timm</span><span class="o">.</span><span class="n">models</span><span class="o">.</span><span class="n">vision_transformer</span><span class="o">.</span><span class="n">Attention</span><span class="p">):</span>
         <span class="n">qkv</span> <span class="o">=</span> <span class="n">module</span><span class="o">.</span><span class="n">qkv</span>

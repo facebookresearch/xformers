@@ -241,9 +241,9 @@
 <span class="sd">Some very common biases are LowerTriangularMask and BlockDiagonalMask.</span>
 <span class="sd">&quot;&quot;&quot;</span>
 
-<span class="kn">import</span> <span class="nn">math</span>
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">math</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">Any</span><span class="p">,</span>
     <span class="n">ClassVar</span><span class="p">,</span>
     <span class="n">Iterable</span><span class="p">,</span>
@@ -256,10 +256,10 @@
     <span class="n">cast</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 
-<div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias">[docs]</a><span class="k">class</span> <span class="nc">AttentionBias</span><span class="p">:</span>
+<div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">AttentionBias</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for a custom bias that can be applied \</span>
 <span class="sd">        as the attn_bias argument in</span>
 <span class="sd">    :attr:`xformers.ops.memory_efficient_attention`.</span>
@@ -295,7 +295,7 @@
 
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">False</span>
 
-<div class="viewcode-block" id="AttentionBias.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="AttentionBias.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -310,7 +310,7 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span></div></div>
 
 
-<span class="k">def</span> <span class="nf">_get_default_bias_device</span><span class="p">(</span><span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_default_bias_device</span><span class="p">(</span><span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
             <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
@@ -318,7 +318,7 @@
     <span class="k">return</span> <span class="n">device</span>
 
 
-<span class="k">def</span> <span class="nf">_materialize_causal_mask</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_materialize_causal_mask</span><span class="p">(</span>
     <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
     <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
     <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;cpu&quot;</span><span class="p">,</span>
@@ -347,7 +347,7 @@
 
 
 <div class="viewcode-block" id="LocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LocalAttentionFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A local attention mask</span>
 
@@ -392,10 +392,10 @@
     <span class="n">window_left</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">window_right</span><span class="p">:</span> <span class="nb">int</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">window_left</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="s2">&quot;Invalid window value passed to &quot;</span>
@@ -409,7 +409,7 @@
                 <span class="sa">f</span><span class="s2">&quot;`window_right &gt; 0` but got window_right=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">window_right</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -432,7 +432,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">dtype</span><span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="LowerTriangularFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">LowerTriangularFromBottomRightMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A causal masking.</span>
 
@@ -452,13 +452,13 @@
 <span class="sd">        equivalent if the number of queries equals the number of keys.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularFromBottomRightMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularFromBottomRightMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">LowerTriangularFromBottomRightMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -468,7 +468,7 @@
             <span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">from_bottomright</span><span class="o">=</span><span class="kc">True</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="LowerTriangularFromBottomRightMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
+<div class="viewcode-block" id="LowerTriangularFromBottomRightMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask.make_local_attention">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_local_attention</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularFromBottomRightLocalAttentionMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -480,7 +480,7 @@
 
 
 <div class="viewcode-block" id="LowerTriangularFromBottomRightLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">(</span>
     <span class="n">LowerTriangularFromBottomRightMask</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -502,7 +502,7 @@
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularFromBottomRightLocalAttentionMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
@@ -510,13 +510,13 @@
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="bp">self</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -532,7 +532,7 @@
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">_SeqLenInfo</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_SeqLenInfo</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Internal) Represents the division of a dimension into blocks.</span>
 
@@ -550,7 +550,7 @@
     <span class="n">min_seqlen</span><span class="p">:</span> <span class="nb">int</span>
     <span class="n">seqstart_py</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">_SeqLenInfo</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
@@ -561,11 +561,11 @@
             <span class="n">seqstart_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
         <span class="k">yield from</span> <span class="nb">zip</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">_get_seqstart</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_get_seqstart</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="n">List</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -586,7 +586,7 @@
         <span class="k">return</span> <span class="p">(</span><span class="n">min_seqlen</span><span class="p">,</span> <span class="n">max_seqlen</span><span class="p">,</span> <span class="n">seqstart_py</span><span class="p">,</span> <span class="n">seqstart</span><span class="p">)</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
@@ -604,7 +604,7 @@
             <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">batch_sizes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="ow">or</span> <span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="mi">1</span><span class="p">:</span>
@@ -629,7 +629,7 @@
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">_PaddedSeqLenInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_PaddedSeqLenInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Internal)  Represents the division of a dimension into blocks which are</span>
 <span class="sd">    padded out to the same total length.</span>
@@ -671,10 +671,10 @@
     <span class="c1"># of the i-th sequence</span>
     <span class="c1"># seqstart: torch.Tensor</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">)</span> <span class="o">+</span> <span class="mi">1</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_PaddedSeqLenInfo&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_PaddedSeqLenInfo&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">_PaddedSeqLenInfo</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
@@ -690,12 +690,12 @@
             <span class="n">padding</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">padding</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
         <span class="k">for</span> <span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">_</span><span class="p">),</span> <span class="n">length</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">):</span>
             <span class="k">yield</span> <span class="n">start</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">length</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
@@ -703,7 +703,7 @@
         <span class="p">)</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens_padded</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens_padded</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">seqlens</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -731,14 +731,14 @@
             <span class="n">padding</span><span class="o">=</span><span class="n">padding</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">batch_sizes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;_PaddedSeqLenInfo.split&quot;</span><span class="p">)</span>
 
 
 <span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">_GappySeqInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_GappySeqInfo</span><span class="p">(</span><span class="n">_SeqLenInfo</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Internal) Flexible equivalent of _PaddedSeqLenInfo. There are two</span>
 <span class="sd">    distinct semantics.</span>
@@ -790,7 +790,7 @@
     <span class="c1"># of the i-th sequence</span>
     <span class="c1"># seqstart: torch.Tensor</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_GappySeqInfo&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_GappySeqInfo&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">_GappySeqInfo</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
@@ -805,18 +805,18 @@
             <span class="n">seqlen_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">intervals</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Iterable</span><span class="p">[</span><span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]]:</span>
         <span class="k">for</span> <span class="p">(</span><span class="n">start</span><span class="p">,</span> <span class="n">_</span><span class="p">),</span> <span class="n">length</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">):</span>
             <span class="k">yield</span> <span class="n">start</span><span class="p">,</span> <span class="n">start</span> <span class="o">+</span> <span class="n">length</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">seqlens</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="o">*</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;_SeqLenInfo&quot;</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens_gappy</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens_gappy</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">seqstarts</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">seqlens</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -843,14 +843,14 @@
             <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">batch_sizes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;_PaddedSeqLenInfo.split&quot;</span><span class="p">)</span>
 
 
 <div class="viewcode-block" id="BlockDiagonalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A block-diagonal mask that can be passed as ``attn_bias``</span>
 <span class="sd">    argument to :attr:`xformers.ops.memory_efficient_attention`.</span>
@@ -893,7 +893,7 @@
     <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
     <span class="n">_batch_sizes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalMask</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
@@ -901,7 +901,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -913,7 +913,7 @@
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -946,7 +946,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="BlockDiagonalMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -972,7 +972,7 @@
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="BlockDiagonalMask.from_tensor_list"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.from_tensor_list">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_tensor_list</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_tensor_list</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">tensors</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="s2">&quot;BlockDiagonalMask&quot;</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
@@ -1005,7 +1005,7 @@
         <span class="k">return</span> <span class="n">block_diag</span><span class="p">,</span> <span class="n">concat_tensors</span></div>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_tensor_lists_qkv</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_tensor_lists_qkv</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">tensors_q</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
         <span class="n">tensors_k</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
@@ -1031,13 +1031,13 @@
             <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">split_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">split_kv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">split_kv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalMask.split"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split">[docs]</a>    <span class="k">def</span> <span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.split"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">split</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;The inverse operation of :attr:`BlockDiagonalCausalMask.from_tensor_list`</span>
 
 <span class="sd">        Args:</span>
@@ -1049,7 +1049,7 @@
         <span class="k">assert</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span> <span class="ow">is</span> <span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span>
         <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">tensor</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_causal"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_causal"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_causal</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
@@ -1057,7 +1057,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_causal_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_causal_from_bottomright</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_causal_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal_from_bottomright">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_causal_from_bottomright</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Makes each block causal with a possible non-causal prefix&quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
@@ -1065,7 +1065,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_local_attention</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention&quot;&quot;&quot;</span>
@@ -1076,7 +1076,7 @@
             <span class="n">_window_size</span><span class="o">=</span><span class="n">window_size</span><span class="p">,</span>
         <span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention_from_bottomright">[docs]</a>    <span class="k">def</span> <span class="nf">make_local_attention_from_bottomright</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalMask.make_local_attention_from_bottomright"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention_from_bottomright">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_local_attention_from_bottomright</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">window_size</span><span class="p">:</span> <span class="nb">int</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Experimental: Makes each block causal with local attention, start from bottom right&quot;&quot;&quot;</span>
@@ -1089,7 +1089,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
 
@@ -1099,7 +1099,7 @@
 <span class="sd">    is from the initial query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalCausalMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
@@ -1107,7 +1107,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1121,7 +1121,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalFromBottomRightMask</span><span class="p">(</span><span class="n">BlockDiagonalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`, except that each block is causal.</span>
 <span class="sd">    This mask allows for a non-causal prefix</span>
@@ -1134,7 +1134,7 @@
 <span class="sd">    final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalFromBottomRightMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalFromBottomRightMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1144,7 +1144,7 @@
             <span class="n">_batch_sizes</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_batch_sizes</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="p">((</span><span class="n">q_start</span><span class="p">,</span> <span class="n">q_end</span><span class="p">),</span> <span class="p">(</span><span class="n">k_start</span><span class="p">,</span> <span class="n">k_end</span><span class="p">))</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span>
             <span class="nb">zip</span><span class="p">(</span>
                 <span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">intervals</span><span class="p">(),</span>
@@ -1159,7 +1159,7 @@
                     <span class="s2">&quot; Expected `num_keys &gt;= num_queries`&quot;</span>
                 <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1171,7 +1171,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
 <span class="sd">    except we support padding for k/v</span>
@@ -1191,14 +1191,14 @@
     <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
     <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_PaddedSeqLenInfo</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1206,7 +1206,7 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1235,7 +1235,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="BlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1266,7 +1266,7 @@
         <span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
 
-    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_paged</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1283,7 +1283,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
 <span class="sd">    except an offset on causality is allowed for each block and we support padding for k/v</span>
@@ -1304,7 +1304,7 @@
 
     <span class="n">causal_diagonal</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># unused. Exists for BC only.</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalWithOffsetPaddedKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalWithOffsetPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1313,7 +1313,7 @@
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1324,7 +1324,7 @@
         <span class="p">)</span>
 
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1357,7 +1357,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Like :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask`,</span>
 <span class="sd">    except with a window size.</span>
@@ -1372,7 +1372,7 @@
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionPaddedKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1382,7 +1382,7 @@
             <span class="n">_window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1397,7 +1397,7 @@
         <span class="p">)</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens_local</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens_local</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_padding</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1414,7 +1414,7 @@
 
 
 <div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as BlockDiagonalPaddedKeysMask, but for paged attention.</span>
 <span class="sd">    block_tables has shape [batch_size, max_num_pages] and K/V have shape</span>
@@ -1431,7 +1431,7 @@
         <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalPaddedKeysMask</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1442,7 +1442,7 @@
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1482,7 +1482,7 @@
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
 <div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1520,7 +1520,7 @@
 
 
 <div class="viewcode-block" id="PagedBlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
     <span class="n">PagedBlockDiagonalPaddedKeysMask</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1532,7 +1532,7 @@
 
     <span class="n">_UNPAGED_TYPE</span> <span class="o">=</span> <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalCausalWithOffsetPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
@@ -1547,7 +1547,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalMask`,</span>
 <span class="sd">    except k/v is gappy.</span>
@@ -1558,14 +1558,14 @@
     <span class="n">q_seqinfo</span><span class="p">:</span> <span class="n">_SeqLenInfo</span>
     <span class="n">k_seqinfo</span><span class="p">:</span> <span class="n">_GappySeqInfo</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1590,7 +1590,7 @@
         <span class="k">return</span> <span class="n">mask</span><span class="o">.</span><span class="n">expand</span><span class="p">(</span><span class="n">shape</span><span class="p">)</span></div>
 
 <div class="viewcode-block" id="BlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_seqstarts</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1612,7 +1612,7 @@
         <span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">q_seqinfo</span><span class="o">=</span><span class="n">q_seqinfo</span><span class="p">,</span> <span class="n">k_seqinfo</span><span class="o">=</span><span class="n">k_seqinfo</span><span class="p">)</span></div>
 
-<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.make_paged"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.make_paged">[docs]</a>    <span class="k">def</span> <span class="nf">make_paged</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalGappyKeysMask.make_paged"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.make_paged">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">make_paged</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
         <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
@@ -1645,7 +1645,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">(</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`,</span>
 <span class="sd">    except k/v is gappy.</span>
@@ -1655,7 +1655,7 @@
 <span class="sd">    than Q is to the final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalWithOffsetGappyKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalWithOffsetGappyKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1664,7 +1664,7 @@
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="BlockDiagonalCausalWithOffsetGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1695,7 +1695,7 @@
 
 
 <div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">PagedBlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PagedBlockDiagonalGappyKeysMask</span><span class="p">(</span><span class="n">AttentionBias</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Equivalent BlockDiagonalGappyKeysMask, but for paged attention.</span>
 <span class="sd">    block_tables has shape [batch_size, max_num_pages] and K/V have shape</span>
@@ -1712,7 +1712,7 @@
         <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">]</span>
     <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalGappyKeysMask</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">PagedBlockDiagonalGappyKeysMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1723,7 +1723,7 @@
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span>
 
-<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+<div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.materialize"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.materialize">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1770,7 +1770,7 @@
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
 <div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">from_seqlens</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_seqlens</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span>
         <span class="n">q_seqlen</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
         <span class="n">kv_seqstarts</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span>
@@ -1811,7 +1811,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionMask</span><span class="p">(</span><span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalLocalAttentionMask</span><span class="p">(</span><span class="n">BlockDiagonalCausalMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Experimental feature)</span>
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.</span>
@@ -1823,7 +1823,7 @@
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalLocalAttentionMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1834,7 +1834,7 @@
             <span class="n">_window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -1859,7 +1859,7 @@
                     <span class="sa">f</span><span class="s2">&quot;No keys are attended in q_seqlen </span><span class="si">{</span><span class="n">q</span><span class="si">}</span><span class="s2"> k_seqlen </span><span class="si">{</span><span class="n">k</span><span class="si">}</span><span class="s2"> with sliding window </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
                 <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1874,7 +1874,7 @@
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalLocalAttentionFromBottomRightMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask">[docs]</a><span class="nd">@dataclass</span>
-<span class="k">class</span> <span class="nc">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">(</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">(</span>
     <span class="n">BlockDiagonalCausalFromBottomRightMask</span>
 <span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
@@ -1888,7 +1888,7 @@
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>
 
-    <span class="k">def</span> <span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalCausalLocalAttentionFromBottomRightMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
             <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span>
         <span class="p">),</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
@@ -1899,14 +1899,14 @@
             <span class="n">_window_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="p">,</span>
         <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">__post_init__</span><span class="p">()</span>
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;Expected `window_size &gt; 0`, but window_size=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_window_size</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
 
-    <span class="k">def</span> <span class="nf">_create_block_mask</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_create_block_mask</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1921,23 +1921,23 @@
         <span class="p">)</span></div>
 
 
-<span class="k">class</span> <span class="nc">AttentionBiasSubTensor</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">AttentionBiasSubTensor</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">):</span>
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">False</span>
 
     <span class="n">_subtensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
         <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="fm">__init__</span><span class="p">()</span>
 
-    <span class="k">def</span> <span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="vm">__class__</span><span class="o">.</span><span class="vm">__name__</span><span class="si">}</span><span class="s2">&quot;</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">__torch_dispatch__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(),</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__torch_dispatch__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(),</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="n">func</span><span class="o">.</span><span class="n">_overloadpacket</span> <span class="ow">in</span> <span class="p">[</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">clone</span><span class="p">,</span>
@@ -1948,15 +1948,15 @@
             <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">_subtensor</span><span class="o">=</span><span class="n">func</span><span class="p">(</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">_subtensor</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">[</span><span class="mi">1</span><span class="p">:],</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">))</span>
         <span class="k">return</span> <span class="bp">NotImplemented</span>
 
-    <span class="k">def</span> <span class="nf">__tensor_flatten__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__tensor_flatten__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="k">return</span> <span class="p">[</span><span class="s2">&quot;_subtensor&quot;</span><span class="p">],</span> <span class="kc">None</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">__tensor_unflatten__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">inner_tensors</span><span class="p">,</span> <span class="n">meta</span><span class="p">,</span> <span class="n">outer_size</span><span class="p">,</span> <span class="n">outer_stride</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__tensor_unflatten__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">inner_tensors</span><span class="p">,</span> <span class="n">meta</span><span class="p">,</span> <span class="n">outer_size</span><span class="p">,</span> <span class="n">outer_stride</span><span class="p">):</span>
         <span class="k">assert</span> <span class="n">meta</span> <span class="ow">is</span> <span class="kc">None</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="n">_subtensor</span><span class="o">=</span><span class="n">inner_tensors</span><span class="p">[</span><span class="s2">&quot;_subtensor&quot;</span><span class="p">])</span>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -1971,18 +1971,18 @@
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">()</span>
 
 
-<span class="k">class</span> <span class="nc">_AddDenseBias</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_AddDenseBias</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">causal_bias</span><span class="p">,</span> <span class="n">tensor</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">causal_bias</span><span class="p">,</span> <span class="n">tensor</span><span class="p">):</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">causal_bias</span><span class="p">)</span> <span class="ow">is</span> <span class="n">LowerTriangularMask</span>
         <span class="k">return</span> <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">(</span><span class="n">tensor</span><span class="p">)</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_out</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span> <span class="n">grad_out</span><span class="p">):</span>
         <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="n">grad_out</span>
 
 
-<div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">LowerTriangularMask</span><span class="p">(</span><span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    A lower-triangular (aka causal) mask</span>
 
@@ -1996,7 +1996,7 @@
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">False</span>
 
 <div class="viewcode-block" id="LowerTriangularMask.__new__"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.__new__">[docs]</a>    <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">_subtensor</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cpu&quot;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Note: create on CPU by default to avoid initializing CUDA context</span>
 <span class="sd">        by mistake.</span>
@@ -2013,7 +2013,7 @@
         <span class="n">tensor</span><span class="o">.</span><span class="n">_subtensor</span> <span class="o">=</span> <span class="n">_subtensor</span>
         <span class="k">return</span> <span class="n">tensor</span></div>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -2021,20 +2021,20 @@
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">_materialize_causal_mask</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
-<div class="viewcode-block" id="LowerTriangularMask.add_bias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">[docs]</a>    <span class="k">def</span> <span class="nf">add_bias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularMaskWithTensorBias&quot;</span><span class="p">:</span>
+<div class="viewcode-block" id="LowerTriangularMask.add_bias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="nf">add_bias</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularMaskWithTensorBias&quot;</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="k">return</span> <span class="n">_AddDenseBias</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">bias</span><span class="p">)</span></div></div>
 
 
-<div class="viewcode-block" id="LowerTriangularMaskWithTensorBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias">[docs]</a><span class="k">class</span> <span class="nc">LowerTriangularMaskWithTensorBias</span><span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">):</span>
+<div class="viewcode-block" id="LowerTriangularMaskWithTensorBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMaskWithTensorBias">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">LowerTriangularMaskWithTensorBias</span><span class="p">(</span><span class="n">LowerTriangularMask</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;A lower-triangular (aka causal) mask with an additive bias&quot;&quot;&quot;</span>
 
     <span class="n">HOLDS_DENSE_TENSOR</span> <span class="o">=</span> <span class="kc">True</span>
 
     <span class="nd">@staticmethod</span>
-    <span class="k">def</span> <span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">bias</span><span class="p">):</span>
         <span class="n">tensor</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="o">.</span><span class="n">_make_wrapper_subclass</span><span class="p">(</span>  <span class="c1"># type: ignore[attr-defined]</span>
             <span class="bp">cls</span><span class="p">,</span>
             <span class="n">bias</span><span class="o">.</span><span class="n">shape</span><span class="p">,</span>
@@ -2045,7 +2045,7 @@
         <span class="n">tensor</span><span class="o">.</span><span class="n">_subtensor</span> <span class="o">=</span> <span class="n">bias</span>
         <span class="k">return</span> <span class="n">tensor</span>
 
-    <span class="k">def</span> <span class="nf">materialize</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">materialize</span><span class="p">(</span>
         <span class="bp">self</span><span class="p">,</span>
         <span class="n">shape</span><span class="p">:</span> <span class="n">Tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">],</span>
         <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
@@ -2054,7 +2054,7 @@
         <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">materialize</span><span class="p">(</span><span class="n">shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">_subtensor</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">__torch_dispatch__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(),</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__torch_dispatch__</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">func</span><span class="p">,</span> <span class="n">types</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(),</span> <span class="n">kwargs</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
         <span class="n">kwargs</span> <span class="o">=</span> <span class="n">kwargs</span> <span class="ow">or</span> <span class="p">{}</span>
         <span class="k">if</span> <span class="n">func</span><span class="o">.</span><span class="n">_overloadpacket</span> <span class="ow">in</span> <span class="p">[</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">ops</span><span class="o">.</span><span class="n">aten</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">,</span>

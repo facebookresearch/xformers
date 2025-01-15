@@ -227,16 +227,16 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
-<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">replace</span>
-<span class="kn">from</span> <span class="nn">enum</span> <span class="kn">import</span> <span class="n">Enum</span>
-<span class="kn">from</span> <span class="nn">functools</span> <span class="kn">import</span> <span class="n">partial</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">enum</span><span class="w"> </span><span class="kn">import</span> <span class="n">Enum</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">functools</span><span class="w"> </span><span class="kn">import</span> <span class="n">partial</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">..common</span> <span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
-<span class="kn">from</span> <span class="nn">.</span> <span class="kn">import</span> <span class="n">attn_bias</span>
-<span class="kn">from</span> <span class="nn">.attn_bias</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">..common</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_operator</span><span class="p">,</span> <span class="n">register_operator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">attn_bias</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">AttentionBiasSubTensor</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
@@ -249,7 +249,7 @@
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMaskWithTensorBias</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.common</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
     <span class="n">Context</span><span class="p">,</span>
@@ -258,10 +258,10 @@
     <span class="n">_attn_bias_apply</span><span class="p">,</span>
     <span class="n">check_lastdim_alignment_stride1</span><span class="p">,</span>
 <span class="p">)</span>
-<span class="kn">from</span> <span class="nn">.torch_attention_compat</span> <span class="kn">import</span> <span class="n">is_pt_cutlass_compatible</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.torch_attention_compat</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_pt_cutlass_compatible</span>
 
 
-<span class="k">def</span> <span class="nf">_uses_tensorcores</span><span class="p">(</span><span class="n">sm</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">is_half</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_uses_tensorcores</span><span class="p">(</span><span class="n">sm</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">is_half</span><span class="p">:</span> <span class="nb">bool</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">sm</span> <span class="o">&gt;=</span> <span class="mi">80</span><span class="p">:</span>
         <span class="k">return</span> <span class="kc">True</span>
     <span class="k">if</span> <span class="n">sm</span> <span class="o">&gt;=</span> <span class="mi">70</span><span class="p">:</span>
@@ -269,7 +269,7 @@
     <span class="k">return</span> <span class="kc">False</span>
 
 
-<span class="k">def</span> <span class="nf">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
     <span class="k">if</span> <span class="n">inp</span><span class="o">.</span><span class="n">device</span><span class="o">.</span><span class="n">type</span> <span class="o">!=</span> <span class="s2">&quot;cuda&quot;</span><span class="p">:</span>
         <span class="k">return</span> <span class="mi">1</span>
     <span class="n">cap</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">get_device_capability</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
@@ -286,7 +286,7 @@
     <span class="k">return</span> <span class="n">matmul_alignment_mn</span>
 
 
-<span class="k">def</span> <span class="nf">_get_seqlen_info</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_seqlen_info</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
     <span class="n">attn_bias</span> <span class="o">=</span> <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span>
@@ -307,7 +307,7 @@
     <span class="k">return</span> <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
 
 
-<span class="k">def</span> <span class="nf">_get_tensor_bias</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_get_tensor_bias</span><span class="p">(</span>
     <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">AttentionBiasSubTensor</span><span class="p">):</span>
@@ -318,7 +318,7 @@
     <span class="k">return</span> <span class="kc">None</span>
 
 
-<span class="k">def</span> <span class="nf">_check_bias_alignment</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_check_bias_alignment</span><span class="p">(</span>
     <span class="n">reasons</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">attn_bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
     <span class="n">attn_bias_tensor</span> <span class="o">=</span> <span class="n">_get_tensor_bias</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">)</span>
@@ -346,7 +346,7 @@
             <span class="p">)</span>
 
 
-<span class="k">class</span> <span class="nc">_CustomMaskType</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">_CustomMaskType</span><span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">Enum</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    (Matches CustomMaskType in C++.)</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -356,7 +356,7 @@
     <span class="n">CausalFromBottomRight</span> <span class="o">=</span> <span class="mi">2</span>
 
 
-<span class="k">def</span> <span class="nf">_custom_mask_type</span><span class="p">(</span><span class="n">bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">_custom_mask_type</span><span class="p">(</span><span class="n">bias</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">AttentionBias</span><span class="p">]])</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
         <span class="n">bias</span><span class="p">,</span>
         <span class="p">(</span>
@@ -381,7 +381,7 @@
 
 
 <div class="viewcode-block" id="FwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.cutlass.FwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">FwOp</span><span class="p">(</span><span class="n">AttentionFwOpBase</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;xFormers&#39; MHA kernel based on CUTLASS.</span>
 <span class="sd">    Supports a large number of settings (including without TensorCores, f32 ...)</span>
 <span class="sd">    and GPUs as old as P100 (Sm60)</span>
@@ -423,7 +423,7 @@
     <span class="p">]</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
@@ -487,7 +487,7 @@
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply_bmhk</span><span class="p">(</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_bmhk</span><span class="p">(</span>
         <span class="bp">cls</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">needs_gradient</span><span class="p">:</span> <span class="nb">bool</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Context</span><span class="p">]]:</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
@@ -538,7 +538,7 @@
         <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">FwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">matmul_alignment_mn</span> <span class="o">=</span> <span class="n">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">check_lastdim_alignment_stride1</span><span class="p">(</span><span class="n">reasons</span><span class="p">,</span> <span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">d</span><span class="o">.</span><span class="n">query</span><span class="p">,</span> <span class="n">matmul_alignment_mn</span><span class="p">)</span>
@@ -548,7 +548,7 @@
 
 
 <div class="viewcode-block" id="BwOp"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.cutlass.BwOp">[docs]</a><span class="nd">@register_operator</span>
-<span class="k">class</span> <span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">BwOp</span><span class="p">(</span><span class="n">AttentionBwOpBase</span><span class="p">):</span>
     <span class="vm">__doc__</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="vm">__doc__</span>
 
     <span class="n">OPERATOR</span> <span class="o">=</span> <span class="p">(</span>
@@ -589,7 +589,7 @@
     <span class="p">]</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">not_supported_reasons</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">d</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">List</span><span class="p">[</span><span class="nb">str</span><span class="p">]:</span>
         <span class="n">reasons</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BwOp</span><span class="p">,</span> <span class="bp">cls</span><span class="p">)</span><span class="o">.</span><span class="n">not_supported_reasons</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
         <span class="n">matmul_alignment_mn</span> <span class="o">=</span> <span class="n">_minimum_gemm_alignment</span><span class="p">(</span><span class="n">d</span><span class="p">)</span>
 
@@ -621,7 +621,7 @@
         <span class="k">return</span> <span class="n">reasons</span>
 
     <span class="nd">@classmethod</span>
-    <span class="k">def</span> <span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">ctx</span><span class="p">:</span> <span class="n">Context</span><span class="p">,</span> <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span> <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Gradients</span><span class="p">:</span>
         <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">)</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">BwOp</span><span class="o">.</span><span class="n">SUPPORTED_ATTN_BIAS_TYPES</span><span class="p">:</span>
             <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;Unsupported attn_bias type&quot;</span><span class="p">)</span>
 

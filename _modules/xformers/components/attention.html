@@ -224,21 +224,21 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="kn">import</span> <span class="nn">logging</span>
-<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Union</span>
 
-<span class="kn">import</span> <span class="nn">torch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span> <span class="nn">xformers.utils</span> <span class="kn">import</span> <span class="p">(</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">xformers.utils</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">generate_matching_config</span><span class="p">,</span>
     <span class="n">get_registry_decorator</span><span class="p">,</span>
     <span class="n">import_all_modules</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="kn">from</span> <span class="nn">._sputnik_sparse</span> <span class="kn">import</span> <span class="n">SparseCS</span>
-<span class="kn">from</span> <span class="nn">.attention_mask</span> <span class="kn">import</span> <span class="n">AttentionMask</span>
-<span class="kn">from</span> <span class="nn">.base</span> <span class="kn">import</span> <span class="n">Attention</span><span class="p">,</span> <span class="n">AttentionConfig</span>  <span class="c1"># noqa</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._sputnik_sparse</span><span class="w"> </span><span class="kn">import</span> <span class="n">SparseCS</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.attention_mask</span><span class="w"> </span><span class="kn">import</span> <span class="n">AttentionMask</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.base</span><span class="w"> </span><span class="kn">import</span> <span class="n">Attention</span><span class="p">,</span> <span class="n">AttentionConfig</span>  <span class="c1"># noqa</span>
 
 <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;xformers&quot;</span><span class="p">)</span>
 
@@ -254,7 +254,7 @@
 <span class="n">_USE_SPUTNIK</span> <span class="o">=</span> <span class="kc">True</span>
 
 
-<div class="viewcode-block" id="build_attention"><a class="viewcode-back" href="../../../components/attentions.html#xformers.components.attention.build_attention">[docs]</a><span class="k">def</span> <span class="nf">build_attention</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">AttentionConfig</span><span class="p">]):</span>
+<div class="viewcode-block" id="build_attention"><a class="viewcode-back" href="../../../components/attentions.html#xformers.components.attention.build_attention">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">build_attention</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">AttentionConfig</span><span class="p">]):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Builds an attention from a config.</span>
 
 <span class="sd">    This assumes a &#39;name&#39; key in the config which is used to determine what</span>
@@ -302,7 +302,7 @@
 <span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">maybe_sparsify</span><span class="p">(</span><span class="n">matrix</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">maybe_sparsify</span><span class="p">(</span><span class="n">matrix</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span><span class="p">:</span>
     <span class="c1"># Sparsify if that makes sense</span>
     <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">count_nonzero</span><span class="p">(</span><span class="n">matrix</span><span class="p">)</span><span class="o">.</span><span class="n">item</span><span class="p">()</span> <span class="o">/</span> <span class="n">matrix</span><span class="o">.</span><span class="n">numel</span><span class="p">()</span> <span class="o">&gt;</span> <span class="n">_DENSITY_THRESHOLD</span><span class="p">:</span>
         <span class="c1"># If not sparse, then AttentionMask is the reference type</span>
@@ -311,13 +311,13 @@
     <span class="k">return</span> <span class="n">sparsify</span><span class="p">(</span><span class="n">matrix</span><span class="p">)</span>
 
 
-<span class="k">def</span> <span class="nf">sparsify</span><span class="p">(</span><span class="n">matrix</span><span class="p">):</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sparsify</span><span class="p">(</span><span class="n">matrix</span><span class="p">):</span>
     <span class="k">if</span> <span class="n">_USE_SPUTNIK</span><span class="p">:</span>
         <span class="k">return</span> <span class="n">SparseCS</span><span class="p">(</span><span class="n">matrix</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">matrix</span><span class="o">.</span><span class="n">to_sparse</span><span class="p">()</span>
 
 
-<span class="kn">from</span> <span class="nn">.scaled_dot_product</span> <span class="kn">import</span> <span class="n">ScaledDotProduct</span>  <span class="c1"># noqa</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.scaled_dot_product</span><span class="w"> </span><span class="kn">import</span> <span class="n">ScaledDotProduct</span>  <span class="c1"># noqa</span>
 
 <span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
     <span class="s2">&quot;ScaledDotProduct&quot;</span><span class="p">,</span>
