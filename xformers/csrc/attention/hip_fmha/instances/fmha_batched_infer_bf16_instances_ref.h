@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  *
  * The file is automatically generated, don't modify!
+ * See the generator script
+ * `xformers/csrc/attention/hip_fmha/generate_instances.py`
  */
 
 #include <ck_tile/core/numeric/bfloat16.hpp>
@@ -290,3 +292,59 @@ extern template void run_batched_infer_mask_bias_dropout_dispatch<
     false,
     false,
     256>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    true,
+    true,
+    true,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    false,
+    true,
+    true,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    true,
+    true,
+    false,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    false,
+    true,
+    false,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    true,
+    false,
+    true,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    false,
+    false,
+    true,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    true,
+    false,
+    false,
+    512>(BatchedForwardParams& param, hipStream_t stream);
+
+extern template void run_batched_infer_mask_bias_dropout_dispatch<
+    ck_tile::bf16_t,
+    false,
+    false,
+    false,
+    512>(BatchedForwardParams& param, hipStream_t stream);
