@@ -118,5 +118,5 @@ jobs:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
       s3_path: s3://pytorch/whl/${{ matrix.suffix }}/
       aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.6.0+${{ matrix.suffix }}*"
+      filter: "*torch2.5.1+${{ matrix.suffix }}*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
