@@ -828,7 +828,7 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
     return mask
 
 
-@cuda_only
+@rocm_only
 @pytest.mark.parametrize("attn_bias", [None, fmha.attn_bias.LowerTriangularMask()])
 @pytest.mark.parametrize("seed", [42, 124])
 @pytest.mark.parametrize("p", [0.3, 0.7])
@@ -888,7 +888,7 @@ def test_dropout_ck(q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     assert all(p_values > p_val_tol)
 
 
-@cuda_only
+@rocm_only
 @pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
 @pytest.mark.parametrize("k", [16, 64, 128])
 @pytest.mark.parametrize("batch_size", [1, 2])
@@ -2280,7 +2280,7 @@ def test_paged_attention(
     )
 
 
-@cuda_only
+@rocm_only
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
 @pytest.mark.parametrize("page_size", [128, 256])

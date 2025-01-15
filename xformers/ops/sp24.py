@@ -4,13 +4,9 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
-import ctypes
-import glob
 import os
 import time
-import warnings
 from functools import partial
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, cast
 
 import torch
@@ -46,32 +42,16 @@ class Sp24Gemm(BaseOperator):
     NAME = "_sparse24_gemm"
 
 
-def _get_cusparselt_lib() -> Optional[str]:
-    libs = glob.glob(
-        str(Path(torch._C.__file__).parent / "lib" / "libcusparseLt*.so.0")
-    )
-    if len(libs) != 1:
-        return None
-    return libs[0]
-
-
 def _get_cusparselt_torch_version() -> Tuple[int, int, int]:
     """
-    Returns the version of the cusparselt.so library that ships with pytorch 2.2+
+    Returns the version of the cusparselt.so library used by pytorch
     """
-    lib_path = _get_cusparselt_lib()
-    if lib_path is None:
+    if not torch.backends.cusparselt.is_available():
         return (0, 0, 0)
-    lib = ctypes.CDLL(lib_path)
-
-    def get_version_part(version_part: int) -> int:
-        value = ctypes.c_int()
-        ret = lib.cusparseLtGetProperty(version_part, ctypes.byref(value))
-        if ret != 0:
-            return -1
-        return value.value
-
-    return (get_version_part(0), get_version_part(1), get_version_part(2))
+    version: Optional[int] = torch.backends.cusparselt.version()
+    if version is None:
+        return (0, 0, 0)
+    return ((version // 10000) % 100, (version // 100) % 100, version % 100)
 
 
 _cusplt_version = _get_cusparselt_torch_version()
@@ -93,17 +73,9 @@ class Sp24GemmCusplt(BaseOperator):
 
 
 def _has_cusparseLt() -> bool:
-    available = _cusplt_version >= (0, 4, 0)
+    available = _cusplt_version >= (0, 5, 0)
     if not available:
         return False
-    if _cusplt_version < (0, 5, 0):
-        # Version 0.5.0 has much better perf because it can fuse the
-        # transpose within the GEMM epilogue
-        warnings.warn(
-            f"You have cusparseLt version {_cusplt_version_str} "
-            f"but you get better performance with v0.5.0+ if "
-            f"you replace the .so file ({_get_cusparselt_lib()})"
-        )
 
     # Sm90 added in 6.0
     compute_capability = (0, 0)
