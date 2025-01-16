@@ -13,6 +13,7 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
+#include "ck_tiled_fmha_fwd_async_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_headdim_switch.h"
@@ -25,6 +26,11 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MTile>
 struct grouped_infer_mask_bias_dropout_dispatch {
+  using FmhaShape = std::conditional_t<
+      MaxK <= 256,
+      typename FmhaFwdAsyncShape<MaxK, MTile>::Type,
+      typename FmhaFwdShape<MaxK, MTile>::Type>;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -38,15 +44,16 @@ struct grouped_infer_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::PDataType,
       typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-      typename FmhaFwdShape<MaxK, MTile>::Type,
+      FmhaShape,
       true, // kIsGroupMode
       FmhaMask,
       FmhaTraits>;
 
+  static_assert(MaxK <= 256, "Maxk > 256 could not execute this path!");
+
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    using FmhaShape = typename FmhaFwdShape<MaxK, MTile>::Type;
     constexpr ck_tile::index_t occupancy =
         (MaxK == 64) ? 3 : ((MaxK >= 256) ? 1 : 2);
 
@@ -59,76 +66,40 @@ struct grouped_infer_mask_bias_dropout_dispatch {
 
     bool pad_headdim_q = !(param.K % FmhaShape::kSubQKHeaddim == 0);
     bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
-    const bool use_async_pipeline =
-        (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) &&
-         (MaxK <= 128));
 
-    if (!use_async_pipeline) {
-      BOOL_SWITCH_2(
-          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
-            using FmhaTraits = ck_tile::TileFmhaTraits<
-                kPadSeqLenQ,
-                kPadSeqLenK,
-                kPadHeadDimQ,
-                kPadHeadDimV,
-                kBiasEnum,
-                false, // kHasBiasGrad place-holder
-                false, // kStoreLSE
-                kHasDropout,
-                false, // kDoFp8StaticQuant place-holder
-                occupancy>;
+    BOOL_SWITCH_2(
+        pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
+          using FmhaTraits = ck_tile::TileFmhaTraits<
+              kPadSeqLenQ,
+              kPadSeqLenK,
+              kPadHeadDimQ,
+              kPadHeadDimV,
+              kBiasEnum,
+              false, // kHasBiasGrad place-holder
+              false, // kStoreLSE
+              kHasDropout,
+              false, // kDoFp8StaticQuant place-holder
+              occupancy>;
 
-            using FmhaPipelineProblem =
-                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+          using FmhaPipelineProblem =
+              FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-            using FmhaPipeline = std::conditional_t<
-                MaxK <= 256,
-                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>,
-                ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
+          using FmhaPipeline = std::conditional_t<
+              MaxK <= 256,
+              ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>,
+              ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
 
-            using FmhaEpilogue =
-                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                    typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-                    kPadSeqLenQ,
-                    kPadHeadDimV>>;
+          using FmhaEpilogue =
+              ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                  typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                  typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                  kPadSeqLenQ,
+                  kPadHeadDimV>>;
 
-            using FmhaKernel =
-                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+          using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
-            RunWithKernel<FmhaKernel>(param, stream);
-          });
-    } else {
-      using FmhaTraits = ck_tile::TileFmhaTraits<
-          true, // kPadSeqLenQ,
-          kPadSeqLenK,
-          true, // kPadHeadDimQ,
-          true, // kPadHeadDimV,
-          kBiasEnum,
-          false, // kHasBiasGrad place-holder
-          false, // kStoreLSE
-          kHasDropout,
-          false, // kDoFp8StaticQuant place-holder
-          occupancy>;
-
-      using FmhaPipelineProblem = FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
-
-      using FmhaPipeline = std::conditional_t<
-          MaxK <= 256,
-          ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>,
-          ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
-
-      using FmhaEpilogue =
-          ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-              typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-              typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-              true,
-              true>>;
-
-      using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
-
-      RunWithKernel<FmhaKernel>(param, stream);
-    }
+          RunWithKernel<FmhaKernel>(param, stream);
+        });
   };
 
   template <typename FmhaKernel>
