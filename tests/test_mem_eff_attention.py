@@ -472,11 +472,6 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         ):
             pytest.skip("ck.FwOp hdim-512 is not supported when Paged-KVCache is used!")
 
-    # comment this for testing hdim-512 cases if hdim-512 support is built into hip_fmha
-    if op is fmha.ck.FwOp:
-        if k > 256 or kv > 256:
-            pytest.skip("ck.FwOp hdim-512 support is not built by default!")
-
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
         fmt="BMHK" if packed else fmt,
