@@ -4,9 +4,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.28] - TBD
+## [0.0.29] - 2024-12-27
+### Improved:
+- [fMHA] Creating a `LowerTriangularMask` no longer creates a CUDA tensor
+- [fMHA] Updated Flash-Attention to `v2.7.2.post1`
+- [fMHA] Flash-Attention v3 will now be used by `memory_efficient_attention` by default when available, unless the operator is enforced with the `op` keyword-argument. Switching from Flash2 to Flash3 can make transformer trainings ~10% faster end-to-end on H100s
+- [fMHA] Fixed a performance regression with the `cutlass` backend for the backward pass (facebookresearch/xformers#1176) - mostly used on older GPUs (eg V100)
+- Fixed swiglu operator compatibility with torch-compile with PyTorch 2.6
+- Fix activation checkpointing of SwiGLU when AMP is enabled (facebookresearch/xformers#1152)
+### Removed:
+- Following PyTorch, xFormers no longer builds binaries for conda. Pip is now the only recommended way to get xFormers
+- Removed unmaintained/deprecated components in `xformers.components.*` (see facebookresearch/xformers#848)
+
+## [0.0.28.post3] - 2024-10-30
+Pre-built binary wheels require PyTorch 2.5.1
+
+## [0.0.28.post2] - 2024-10-18
+Pre-built binary wheels require PyTorch 2.5.0
+
+## [0.0.28.post1] - 2024-09-13
+Properly upload wheels for cuda 12.4
+
+## [0.0.28] - 2024-09-12
+Pre-built binary wheels require PyTorch 2.4.1
 ### Added
 - Added wheels for cuda 12.4
+- Added conda builds for python 3.11
+- Added wheels for rocm 6.1
 ### Improved
 - Profiler: Fix computation of FLOPS for the attention when using xFormers
 - Profiler: Fix MFU/HFU calculation when multiple dtypes are used
@@ -18,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fMHA: Removed `decoder` and `small_k` backends
 - profiler: Removed `DetectSlowOpsProfiler` profiler
 - Removed compatibility with PyTorch < 2.4
+- Removed conda builds for python 3.11
+- Removed windows pip wheels for cuda 12.1 and 11.8
 
 ## [0.0.27.post2] - 2024-07-26
 Pre-built binary wheels require PyTorch 2.4.0

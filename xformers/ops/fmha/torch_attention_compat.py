@@ -19,7 +19,7 @@ except ImportError:
         return sys.platform == "linux"
 
 
-def is_pt_cutlass_compatible(force: bool) -> bool:
+def is_pt_cutlass_compatible(force: bool = False) -> bool:
     compatible = True
 
     fwd_schema_str = (

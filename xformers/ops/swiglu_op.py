@@ -125,9 +125,7 @@ class _SwiGLUFusedFunc(torch.autograd.Function):
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         if not bias:
             return (dy.transpose(-2, -1) @ x), None
-        db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
-        dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
-        GemmFusedSumOp.OPERATOR(dy.transpose(-2, -1), x, dw, db)
+        dw, db = GemmFusedSumOp.OPERATOR(dy.transpose(-2, -1), x)
         return dw, db
 
     @classmethod
@@ -212,11 +210,11 @@ class _ForwardToFunc(SwiGLUOp):
 def _eager_functional_swiglu(
     x: torch.Tensor,
     w1: torch.Tensor,
-    b1: torch.Tensor,
+    b1: Optional[torch.Tensor],
     w2: torch.Tensor,
-    b2: torch.Tensor,
+    b2: Optional[torch.Tensor],
     w3: torch.Tensor,
-    b3: torch.Tensor,
+    b3: Optional[torch.Tensor],
 ) -> torch.Tensor:
     x1 = F.linear(x, w1, b1)
     x2 = F.linear(x, w2, b2)

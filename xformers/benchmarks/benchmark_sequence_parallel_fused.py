@@ -223,7 +223,6 @@ def run_one_rank(
             scattered_input,
             [w.t() for w in weights],
             group=subgroup,
-            num_stripes=2,
             timeout_s=10,
         )
 
@@ -235,7 +234,6 @@ def run_one_rank(
             gathered_input,
             [w.t() for w in weights],
             group=subgroup,
-            num_stripes=2,
             timeout_s=10,
         )
 
@@ -247,7 +245,6 @@ def run_one_rank(
             scattered_input,
             [w.t() for w in weights],
             group=subgroup_nowait,
-            num_stripes=2,
             _wait=False,
             timeout_s=10,
         )
@@ -260,7 +257,6 @@ def run_one_rank(
             gathered_input,
             [w.t() for w in weights],
             group=subgroup_nowait,
-            num_stripes=2,
             _wait=False,
             timeout_s=10,
         )
@@ -273,7 +269,6 @@ def run_one_rank(
             scattered_input,
             [w.t() for w in weights],
             group=subgroup_nowait_nomemcpy,
-            num_stripes=2,
             _wait=False,
             _memcpy=False,
             timeout_s=10,
@@ -287,7 +282,6 @@ def run_one_rank(
             gathered_input,
             [w.t() for w in weights],
             group=subgroup_nowait_nomemcpy,
-            num_stripes=2,
             _wait=False,
             _memcpy=False,
             timeout_s=10,
