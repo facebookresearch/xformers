@@ -10,7 +10,7 @@
 #include <stdexcept>
 
 #ifndef FMHA_LIMIT_MAX_HEADDIM_TO_256
-#define FMHA_LIMIT_MAX_HEADDIM_TO_256 1
+#define FMHA_LIMIT_MAX_HEADDIM_TO_256 0
 #endif
 
 #if FMHA_LIMIT_MAX_HEADDIM_TO_256
