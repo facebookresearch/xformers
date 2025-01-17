@@ -197,7 +197,7 @@ def _rope_padded_kernel(
             is_low_freq = wavelens > lo_freq_wavelen
             freqs = tl.where(is_low_freq, freqs / dynamic_scale_factor, freqs)
 
-            is_mid_freq = hi_freq_wavelen <= wavelens and wavelens <= lo_freq_wavelen
+            is_mid_freq = hi_freq_wavelen < wavelens and wavelens <= lo_freq_wavelen
 
             smooth = (dynamic_old_context_len / wavelens - dynamic_low_freq_factor) / (
                 dynamic_high_freq_factor - dynamic_low_freq_factor

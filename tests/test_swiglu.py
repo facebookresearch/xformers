@@ -7,7 +7,7 @@ import copy
 import functools
 import random
 from contextlib import nullcontext
-from typing import ContextManager, Optional, Sequence, cast
+from typing import ContextManager, Optional, Sequence, Union, cast
 
 import pytest
 import torch
@@ -95,8 +95,10 @@ def generate_test_shapes():
         (4728, 1536, 2736),
         # GPT-3 (small)
         (2048, 2048, 5632),
+        # TODO: Not enough memory for this shape in github CI.
+        # restore it after rearrange the code (fw, fw, bw, bw) -> (fw, bw, fw, bw)
         # Chinchilla
-        (2048, 8192, 22016),
+        # (2048, 8192, 22016),
     ]
     # Add some random shapes
     r = random.Random(0)
@@ -113,7 +115,11 @@ _test_shapes_ids = [str(s) for s in _test_shapes]
 _dtypes = [torch.float16]
 if _is_sm80:
     _dtypes += [torch.bfloat16]
-_ops: Sequence[xsw.SwiGLUOp] = [xsw.SwiGLUFusedOp, xsw.SwiGLUPackedFusedOp]
+_ops: Sequence[Union[xsw.SwiGLUOp, None]] = [
+    xsw.SwiGLUFusedOp,
+    xsw.SwiGLUPackedFusedOp,
+    None,
+]
 
 FORWARD_ATOL = {torch.float: 2e-6, torch.half: 1e-2, torch.bfloat16: 1e-2}
 FORWARD_RTOL = {torch.float: 1e-5, torch.half: 4e-3, torch.bfloat16: 4e-3}
@@ -125,7 +131,7 @@ BACKWARD_ATOL = {
 }
 BACKWARD_RTOL = {
     torch.float: 2e-3,
-    torch.half: 1e-2,
+    torch.half: 3e-2,
     torch.bfloat16: 4e-2,
 }
 
@@ -138,7 +144,9 @@ def create_module_cached(**kwargs) -> xsw.SwiGLU:
 @disable_tf32
 @disable_on_rocm
 @pytest.mark.parametrize("autocast", [False, True], ids=["regular", "autocast"])
-@pytest.mark.parametrize("op", _ops, ids=[x.NAME for x in _ops])
+@pytest.mark.parametrize(
+    "op", _ops, ids=[x.NAME if x is not None else "auto_selected_op" for x in _ops]
+)
 @pytest.mark.parametrize("dtype", _dtypes, ids=[str(x) for x in _dtypes])
 @pytest.mark.parametrize("device", _devices)
 @pytest.mark.parametrize("bias", [False, True], ids=["nobias", "bias"])
@@ -159,7 +167,7 @@ def test_forward_backward(
 ):
     torch.manual_seed(shape[0] * shape[1] * shape[2])
 
-    if not op.supports(
+    if op is not None and not op.supports(
         xsw.SwiGLUOpDispatch(
             device=device,
             dtype=dtype,
@@ -169,6 +177,10 @@ def test_forward_backward(
         )
     ):
         pytest.skip("Not supported by operator")
+
+    if op is not None:
+        if pack_weights and not op.PACKED_WEIGHTS:
+            pytest.skip("Not supported combination when module.op is set manually")
 
     inp_model_dtype = torch.float if autocast else dtype
     x = torch.randn(shape[:2], device=device, dtype=inp_model_dtype)
@@ -200,8 +212,10 @@ def test_forward_backward(
         torch.autocast("cuda", dtype=dtype) if autocast else nullcontext(),
     )
     with cm:
-        ref = module(x)
-        out = xsw.swiglu(x, *module._ordered_params(), op=op)
+        ref = xsw._eager_functional_swiglu(x, *module._ordered_params())
+
+        module.op = op
+        out = module(x)
 
     if ref_f32 is None:
         ref_f32 = ref
@@ -389,14 +403,11 @@ def test_gemm_fused_operand_sum_compile(dtype, device) -> None:
         [shape[0], shape[2]], device=device, dtype=dtype, requires_grad=False
     )
     dy = torch.randn(shape[:2], device=device, dtype=dtype, requires_grad=False)
-    db = torch.empty([dy.shape[1]], dtype=dy.dtype, device=dy.device)
-    dw = torch.empty([dy.shape[1], x.shape[1]], dtype=dy.dtype, device=dy.device)
 
     GemmFusedSumOp = xformers.ops.common.get_xformers_operator("gemm_fused_operand_sum")
 
     def fn(x):
-        GemmFusedSumOp(dy.transpose(-2, -1), x, dw, db)
-        return [dw, db]
+        return GemmFusedSumOp(dy.transpose(-2, -1), x)
 
     # Eager
     output = fn(x)

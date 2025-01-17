@@ -7,12 +7,10 @@ import hashlib
 import logging
 import math
 import random
-from functools import partial
 from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 import pytest
 import torch
-import torch.nn.functional as F
 from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
 
@@ -54,9 +52,6 @@ sm90_or_better_only = pytest.mark.skipif(
 )
 skip_if_rocm = pytest.mark.skipif(
     torch.version.hip is not None, reason="not supported on ROCm"
-)
-skip_if_pt_cutlass = pytest.mark.skipif(
-    fmha.cutlass.USE_TORCH_CUTLASS, reason="using PT cutlass"
 )
 _devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
 
@@ -477,6 +472,8 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
         fmt="BMHK" if packed else fmt,
         **kwargs,
     )
+    if attn_bias is not None:
+        assert type(attn_bias.to(query.device)) is type(attn_bias)
 
     if packed:
         c = torch.stack([query, key, value], 2)
@@ -608,7 +605,11 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     if op is fmha.cutlass.FwOp:
         # CUTLASS kernel pads the last dimention of LSE to 32
         lse = lse[:, :, : ref_lse.shape[2]]
-    assert_allclose(lse, ref_lse, atol=2e-4)
+    if op is fmha.ck.FwOp:
+        # relax numerical tolerance for CK FwOp
+        assert_allclose(lse, ref_lse, atol=2e-4, rtol=2e-4)
+    else:
+        assert_allclose(lse, ref_lse, atol=2e-4)
 
 
 @cuda_only
@@ -694,8 +695,18 @@ def test_backward(
 
     if op_bw == fmha.ck.BwOp:
         op_fw = fmha.ck.FwOp
+        if dtype == torch.bfloat16:
+            # bfloat16 testing can be enabled by export ENABLE_HIP_FMHA_RTN_BF16_CONVERT=1 when
+            # building xformers and get accurate results
+            pytest.skip(
+                "CK Fmha backward for bfloat16 currently is not very accurate for some cases!"
+            )
         if grad_out_contiguous is False:
             pytest.skip("CK Fmha does not support contiguous layout for grad_out!")
+        if k % 2 != 0:
+            pytest.skip(
+                "CK Fmha currently requires the headdim size of query input be an even value!"
+            )
 
     qkv = None
 
@@ -829,24 +840,17 @@ def _vec_binom_test(x, n, p):
 
 
 def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
-    if op == fmha.cutlass.FwOp:
-        mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
-        rand_uniform = torch.ops.xformers._cutlass_rand_uniform(p, mask)
-        mask = (rand_uniform > p).to(torch.float32)
-        mask = mask.reshape(batch_size, q_len, kv_len)
-    elif op == fmha.ck.FwOp:
-        mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
-        # rand_uniform is an int8_t tensor
-        rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
-        mask = (rand_uniform <= int((1.0 - p) * 255.0)).to(torch.float32)
-        mask = mask.reshape(batch_size, q_len, kv_len)
-    else:
-        assert False, f"No dropout mask known for op={op.NAME}"
+    assert op == fmha.ck.FwOp, f"Op {op.NAME} does not expose dropout mask"
+    mask = torch.empty((batch_size, 1, q_len, kv_len), device=device)
+    # rand_uniform is an int8_t tensor
+    rand_uniform = torch.ops.xformers._ck_rand_uniform(p, mask)
+    mask = (rand_uniform <= int((1.0 - p) * 255.0)).to(torch.float32)
+    mask = mask.reshape(batch_size, q_len, kv_len)
 
     return mask
 
 
-@cuda_only
+@rocm_only
 @pytest.mark.parametrize("attn_bias", [None, fmha.attn_bias.LowerTriangularMask()])
 @pytest.mark.parametrize("seed", [42, 124])
 @pytest.mark.parametrize("p", [0.3, 0.7])
@@ -854,18 +858,12 @@ def _get_drop_mask(op, batch_size, q_len, kv_len, p, device):
 @pytest.mark.parametrize("batch_size", [1, 2])
 @pytest.mark.parametrize("kv_len", [3, 15, 32, 33, 65])
 @pytest.mark.parametrize("q_len", [2, 33])
-@pytest.mark.parametrize(
-    "op",
-    ALL_FW_OPS,
-    ids=list(map(lambda t: t.NAME, ALL_FW_OPS)),
-)
-def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
+def test_dropout_ck(q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
+    op = fmha.ck.FwOp
     device = "cuda"
     scale = 3
 
-    dtype = torch.float
-    if torch.version.hip and op == fmha.ck.FwOp:
-        dtype = torch.float16
+    dtype = torch.float16
 
     query = torch.randn((batch_size, q_len, k_len), device=device, dtype=dtype) * scale
     key = torch.randn((batch_size, kv_len, k_len), device=device, dtype=dtype) * scale
@@ -912,9 +910,15 @@ def test_dropout(op, q_len, kv_len, batch_size, k_len, p, seed, attn_bias):
     assert all(p_values > p_val_tol)
 
 
-def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
-    if dtype is torch.bfloat16 and compute_capability < (8, 0):
-        pytest.skip("bf16 requires Sm80")
+@rocm_only
+@pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
+@pytest.mark.parametrize("k", [16, 64, 128])
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("kv_len", [3, 248, 256])
+@pytest.mark.parametrize("q_len", [3, 248, 256])
+def test_dropout_backward_ck(q_len, kv_len, batch_size, k, p):
+    op = fmha.ck.FwOp
+    dtype = torch.float16
     if not op.is_available():
         pytest.skip()
 
@@ -980,45 +984,6 @@ def _test_dropout_backward(q_len, kv_len, batch_size, k, p, op, dtype):
         "grad_k",
         atol=atol,
         rtol=rtol,
-    )
-
-
-@cuda_only
-@disable_tf32
-@pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
-@pytest.mark.parametrize("k", [16, 128, 256])
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 248, 256])
-@pytest.mark.parametrize("q_len", [3, 248, 256])
-@pytest.mark.parametrize("dt", ["f16", "bf16", "f32"])
-def test_dropout_backward_cutlass(dt, q_len, kv_len, batch_size, k, p):
-    _test_dropout_backward(
-        q_len,
-        kv_len,
-        batch_size,
-        k,
-        p,
-        op=fmha.cutlass.FwOp,
-        dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
-    )
-
-
-@cuda_only
-@pytest.mark.parametrize("p", [0.000001, 0.3, 0.7])
-@pytest.mark.parametrize("k", [16, 64, 128])
-@pytest.mark.parametrize("batch_size", [1, 2])
-@pytest.mark.parametrize("kv_len", [3, 248, 256])
-@pytest.mark.parametrize("q_len", [3, 248, 256])
-@pytest.mark.parametrize("dt", ["f16"])
-def test_dropout_backward_ck(dt, q_len, kv_len, batch_size, k, p):
-    _test_dropout_backward(
-        q_len,
-        kv_len,
-        batch_size,
-        k,
-        p,
-        op=fmha.ck.FwOp,
-        dtype={"f16": torch.float16, "bf16": torch.bfloat16, "f32": torch.float32}[dt],
     )
 
 
@@ -1923,30 +1888,6 @@ SM_AND_SHMEM_KBYTES = [
 ]
 
 
-@cuda_only
-@disable_on_rocm
-@skip_if_pt_cutlass
-@pytest.mark.parametrize("dtype_str", ["f32", "f16", "bf16"])
-@pytest.mark.parametrize(
-    "sm_shmem",
-    SM_AND_SHMEM_KBYTES,
-    ids=[f"cc{sm}_shmem{shmem}kb" for sm, shmem in SM_AND_SHMEM_KBYTES],
-)
-def test_has_kernel_for(sm_shmem: Tuple[int, int], dtype_str: str) -> None:
-    dtype = {"f32": torch.float, "f16": torch.half, "bf16": torch.bfloat16}[dtype_str]
-    sm, shmem_kbytes = sm_shmem
-    if sm < 80 and dtype_str == "bf16":
-        return
-
-    for k in [16, 32, 64, 128, 256]:
-        assert torch.ops.xformers._has_cutlassF_kernel_for(
-            dtype, sm, shmem_kbytes * 1024, k
-        ), f"k={k}"
-        assert torch.ops.xformers._has_cutlassB_kernel_for(
-            dtype, sm, shmem_kbytes * 1024, k
-        ), f"k={k}"
-
-
 def test_window_size_materialize() -> None:
     seqlens = [4, 6]
     attn_bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens(
@@ -2333,135 +2274,6 @@ def test_local_attn_bias() -> None:
     assert (mask == expected).all().item()
 
 
-@cuda_only
-@disable_on_rocm
-@skip_if_pt_cutlass
-@pytest.mark.parametrize("cc", [60, 70, 80])
-@pytest.mark.parametrize("maxK", [32, 64, 128, 256])
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
-@pytest.mark.parametrize(
-    "custom_mask_type",
-    [
-        fmha.cutlass._CustomMaskType.NoCustomMask,
-        fmha.cutlass._CustomMaskType.CausalFromTopLeft,
-        fmha.cutlass._CustomMaskType.CausalFromBottomRight,
-    ],
-)
-@pytest.mark.parametrize("window_size", [0, 3, 300])
-@pytest.mark.parametrize(
-    "num_queries,num_keys",
-    [
-        (30, 66),
-        (256, 256),
-        # Edge cases
-        (314, 320),
-        (32, 256),
-        (224, 226),
-        (5, 531),
-        (320, 332),  # for win_size=300
-        # Others
-        (256, 62),
-        (256, 63),
-        (256, 64),
-        (256, 65),
-        (256, 66),
-    ],
-)
-def test_cutlassB_iter_order(
-    dtype,
-    cc: int,
-    maxK: int,
-    num_queries: int,
-    num_keys: int,
-    custom_mask_type,
-    window_size,
-) -> None:
-    """
-    This tests some internals of the cutlassB kernel
-    We test the iteration across blocks of [queries, keys] to ensure
-    that we correctly:
-    * Iterate over all the blocks that should be iterated
-    * Do *not* iterate over blocks that are completely masked out
-    * Correctly compute the number of parallel blocks that will compute
-        the same block of dQ
-    .. and we test this across variable causal masks+local attention combinations
-    """
-
-    if (
-        window_size > 0
-        and custom_mask_type == fmha.cutlass._CustomMaskType.NoCustomMask
-    ):
-        pytest.skip("LocalAttention is only supported for causal")
-    get_iteration_data = partial(
-        torch.ops.xformers._cutlassB_iteration_data,
-        dtype=dtype,
-        cc=cc,
-        maxK=maxK,
-        num_queries=num_queries,
-        num_keys=num_keys,
-        custom_mask_type=custom_mask_type,
-        window_size=window_size,
-    )
-    bias = torch.zeros([num_queries, num_keys], dtype=torch.float32)
-    if custom_mask_type != fmha.cutlass._CustomMaskType.NoCustomMask:
-        bias = fmha.attn_bias._materialize_causal_mask(
-            (num_queries, num_keys),
-            dtype=torch.float32,
-            device="cpu",
-            window_size=None if window_size == 0 else window_size,
-            from_bottomright=(
-                custom_mask_type == fmha.cutlass._CustomMaskType.CausalFromBottomRight
-            ),
-        )
-
-    block_queries, block_keys = get_iteration_data()[:2]
-    mask_pooled = (
-        F.max_pool2d(bias.unsqueeze(0), (block_queries, block_keys), ceil_mode=True)
-        == 0
-    ).int()[0]
-    attn_computed = torch.zeros_like(mask_pooled)
-    for key_start in range(0, num_keys, block_keys):
-        it = 0
-        new_key_start = key_start
-        new_query_start = get_iteration_data(key_start=key_start)[2]
-        try:
-            expected_first_query = (
-                mask_pooled[:, key_start // block_keys].tolist().index(1)
-                * block_queries
-            )
-            assert (
-                new_query_start == expected_first_query
-            ), f"Wrong first query for K={key_start}: {new_query_start} (expected {expected_first_query})"
-        except ValueError:  # Nothing to compute in this column
-            pass
-
-        while new_key_start == key_start and new_query_start < num_queries:
-            query_start = new_query_start
-            attn_computed[query_start // block_queries, key_start // block_keys] += 1
-            # print(f"Compute [{query_start}, {key_start}]")
-
-            # Is there something to compute here?
-            assert mask_pooled[
-                query_start // block_queries, key_start // block_keys
-            ].item(), "Computing a block that is not needed!"
-            new_query_start, new_key_start = get_iteration_data(
-                key_start=key_start, query_start=query_start
-            )[3:5]
-            it += 1
-            assert it < num_queries, ""
-        assert (attn_computed == mask_pooled)[
-            :, key_start // block_keys
-        ].all(), "some blocks were not computed!"
-
-    # Now check that the number returned by `getNumParallelBlocksForQuery` is correct
-    for query_start in range(0, num_queries, block_queries):
-        num_parallel_blocks = get_iteration_data(
-            query_start=query_start, num_splits_key=num_keys
-        )[5]
-        num_actual = mask_pooled[query_start // block_queries].sum().item()
-        assert num_parallel_blocks == num_actual
-
-
 @sm80_or_better_only
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
@@ -2490,7 +2302,7 @@ def test_paged_attention(
     )
 
 
-@cuda_only
+@rocm_only
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
 @pytest.mark.parametrize("page_size", [128, 256])

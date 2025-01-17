@@ -158,7 +158,16 @@ def get_hip_version(rocm_dir) -> Optional[str]:
     return None
 
 
-def get_flash_attention_nvcc_archs_flags(cuda_version: int):
+######################################
+# FLASH-ATTENTION v2
+######################################
+# Supports `9.0`, `9.0+PTX`, `9.0a+PTX` etc...
+PARSE_CUDA_ARCH_RE = re.compile(
+    r"(?P<major>[0-9]+)\.(?P<minor>[0-9])(?P<suffix>[a-zA-Z]{0,1})(?P<ptx>\+PTX){0,1}"
+)
+
+
+def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
     # XXX: Not supported on windows for cuda<12
     # https://github.com/Dao-AILab/flash-attention/issues/345
     if platform.system() != "Linux" and cuda_version < 1200:
@@ -177,10 +186,6 @@ def get_flash_attention_nvcc_archs_flags(cuda_version: int):
     if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
 
-    # Supports `9.0`, `9.0+PTX`, `9.0a+PTX` etc...
-    PARSE_CUDA_ARCH_RE = re.compile(
-        r"(?P<major>[0-9]+)\.(?P<minor>[0-9])(?P<suffix>[a-zA-Z]{0,1})(?P<ptx>\+PTX){0,1}"
-    )
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
     nvcc_archs_flags = []
     for arch in archs_list.replace(" ", ";").split(";"):
@@ -205,8 +210,8 @@ def get_flash_attention_nvcc_archs_flags(cuda_version: int):
     return nvcc_archs_flags
 
 
-def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
-    nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
+def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
+    nvcc_archs_flags = get_flash_attention2_nvcc_archs_flags(cuda_version)
 
     if not nvcc_archs_flags:
         return []
@@ -254,6 +259,101 @@ def get_flash_attention_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "csrc" / "flash_attn",
                     Path(flash_root) / "csrc" / "flash_attn" / "src",
                     Path(flash_root) / "csrc" / "cutlass" / "include",
+                ]
+            ],
+        )
+    ]
+
+
+######################################
+# FLASH-ATTENTION v3
+######################################
+def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
+    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
+        return []
+    if platform.system() != "Linux" or cuda_version < 1203:
+        return []
+    archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
+    if archs_list is None:
+        if torch.cuda.get_device_capability("cuda") != (9, 0):
+            return []
+        archs_list = "9.0a"
+    nvcc_archs_flags = []
+    for arch in archs_list.replace(" ", ";").split(";"):
+        match = PARSE_CUDA_ARCH_RE.match(arch)
+        assert match is not None, f"Invalid sm version: {arch}"
+        num = 10 * int(match.group("major")) + int(match.group("minor"))
+        if num != 90:  # only support Sm90
+            continue
+        suffix = match.group("suffix")
+        nvcc_archs_flags.append(
+            f"-gencode=arch=compute_{num}{suffix},code=sm_{num}{suffix}"
+        )
+        if match.group("ptx") is not None:
+            nvcc_archs_flags.append(
+                f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
+            )
+    return nvcc_archs_flags
+
+
+def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
+    nvcc_archs_flags = get_flash_attention3_nvcc_archs_flags(cuda_version)
+
+    if not nvcc_archs_flags:
+        return []
+
+    flash_root = os.path.join(this_dir, "third_party", "flash-attention")
+    cutlass_inc = os.path.join(flash_root, "csrc", "cutlass", "include")
+    if not os.path.exists(flash_root) or not os.path.exists(cutlass_inc):
+        raise RuntimeError(
+            "flashattention submodule not found. Did you forget "
+            "to run `git submodule update --init --recursive` ?"
+        )
+
+    sources = [
+        str(Path(f).relative_to(flash_root))
+        for f in glob.glob(os.path.join(flash_root, "hopper", "*.cu"))
+        + glob.glob(os.path.join(flash_root, "hopper", "*.cpp"))
+    ]
+    sources = [s for s in sources if "flash_bwd_hdim256_fp16_sm90.cu" not in s]
+    return [
+        CUDAExtension(
+            name="xformers._C_flashattention3",
+            sources=[os.path.join(flash_root, path) for path in sources],
+            extra_compile_args={
+                "cxx": extra_compile_args.get("cxx", []),
+                "nvcc": extra_compile_args.get("nvcc", [])
+                + [
+                    "-O3",
+                    # "-O0",
+                    "-std=c++17",
+                    "-U__CUDA_NO_HALF_OPERATORS__",
+                    "-U__CUDA_NO_HALF_CONVERSIONS__",
+                    "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+                    "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+                    "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
+                    "--expt-relaxed-constexpr",
+                    "--expt-extended-lambda",
+                    "--use_fast_math",
+                    # "--ptxas-options=-v",  # printing out number of registers
+                    "--ptxas-options=--verbose,--register-usage-level=10,--warn-on-local-memory-usage",
+                    # "-lineinfo", # xformers: save binary size
+                    "-DCUTLASS_DEBUG_TRACE_LEVEL=0",  # Can toggle for debugging
+                    "-DNDEBUG",  # Important, otherwise performance is severely impacted
+                    "-DQBLKSIZE=128",
+                    "-DKBLKSIZE=128",
+                    "-DCTA256",
+                    "-DDQINRMEM",
+                ]
+                + nvcc_archs_flags
+                + get_extra_nvcc_flags_for_build_type(cuda_version),
+            },
+            include_dirs=[
+                p.absolute()
+                for p in [
+                    Path(flash_root) / "csrc" / "cutlass" / "include",
+                    Path(flash_root) / "hopper",
                 ]
             ],
         )
@@ -339,7 +439,11 @@ def get_extensions():
     use_pt_flash = False
 
     if (
-        (torch.cuda.is_available() and ((CUDA_HOME is not None)))
+        (
+            torch.cuda.is_available()
+            and (CUDA_HOME is not None)
+            and (torch.version.cuda is not None)
+        )
         or os.getenv("FORCE_CUDA", "0") == "1"
         or os.getenv("TORCH_CUDA_ARCH_LIST", "") != ""
     ):
@@ -381,11 +485,11 @@ def get_extensions():
             ]
         extra_compile_args["nvcc"] = nvcc_flags
 
-        flash_extensions = []
         xformers_pt_flash_attn = os.getenv("XFORMERS_PT_FLASH_ATTN")
 
         # check if the current device supports flash_attention
-        nvcc_archs_flags = get_flash_attention_nvcc_archs_flags(cuda_version)
+        flash_version = get_flash_version()
+        nvcc_archs_flags = get_flash_attention2_nvcc_archs_flags(cuda_version)
         if not nvcc_archs_flags:
             if xformers_pt_flash_attn == "1":
                 raise ValueError(
@@ -400,16 +504,12 @@ def get_extensions():
             ) and attn_compat_module.is_pt_flash_compatible(
                 force=xformers_pt_flash_attn == "1"
             ):
-                flash_version = torch.nn.attention._get_flash_version() + "-pt"
                 use_pt_flash = True
             else:
-                flash_extensions = get_flash_attention_extensions(
+                ext_modules += get_flash_attention2_extensions(
                     cuda_version=cuda_version, extra_compile_args=extra_compile_args
                 )
-                if flash_extensions:
-                    flash_version = get_flash_version()
-
-        ext_modules += flash_extensions
+        ext_modules += get_flash_attention3_extensions(cuda_version, extra_compile_args)
 
         # NOTE: This should not be applied to Flash-Attention
         # see https://github.com/Dao-AILab/flash-attention/issues/359
@@ -597,7 +697,7 @@ if __name__ == "__main__":
             "clean": clean,
         },
         url="https://facebookresearch.github.io/xformers/",
-        python_requires=">=3.7",
+        python_requires=">=3.9",
         author="Facebook AI Research",
         author_email="oncall+xformers@xmail.facebook.com",
         long_description="XFormers: A collection of composable Transformer building blocks."
@@ -605,10 +705,10 @@ if __name__ == "__main__":
         + "defined as compatible and combined building blocks as opposed to monolithic models",
         long_description_content_type="text/markdown",
         classifiers=[
-            "Programming Language :: Python :: 3.7",
-            "Programming Language :: Python :: 3.8",
             "Programming Language :: Python :: 3.9",
             "Programming Language :: Python :: 3.10",
+            "Programming Language :: Python :: 3.11",
+            "Programming Language :: Python :: 3.12",
             "License :: OSI Approved :: BSD License",
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
             "Operating System :: OS Independent",

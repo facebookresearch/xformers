@@ -6,7 +6,7 @@ on:
       - develop
   pull_request:
     paths:
-      - "packaging/compute_wheel_version.sh"
+      - ".github/compute_wheel_version.py"
       - ".github/workflows/rocm_build.yml"
       - ".github/workflows/wheels_build.yml"
       - "setup.py"
@@ -19,7 +19,7 @@ jobs:
   build:
     strategy:
       fail-fast: false
-      matrix: 
+      matrix:
         os: ['ubuntu-alola']
         python: ['3.11']
         torch_version: ['2.5.1']

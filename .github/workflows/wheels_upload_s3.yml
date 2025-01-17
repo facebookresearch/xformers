@@ -54,7 +54,7 @@ jobs:
           sudo rm -rf /usr/local/lib/android || true
           sudo rm -rf /usr/share/dotnet || true
 
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           path: dist
       # Filter builds (eg vN+cu118 for instance)
