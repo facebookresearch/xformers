@@ -441,8 +441,6 @@ def get_extensions():
         ]
 
         generator_flag = []
-        # build (head dimension = 512) instances
-        generator_flag += ["-DFMHA_LIMIT_MAX_HEADDIM_TO_256=0"]
 
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
