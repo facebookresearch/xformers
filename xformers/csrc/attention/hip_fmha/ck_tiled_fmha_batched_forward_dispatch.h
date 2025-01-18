@@ -89,8 +89,10 @@ struct batched_forward_mask_bias_dropout_dispatch {
           using FmhaPipelineProblem =
               FmhaPipelineProblemTemp<FmhaFwdTraits_, FmhaMask>;
 
-          using FmhaFwdPipeline_ =
-              ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+          using FmhaFwdPipeline_ = std::conditional_t<
+              MaxK <= 256,
+              ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>,
+              ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
 
           using FmhaFwdEpilogue_ =
               ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<

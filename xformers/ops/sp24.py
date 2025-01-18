@@ -4,12 +4,10 @@
 # LICENSE file in the root directory of this source tree.
 
 import contextlib
-import ctypes
-import glob
-import warnings
+import os
+import time
 from functools import partial
-from pathlib import Path
-from typing import Any, Callable, Optional, Tuple, TypeVar, cast
+from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, cast
 
 import torch
 
@@ -44,36 +42,27 @@ class Sp24Gemm(BaseOperator):
     NAME = "_sparse24_gemm"
 
 
-def _get_cusparselt_lib() -> Optional[str]:
-    libs = glob.glob(
-        str(Path(torch._C.__file__).parent / "lib" / "libcusparseLt*.so.0")
-    )
-    if len(libs) != 1:
-        return None
-    return libs[0]
-
-
 def _get_cusparselt_torch_version() -> Tuple[int, int, int]:
     """
-    Returns the version of the cusparselt.so library that ships with pytorch 2.2+
+    Returns the version of the cusparselt.so library used by pytorch
     """
-    lib_path = _get_cusparselt_lib()
-    if lib_path is None:
+    if not torch.backends.cusparselt.is_available():
         return (0, 0, 0)
-    lib = ctypes.CDLL(lib_path)
-
-    def get_version_part(version_part: int) -> int:
-        value = ctypes.c_int()
-        ret = lib.cusparseLtGetProperty(version_part, ctypes.byref(value))
-        if ret != 0:
-            return -1
-        return value.value
-
-    return (get_version_part(0), get_version_part(1), get_version_part(2))
+    version: Optional[int] = torch.backends.cusparselt.version()
+    if version is None:
+        return (0, 0, 0)
+    return ((version // 10000) % 100, (version // 100) % 100, version % 100)
 
 
 _cusplt_version = _get_cusparselt_torch_version()
 _cusplt_version_str = ".".join(str(v) for v in _cusplt_version)
+
+
+@register_operator
+class Sp24GemmCuspltSearch(BaseOperator):
+    OPERATOR = get_operator("aten", "_cslt_sparse_mm_search")
+    OPERATOR_CATEGORY = "sp24"
+    NAME = f"_cslt_sparse_mm_search@{_cusplt_version_str}"
 
 
 @register_operator
@@ -84,17 +73,9 @@ class Sp24GemmCusplt(BaseOperator):
 
 
 def _has_cusparseLt() -> bool:
-    available = _cusplt_version >= (0, 4, 0)
+    available = _cusplt_version >= (0, 5, 0)
     if not available:
         return False
-    if _cusplt_version < (0, 5, 0):
-        # Version 0.5.0 has much better perf because it can fuse the
-        # transpose within the GEMM epilogue
-        warnings.warn(
-            f"You have cusparseLt version {_cusplt_version_str} "
-            f"but you get better performance with v0.5.0+ if "
-            f"you replace the .so file ({_get_cusparselt_lib()})"
-        )
 
     # Sm90 added in 6.0
     compute_capability = (0, 0)
@@ -368,7 +349,9 @@ class Sparse24Tensor(torch.Tensor):
         return self.__slots__, (self.shape, self.requires_grad)
 
     @classmethod
-    def __tensor_unflatten__(cls, inner_tensors, flatten_spec):
+    def __tensor_unflatten__(
+        cls, inner_tensors, flatten_spec, outer_size, outer_stride
+    ):
         shape, requires_grad = flatten_spec
         return cls(
             shape,
@@ -417,6 +400,97 @@ class Sparse24TensorCutlass(Sparse24Tensor):
         )
 
 
+_CUSPLT_ALG_CACHE: Dict[Tuple[int, int, int, str, torch.dtype, bool], int] = {}
+_CUSPLT_TUNE = os.environ.get("XFORMERS_CUSPARSELT_TUNE", "1") == "1"
+
+
+def _cusplt_find_alg(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> int:
+    """
+    cuSPARSELt has multiple algorithms (that correspond to different kernels)
+    to run a given GEMM, because the optimal kernel depends on the GEMM dimensions.
+    This function attempts to find the most efficient one by benchmarking all
+    of them.
+    NOTE: cuSPARSELt also provides a function to search the best algorithm
+    (exposed via `aten:_cslt_sparse_mm_search`) but it often fails to find the best
+    algorithm, so we need this workaround.
+    """
+    if not _CUSPLT_TUNE:
+        return 0
+    M, K = shape
+    N = B.shape[1]
+    fmt = "r"
+    fmt += "r" if B.stride(-1) <= 1 else "c"
+    fmt += "c" if transpose_result else "r"
+    h = (M, N, K, fmt, B.dtype, bias is not None)
+    if h in _CUSPLT_ALG_CACHE:
+        return _CUSPLT_ALG_CACHE[h]
+
+    REPEAT = 10
+    TIME_ALGO = []
+    for algo in range(70):
+        has_error = False
+        for i in range(REPEAT):
+            try:
+                Sp24GemmCusplt.OPERATOR(
+                    packed, B, bias=bias, transpose_result=transpose_result, alg_id=algo
+                )
+            except RuntimeError:
+                has_error = True
+                break
+            if i == 1:  # 1 iteration of warmup
+                torch.cuda.synchronize()
+                t = time.monotonic()
+        if has_error:
+            break
+        torch.cuda.synchronize()
+        dt = time.monotonic() - t
+        TIME_ALGO.append((dt, algo))
+    TIME_ALGO.sort()
+    _CUSPLT_ALG_CACHE[h] = TIME_ALGO[0][1]
+    return _CUSPLT_ALG_CACHE[h]
+
+
+@torch.library.custom_op("xformers::_cusplt_mm", mutates_args=(), device_types=["cuda"])
+def _cusplt_mm(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> torch.Tensor:
+    """
+    This operator wraps find_algo + gemm. This is because we don't want find_algo
+    to be visible by torch compile, otherwise it will remove it from the graph.
+    """
+    alg_id = _cusplt_find_alg(
+        shape, packed, B, bias=bias, transpose_result=transpose_result
+    )
+    return Sp24GemmCusplt.OPERATOR(
+        packed, B, bias=bias, transpose_result=transpose_result, alg_id=alg_id
+    )
+
+
+@torch.library.register_fake("xformers::_cusplt_mm")
+def _cusplt_mm_meta(
+    shape: List[int],
+    packed: torch.Tensor,
+    B: torch.Tensor,
+    bias: Optional[torch.Tensor],
+    transpose_result: bool,
+) -> torch.Tensor:
+    M, K = shape
+    N = B.shape[1]
+    if transpose_result:
+        return torch.empty([N, M], dtype=B.dtype, device=B.device)
+    return torch.empty([M, N], dtype=B.dtype, device=B.device)
+
+
 class Sparse24TensorCuSparseLt(Sparse24Tensor):
     def _mm(
         self,
@@ -456,8 +530,12 @@ class Sparse24TensorCuSparseLt(Sparse24Tensor):
                 "This operation is only supported when A, B and C have the same data type."
             )
         assert _has_cusparseLt()
-        out = Sp24GemmCusplt.OPERATOR(
-            self.packed, B, bias=bias, transpose_result=prefer_col_major_output
+        out = torch.ops.xformers._cusplt_mm(
+            self.shape,
+            self.packed,
+            B,
+            bias=bias,
+            transpose_result=prefer_col_major_output,
         )
         if prefer_col_major_output:
             out = out.t()

@@ -32,9 +32,11 @@ parametrize_dtype = pytest.mark.parametrize(
 )
 parametrize_backend = pytest.mark.parametrize(
     "backend",
-    [sp24.BACKEND_CUTLASS, sp24.BACKEND_CUSPARSELT]
-    if sp24._has_cusparseLt()
-    else [sp24.BACKEND_CUTLASS],
+    (
+        [sp24.BACKEND_CUTLASS, sp24.BACKEND_CUSPARSELT]
+        if sp24._has_cusparseLt()
+        else [sp24.BACKEND_CUTLASS]
+    ),
 )
 
 atol_rtol_kw = {
@@ -1004,3 +1006,40 @@ def test_sparsify24_ste(dtype):
     spYd = sp24.sparsify24_like(y, pattern=spX)._sp24_to_dense()
     ref = mul1 * (spYd) + mul0 * (y - spYd)
     assert_allclose(x.grad, ref, "grad")
+
+
+class _Sp24X(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        xs = sp24.sparsify24(x, backend="cusparselt", algo="largest_values_greedy")
+        ctx.threads_masks = xs.threads_masks
+        ctx.meta = xs.meta.clone()
+        ctx.meta_t = xs.meta_t.clone()
+        return xs
+
+    @staticmethod
+    def backward(ctx, x):
+        packed, meta, packed_t, meta_t = sp24.SparsifyApply.OPERATOR(
+            x, ctx.threads_masks, backend="cusparselt"
+        )
+        meta.copy_(ctx.meta)
+        meta_t.copy_(ctx.meta_t)
+        return sp24.Sparse24TensorCuSparseLt(
+            x.shape,
+            packed,
+            meta,
+            packed_t,
+            meta_t,
+            ctx.threads_masks,
+            requires_grad=False,
+        )
+
+
+@requires_sp24_gemm
+@pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
+def test_compile_unflatten():
+    x = torch.randn(
+        [1024, 1024], device="cuda", dtype=torch.float16, requires_grad=True
+    )
+    fnc = torch.compile(_Sp24X.apply)
+    fnc(x)

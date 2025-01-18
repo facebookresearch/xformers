@@ -62,8 +62,8 @@ try:
             )
 
             FLASH_VERSION = flash_attn.__version__
-            FLASH_VER_MIN = (2, 6, 3)
-            FLASH_VER_LAST = (2, 6, 3)  # last supported, inclusive
+            FLASH_VER_MIN = (2, 7, 1)
+            FLASH_VER_LAST = (2, 7, 2)  # last supported, inclusive
             flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
             if (
                 flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
@@ -79,6 +79,7 @@ try:
                 raise
             assert is_pt_flash_compatible(force=True)
             FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
+            FLASH_VERSION = f"v{FLASH_VERSION}"
             VARLEN_LSE_PACKED = False
             _USE_PT_FLASH_ATTN = True
 
@@ -135,16 +136,7 @@ try:
             if cu_seqlens_q is None:
                 assert cu_seqlens_k is None
                 assert seqused_k is None
-                (
-                    out,
-                    q_padded,
-                    k_padded,
-                    v_padded,
-                    out_padded,
-                    softmax_lse,
-                    p,
-                    rng_state,
-                ) = _C_flashattention.fwd(
+                out, softmax_lse, p, rng_state = _C_flashattention.fwd(
                     query,
                     key,
                     value,
@@ -160,16 +152,7 @@ try:
                     None,  # rng
                 )
             else:
-                (
-                    out,
-                    q_padded,
-                    k_padded,
-                    v_padded,
-                    out_padded,
-                    softmax_lse,
-                    p,
-                    rng_state,
-                ) = _C_flashattention.varlen_fwd(
+                out, softmax_lse, p, rng_state = _C_flashattention.varlen_fwd(
                     query,
                     key,
                     value,
@@ -551,6 +534,7 @@ def _post_process_lse(
     lse: torch.Tensor,
     inp: Inputs,
     original_query_shape: Tuple[int, ...],
+    varlen_lse_packed: bool = VARLEN_LSE_PACKED,
 ) -> torch.Tensor:
     # Easy case: no varlen
     if not isinstance(inp.attn_bias, VARLEN_BIASES):
@@ -560,7 +544,7 @@ def _post_process_lse(
         return lse
 
     # Already packed: just bring back the batch dimension
-    if VARLEN_LSE_PACKED:
+    if varlen_lse_packed:
         if len(original_query_shape) == 5:
             # (1, G, H, total_q)
             return lse.unflatten(0, original_query_shape[2:4]).unsqueeze(0)

@@ -27,17 +27,13 @@ jobs:
       fail-fast: false
       matrix:
         gpu:
-          - runner: "h100"
+          - runner: "h100-256GB"
             sm: "9.0a"
           - runner: "4-core-ubuntu-gpu-t4"
             sm: "7.5"
-        pytorch:
-          - channel: pytorch-nightly
-            cuda: 12.1
-            version: 2
         python: [3.11]
 
-    name: test_sm${{ matrix.gpu.sm }}_cu${{ matrix.pytorch.cuda }}
+    name: test_sm${{ matrix.gpu.sm }}
     runs-on: ${{ matrix.gpu.runner }}
 
     timeout-minutes: 360
@@ -50,6 +46,7 @@ jobs:
         with:
           submodules: recursive
           path: "."
+          fetch-depth: 0 # We need commits history as well
       - run: nvidia-smi
       - name: Install micromamba
         run: |
@@ -62,21 +59,32 @@ jobs:
           set -ex
           micromamba config set channel_priority strict
           micromamba create -n env python=${{ matrix.python }} \
-            zlib pip ninja pytorch=${{ matrix.pytorch.version }} ccache=4.8 pytorch-mutex==1.0=cuda pytorch-cuda=${{ matrix.pytorch.cuda }} \
-            cuda-libraries-dev cuda-nvcc \
-            -c nvidia -c ${{ matrix.pytorch.channel }} -c conda-forge -q -y
+            zlib pip ninja ccache=4.8 cuda-toolkit \
+            -c "nvidia/label/cuda-12.6" -c conda-forge -q -y
       - name: Activate environment
         shell: bash -l {0}
         run: |
           echo "micromamba activate env" >> ~/.profile
           echo "==== .profile ====="
           cat ~/.profile
+      - name: Selective build/tests
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install -r .github/selective_ci/requirements.txt
+          python .github/selective_ci/selective_ci.py
       - name: Setup test requirements
         run: |
           which python
+          which nvcc
+          pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
           pip install -r requirements-test.txt --progress-bar off
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python setup.py develop
       - run: python -m xformers.info
+      - name: xFormers import should not init cuda context
+        run: |
+          # NOTE: we check GPU version by default to determine if triton should be used
+          # and this initializes CUDA context, unless we set `XFORMERS_ENABLE_TRITON`
+          XFORMERS_ENABLE_TRITON=1 python -c "import xformers; import xformers.ops; import torch; assert not torch.cuda.is_initialized()"
       - name: Unit tests
         run: |
           python -m pytest --verbose --random-order-bucket=global --maxfail=20 --junitxml=test-results/junit.xml --cov-report=xml --cov=./ tests

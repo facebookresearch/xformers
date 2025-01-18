@@ -354,18 +354,8 @@ def create_backward_instances_ref(instance_dir: Path, headdims: List) -> None:
 
 
 if __name__ == "__main__":
-    disable_hd512 = False
-
-    for arg in sys.argv:
-        if arg == "--ignore-hd512":
-            disable_hd512 = True
-
-    if disable_hd512:
-        headdims_fwd = [32, 64, 96, 128, 256]
-        headdims_bwd = [32, 64, 96, 128, 256]
-    else:
-        headdims_fwd = [32, 64, 96, 128, 256, 512]
-        headdims_bwd = [32, 64, 96, 128, 256]
+    headdims_fwd = [32, 64, 96, 128, 256, 512]
+    headdims_bwd = [32, 64, 96, 128, 256]
 
     this_dir = os.path.dirname(__file__)
     output_dir = Path(this_dir) / "instances"

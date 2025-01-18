@@ -38,14 +38,12 @@ std::tuple<at::Tensor, at::Tensor> silu_bw_fused(
 }
 std::tuple<at::Tensor, at::Tensor> gemm_fused_operand_sum(
     const at::Tensor& a,
-    const at::Tensor& b,
-    at::Tensor& out_mm,
-    at::Tensor& out_sum) {
+    const at::Tensor& b) {
   static auto op =
       c10::Dispatcher::singleton()
           .findSchemaOrThrow("xformers::gemm_fused_operand_sum", "")
           .typed<decltype(gemm_fused_operand_sum)>();
-  return op.call(a, b, out_mm, out_sum);
+  return op.call(a, b);
 }
 
 bool shapesMatch(at::Tensor x, std::vector<int64_t> expectedShape) {
@@ -101,22 +99,21 @@ class SwiGLUPackedWeights
     auto x5 = torch::nn::functional::linear(
         x4, w3, b3.has_value() ? b3.value() : at::Tensor());
 
-    if (ctx != nullptr) {
-      ctx->save_for_backward({x, w1w2, w3, x1, x2});
-      ctx->saved_data["has_b1b2"] = b1b2.has_value();
-      ctx->saved_data["has_b3"] = b3.has_value();
-    }
+    ctx->save_for_backward({x, w1w2, w3, x1, x2});
+    ctx->saved_data["has_b1b2"] = b1b2.has_value();
+    ctx->saved_data["has_b3"] = b3.has_value();
+
     return x5;
   }
 
   static torch::autograd::variable_list backward(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_outputs) {
+    auto saved = ctx->get_saved_variables();
     at::AutoDispatchBelowADInplaceOrView g;
 
     // Unpack variables
     auto dx5 = grad_outputs[0];
-    auto saved = ctx->get_saved_variables();
     auto x = saved[0];
     auto w1w2 = saved[1];
     auto w3 = saved[2];
@@ -148,10 +145,8 @@ class SwiGLUPackedWeights
     at::Tensor db3, dw3;
 
     if (has_b3) {
-      db3 = torch::empty({O}, w3.options());
-      dw3 = torch::empty({O, H}, w3.options());
       TORCH_INTERNAL_ASSERT(dx5.size(0) == x4.size(0));
-      gemm_fused_operand_sum(dx5.transpose(-2, -1), x4, dw3, db3);
+      std::tie(dw3, db3) = gemm_fused_operand_sum(dx5.transpose(-2, -1), x4);
     } else {
       dw3 = torch::mm(dx5.transpose(-2, -1), x4);
     }
@@ -168,9 +163,8 @@ class SwiGLUPackedWeights
     // backward of linear1 + linear2 - packed
     at::Tensor dw1dw2, db1db2;
     if (has_b1b2) {
-      dw1dw2 = torch::empty({2 * H, I}, w1w2.options());
-      db1db2 = torch::empty({2 * H}, w1w2.options());
-      gemm_fused_operand_sum(dx1dx2.transpose(-2, -1), x, dw1dw2, db1db2);
+      std::tie(dw1dw2, db1db2) =
+          gemm_fused_operand_sum(dx1dx2.transpose(-2, -1), x);
       db1db2 = db1db2.view({2, H});
     } else {
       dw1dw2 = torch::mm(dx1dx2.transpose(-2, -1), x);
@@ -211,12 +205,7 @@ at::Tensor swiglu_packedw_cuda(
     const std::optional<at::Tensor> b1b2,
     const at::Tensor w3,
     const std::optional<at::Tensor> b3) {
-  if (x.requires_grad()) {
-    return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
-  } else {
-    return SwiGLUPackedWeights::forward(
-        /* ctx */ nullptr, x, w1w2, b1b2, w3, b3);
-  }
+  return SwiGLUPackedWeights::apply(x, w1w2, b1b2, w3, b3);
 }
 } // namespace
 

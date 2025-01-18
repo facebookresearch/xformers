@@ -11,7 +11,6 @@ from typing import Tuple
 import pytest
 import torch
 
-from xformers import _is_triton_available
 from xformers.ops import fused_allgather_and_linear, fused_linear_and_reducescatter
 
 from .multiprocessing_utils import launch_subprocesses
@@ -30,17 +29,6 @@ at_least_2_gpus = pytest.mark.skipif(
 )
 
 
-# We care about correctness, not performance, hence let's "disable" the
-# expensive autotuning by removing all configs except one (the first one).
-if _is_triton_available():
-    from xformers.ops._triton.sequence_parallel_fused_kernels import (
-        _xformers_seqpar_matmul_kernel,
-    )
-
-    while len(_xformers_seqpar_matmul_kernel.configs) > 1:
-        _xformers_seqpar_matmul_kernel.configs.pop()
-
-
 def compare_fused_and_non_fused_ops(
     my_rank: int,
     world_size: int,
@@ -48,7 +36,6 @@ def compare_fused_and_non_fused_ops(
     step: str,
     dims: Tuple[int, ...],
     dtype: torch.dtype,
-    triton: bool,
     compile: bool,
 ):
     batch_dims = dims[:-2]
@@ -86,7 +73,7 @@ def compare_fused_and_non_fused_ops(
             fused_allgather_and_linear, fullgraph=True, disable=not compile
         )
         output_fused = fused_allgather_and_linear_compiled(
-            inputs[my_rank], weight, group=subgroup, _triton=triton
+            inputs[my_rank], weight, group=subgroup
         )
 
     elif step == "reduce-scatter":
@@ -122,7 +109,7 @@ def compare_fused_and_non_fused_ops(
             fused_linear_and_reducescatter, fullgraph=True, disable=not compile
         )
         output_fused = fused_linear_and_reducescatter_compiled(
-            inputs[my_rank], weights[my_rank], group=subgroup, _triton=triton
+            inputs[my_rank], weights[my_rank], group=subgroup
         )
 
     torch.testing.assert_close(output_reference, output_fused, atol=0, rtol=0)
@@ -140,11 +127,8 @@ def inner_sequence_parallel_fused(
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()
 
-    triton = True
     if kind == "fallback":
         os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
-    elif kind == "pytorch":
-        triton = False
 
     torch.random.manual_seed(seed)
     if use_compile:
@@ -160,7 +144,6 @@ def inner_sequence_parallel_fused(
         step=step,
         dims=dims,
         dtype=dtype,
-        triton=triton,
         compile=use_compile,
     )
 
@@ -168,7 +151,7 @@ def inner_sequence_parallel_fused(
 @cuda_sm70_only
 @pytest.mark.parametrize(
     "kind",
-    ["singleton", pytest.param("fallback", marks=at_least_2_gpus), "pytorch", "triton"],
+    ["singleton", pytest.param("fallback", marks=at_least_2_gpus), "pytorch"],
 )
 @pytest.mark.parametrize("step", ["all-gather", "reduce-scatter"])
 @pytest.mark.parametrize(
@@ -208,7 +191,7 @@ def test_sequence_parallel_fused(
     )
 
 
-def inner_sequence_parallel_fused_triton_handle_all_dtypes(
+def inner_sequence_parallel_fused_handle_all_dtypes(
     seed: int,
     step: str,
     dims: Tuple[int, ...],
@@ -227,7 +210,6 @@ def inner_sequence_parallel_fused_triton_handle_all_dtypes(
             step=step,
             dims=dims,
             dtype=dtype,
-            triton=True,
             compile=False,
         )
 
@@ -241,7 +223,7 @@ def inner_sequence_parallel_fused_triton_handle_all_dtypes(
         pytest.param((2, 1023, 511, 257), id="ugly-shapes"),
     ],
 )
-def test_sequence_parallel_fused_triton_handle_all_dtypes(
+def test_sequence_parallel_fused_handle_all_dtypes(
     step: str,
     dims: Tuple[int, ...],
 ):
@@ -249,7 +231,7 @@ def test_sequence_parallel_fused_triton_handle_all_dtypes(
     seed = random.getrandbits(32)
     launch_subprocesses(
         world_size,
-        inner_sequence_parallel_fused_triton_handle_all_dtypes,
+        inner_sequence_parallel_fused_handle_all_dtypes,
         seed=seed,
         step=step,
         dims=dims,

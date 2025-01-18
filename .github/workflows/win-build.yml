@@ -6,7 +6,7 @@ on:
       - "third_party/**"
       - "xformers/csrc/**"
       - ".github/workflows/win-build.yml"
-      - ".github/actions/setup-windows-runner/action.yml"
+      - ".github/actions/setup-build-cuda/action.yml"
       - "setup.py"
       - "requirements*.txt"
 
@@ -44,15 +44,22 @@ jobs:
           path: "."
 
       - name: Setup Runner
-        uses: ./.github/actions/setup-windows-runner
+        uses: ./.github/actions/setup-build-cuda
         with:
-          # (FAv2 requires cuda 12+)
-          cuda: "12.1.0"
-          python: "3.8"
+          toolkit_type: "cuda"
+          toolkit_short_version: "124"
+          python: "3.9"
+
+      - name: Remove internal code
+        run: |
+          mkdir -p .github/sync.fairinternal/
+          touch .github/sync.fairinternal/ossify.sh
+          chmod +x .github/sync.fairinternal/ossify.sh
+          .github/sync.fairinternal/ossify.sh
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.4.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+          $PY -m pip install wheel setuptools ninja torch==2.5.1 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"

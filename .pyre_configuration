@@ -1,6 +1,6 @@
 {
   "ignore_all_errors": ["xformers/benchmarks/", "xformers/_flash_attn"],
-  "python_version": "3.7",
+  "python_version": "3.9",
   "source_directories": [
     "stubs",
     {"import_root": ".", "source": "xformers"}

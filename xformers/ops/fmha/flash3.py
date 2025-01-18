@@ -7,6 +7,12 @@
 from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
 
 import torch
+from torch.utils.flop_counter import (
+    _flash_attention_backward_flop,
+    _unpack_flash_attention_nested_shapes,
+    bmm_flop,
+    register_flop_formula,
+)
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
@@ -50,6 +56,33 @@ except ImportError:
         # We end up here is arch is not 90a
         _C_flashattention3 = None
 
+
+# Copied from PyTorch, modified to support MQA/GQA.
+# No need to take care of this for the bwd because we don't "unexpand" the keys
+# and values (in the fwd we expand to help with the seqlen/headdim swap trick).
+def sdpa_flop_count(query_shape, key_shape, value_shape):
+    """
+    Count flops for self-attention.
+
+    NB: We can assume that value_shape == key_shape
+    """
+    b, h_q, s_q, d_q = query_shape
+    _b2, h_kv, s_k, _d2 = key_shape
+    _b3, _h2, _s3, d_v = value_shape
+    assert b == _b2 == _b3
+    assert h_kv == _h2
+    assert d_q == _d2
+    assert s_k == _s3
+    assert d_q == _d2
+    assert h_q % h_kv == 0
+    total_flops = 0
+    # q: [b, h, s_q, d_q] @ k: [b, h, d_q, s_k] -> scores: [b, h, s_q, s_k]
+    total_flops += bmm_flop((b * h_q, s_q, d_q), (b * h_q, d_q, s_k))
+    # scores: [b, h, s_q, s_k] @ v: [b, h, s_k, d_v] -> out: [b, h, s_q, d_v]
+    total_flops += bmm_flop((b * h_q, s_q, s_k), (b * h_q, s_k, d_v))
+    return total_flops
+
+
 if _C_flashattention3 is not None:
     # returns: out, q_padded, k_padded, v_padded, out_padded, softmax_lse, p
     @torch.library.custom_op(
@@ -67,8 +100,10 @@ if _C_flashattention3 is not None:
         p: float,
         softmax_scale: float,
         is_causal: bool,
-    ) -> Tuple[torch.Tensor, torch.Tensor,]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        win_left = win_right = -1
         if cu_seqlens_q is None:
+            use_gqa_packing = False
             assert cu_seqlens_k is None
             assert seqused_k is None
             (
@@ -80,9 +115,21 @@ if _C_flashattention3 is not None:
                 softmax_lse,
                 p,
             ) = _C_flashattention3.fwd(
-                query, key, value, None, softmax_scale, is_causal
+                query,
+                key,
+                value,
+                None,
+                softmax_scale,
+                None,
+                None,
+                None,
+                is_causal,
+                win_left,
+                win_right,
+                use_gqa_packing,
             )
         else:
+            seqused_q = block_table = None
             out, q, k, v, out_padded, softmax_lse = _C_flashattention3.varlen_fwd(
                 query,
                 key,
@@ -90,11 +137,15 @@ if _C_flashattention3 is not None:
                 None,
                 cu_seqlens_q,
                 cu_seqlens_k,
+                seqused_q,
                 seqused_k,
+                block_table,
                 max_seqlen_q,
                 max_seqlen_k,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
             )
         return out, softmax_lse
 
@@ -111,7 +162,7 @@ if _C_flashattention3 is not None:
         p: float,
         softmax_scale: float,
         is_causal: bool,
-    ) -> Tuple[torch.Tensor, torch.Tensor,]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         query_shape = query.shape
         out = query.new_empty(query_shape)
         # Query is (B, M, H, K) or (total_M, H, K)
@@ -123,6 +174,43 @@ if _C_flashattention3 is not None:
         )
         lse = query.new_empty(lse_shape, dtype=torch.float32)
         return out, lse
+
+    @register_flop_formula(torch.ops.xformers_flash3.flash_fwd, get_raw=True)
+    def mha_fwd_flops(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        cu_seqlens_q: torch.Tensor,
+        cu_seqlens_k: torch.Tensor,
+        seqused_k: torch.Tensor,
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+        p: float,
+        softmax_scale: float,
+        is_causal: bool,
+        # The FLOPs counter might pass more args (out_val, out_shape, ...)
+        *args,
+        **kwargs,
+    ):
+        assert 3 <= query.ndim <= 4
+        assert 3 <= key.ndim <= 4
+        assert 3 <= value.ndim <= 4
+        sizes = _unpack_flash_attention_nested_shapes(
+            query=query.transpose(-2, -3) if query.ndim == 4 else query,
+            key=key.transpose(-2, -3) if key.ndim == 4 else key,
+            value=value.transpose(-2, -3) if value.ndim == 4 else value,
+            cum_seq_q=cu_seqlens_q,
+            cum_seq_k=cu_seqlens_k,
+            max_q=max_seqlen_q,
+            max_k=max_seqlen_k,
+        )
+        res = sum(
+            sdpa_flop_count(query_shape, key_shape, value_shape)
+            for query_shape, key_shape, value_shape, _ in sizes
+        )
+        if is_causal:
+            res /= 2
+        return res
 
     def _create_dq_dk_dv(
         grads_share_storage: bool, query, key, value
@@ -157,6 +245,8 @@ if _C_flashattention3 is not None:
         softmax_scale: float,
         is_causal: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        win_left = win_right = -1
+        seqused_q = seqused_k = None
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         is_deterministic = False
         if cu_seqlens_q is None:
@@ -173,6 +263,8 @@ if _C_flashattention3 is not None:
                 dv,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
                 is_deterministic,
             )
         else:
@@ -188,10 +280,14 @@ if _C_flashattention3 is not None:
                 dv,
                 cu_seqlens_q,
                 cu_seqlens_k,
+                seqused_q,
+                seqused_k,
                 max_seqlen_q,
                 max_seqlen_k,
                 softmax_scale,
                 is_causal,
+                win_left,
+                win_right,
                 is_deterministic,
             )
         return dq, dk, dv
@@ -216,6 +312,45 @@ if _C_flashattention3 is not None:
         dk = torch.empty_like(key)
         dv = torch.empty_like(value)
         return dq, dk, dv
+
+    @register_flop_formula(torch.ops.xformers_flash3.flash_bwd, get_raw=True)
+    def mha_bwd_flops(
+        grads_share_storage: bool,
+        dout: torch.Tensor,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        out: torch.Tensor,
+        softmax_lse: torch.Tensor,
+        cu_seqlens_q: torch.Tensor,
+        cu_seqlens_k: torch.Tensor,
+        max_seqlen_q: int,
+        max_seqlen_k: int,
+        softmax_scale: float,
+        is_causal: bool,
+        # The FLOPs counter might pass more args (out_val, out_shape, ...)
+        *args,
+        **kwargs,
+    ):
+        assert 3 <= dout.ndim <= 4
+        assert 3 <= query.ndim <= 4
+        assert 3 <= key.ndim <= 4
+        assert 3 <= value.ndim <= 4
+        res = _flash_attention_backward_flop(
+            dout.transpose(-2, -3) if dout.ndim == 4 else dout,
+            query.transpose(-2, -3) if query.ndim == 4 else query,
+            key.transpose(-2, -3) if key.ndim == 4 else key,
+            value.transpose(-2, -3) if value.ndim == 4 else value,
+            out,
+            softmax_lse,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            max_seqlen_q,
+            max_seqlen_k,
+        )
+        if is_causal:
+            res /= 2
+        return res
 
 
 @register_operator
@@ -316,7 +451,9 @@ class FwOp(AttentionFwOpBase):
             return out, None
         ctx = Context(
             out=out,
-            lse=_post_process_lse(softmax_lse, inp, tuple(original_query_shape)),
+            lse=_post_process_lse(
+                softmax_lse, inp, tuple(original_query_shape), varlen_lse_packed=True
+            ),
         )
         return (out, ctx)
 

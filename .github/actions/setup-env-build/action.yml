@@ -11,12 +11,6 @@ inputs:
     description: 'CUDA version'
     required: false
     default: "11.8"
-  pytorch_version:
-    description: 'PyTorch version'
-    default: "2"
-  pytorch_channel:
-    description: 'PyTorch channel on conda'
-    default: "pytorch"
 
 runs:
   using: composite
@@ -34,15 +28,14 @@ runs:
         import datetime
         from pathlib import Path
 
-        CONDA_INSTALL_CMD = "micromamba create python=${{ inputs.python }} zlib pip ninja pytorch=${{ inputs.pytorch_version }} ccache=4.8 pytorch-mutex==1.0=cuda pytorch-cuda=${{ inputs.cuda }} -c ${{ inputs.pytorch_channel }} -c nvidia -c conda-forge -q -y"
+        CONDA_INSTALL_CMD = "micromamba create python=${{ inputs.python }} zlib pip ninja ccache=4.8 -c conda-forge -q -y"
 
         conda_env_key = CONDA_INSTALL_CMD
         for file in sorted(glob.glob("requirement*.txt")):
           conda_env_key += f"\n########## {file}\n"
           conda_env_key += Path(file).read_text()
-        if "${{ inputs.pytorch_channel }}" != "pytorch":
-          # Nightly or Test, update every week
-          conda_env_key += datetime.date.today().strftime("%Y-week%W") + "\n"
+        # Nightly or Test, update every week
+        conda_env_key += datetime.date.today().strftime("%Y-week%W") + "\n"
         conda_env_hash = hashlib.sha224(conda_env_key.encode("ascii")).hexdigest()[:8]
         shared_dir = os.environ.get("GHRUNNER_SHARED_DIR", os.getcwd())
         env_path = os.path.join(shared_dir, "tmp", os.environ["GITHUB_RUN_ID"])
@@ -93,6 +86,7 @@ runs:
         # Retry if failed after removing downloaded packages cache
         $CONDA_INSTALL_CMD || (rm -rf $CONDA_PKGS_DIRS && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
         $PY -m pip install cmake
+        $PY -m pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
         $PY -m pip install -r requirements-benchmark.txt --progress-bar off
     - name: Activate environment
       shell: bash -l {0}
@@ -107,7 +101,7 @@ runs:
       if: steps.prepare_conda_env_paths.outputs.ENV_CACHED == 0
       run: |
         echo "#!/bin/bash" > $CONDA_PREFIX/bin/nvcc-ccache
-        echo "ccache ${CUDA_HOME}/bin/nvcc \"\$@\"" >> $CONDA_PREFIX/bin/nvcc-ccache
+        echo "ccache nvcc \"\$@\"" >> $CONDA_PREFIX/bin/nvcc-ccache
         cat $CONDA_PREFIX/bin/nvcc-ccache
         chmod +x $CONDA_PREFIX/bin/nvcc-ccache
         which nvcc

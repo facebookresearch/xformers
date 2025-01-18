@@ -13,12 +13,15 @@
 #include <torch/library.h>
 
 #include <45_dual_gemm/device/dual_gemm.h>
-#include <45_dual_gemm/thread/left_silu_and_mul.h>
+#include "epilogue_lhs_activation_and_mul.h"
 
 namespace {
 
-template <typename scalar_t>
-std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
+template <typename T>
+using SiLu = cutlass::epilogue::thread::SiLu<T>;
+
+template <typename scalar_t, template <typename> typename ActivationFn>
+std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_lhs_activation_and_mul_(
     const at::Tensor& x,
     const at::Tensor& w0,
     const std::optional<at::Tensor>& b0,
@@ -59,9 +62,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
       ElementAccumulator,
       ElementCompute,
       cutlass::epilogue::thread::ScaleType::NoBetaScaling>;
-  using EpilogueOutputOp2 = cutlass::epilogue::thread::LeftSiLUAndMul<
+  using EpilogueOutputOp2 = EpilogueLHSActivationAndMul<
       ElementOutput,
       128 / cutlass::sizeof_bits<ElementOutput>::value,
+      ActivationFn,
       ElementOutput,
       ElementCompute>;
 
@@ -163,7 +167,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   cutlass::Status status = dual_gemm.can_implement(arguments);
   TORCH_CHECK(
       status == cutlass::Status::kSuccess,
-      "`dual_gemm_silu_identity_mul` does not support this input: ",
+      "`dual_gemm_lhs_activation_and_mul` does not support this input: ",
       cutlass::cutlassGetStatusString(status));
 
   status = dual_gemm.initialize(arguments, (uint8_t*)workspace.data_ptr());
@@ -174,7 +178,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul_(
   return std::make_tuple(d0, d1, d2);
 }
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
+template <template <typename> typename ActivationFn>
+std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_lhs_activation_and_mul(
     const at::Tensor& x,
     const at::Tensor& w0,
     const std::optional<at::Tensor>& b0,
@@ -187,16 +192,19 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> dual_gemm_silu_identity_mul(
 
 #define FWD_PARAMS x, w0, b0, w1, b1
   if (x.scalar_type() == at::ScalarType::Half) {
-    return dual_gemm_silu_identity_mul_<cutlass::half_t>(FWD_PARAMS);
+    return dual_gemm_lhs_activation_and_mul_<cutlass::half_t, ActivationFn>(
+        FWD_PARAMS);
   } else {
     TORCH_CHECK(
         x.scalar_type() == at::ScalarType::BFloat16, "Only supports bf16/f16");
-    return dual_gemm_silu_identity_mul_<cutlass::bfloat16_t>(FWD_PARAMS);
+    return dual_gemm_lhs_activation_and_mul_<cutlass::bfloat16_t, ActivationFn>(
+        FWD_PARAMS);
   }
 }
 
+template <template <typename> typename ActivationFn>
 std::tuple<at::Tensor, at::Tensor, at::Tensor>
-dual_gemm_silu_identity_mul_autocast(
+dual_gemm_lhs_activation_and_mul_autocast(
     const at::Tensor& x,
     const at::Tensor& w0,
     const std::optional<at::Tensor>& b0,
@@ -204,7 +212,7 @@ dual_gemm_silu_identity_mul_autocast(
     const std::optional<at::Tensor>& b1) {
   c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
   auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
-  return dual_gemm_silu_identity_mul(
+  return dual_gemm_lhs_activation_and_mul<ActivationFn>(
       at::autocast::cached_cast(exec_type, x),
       at::autocast::cached_cast(exec_type, w0),
       at::autocast::cached_cast(exec_type, b0),
@@ -217,11 +225,11 @@ dual_gemm_silu_identity_mul_autocast(
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
-      TORCH_FN(dual_gemm_silu_identity_mul));
+      TORCH_FN(dual_gemm_lhs_activation_and_mul<SiLu>));
 }
 
 TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::dual_gemm_silu_identity_mul"),
-      TORCH_FN(dual_gemm_silu_identity_mul_autocast));
+      TORCH_FN(dual_gemm_lhs_activation_and_mul_autocast<SiLu>));
 }
