@@ -174,10 +174,12 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
         return []
     # Figure out default archs to target
     DEFAULT_ARCHS_LIST = ""
-    if cuda_version >= 1108:
-        DEFAULT_ARCHS_LIST = "8.0;8.6;9.0"
+    if cuda_version >= 1208:
+        DEFAULT_ARCHS_LIST = "8.0;8.6;8.9;9.0;9.0a;100;120"
+    elif cuda_version >= 1108:
+        DEFAULT_ARCHS_LIST = "8.0;8.6;8.9;9.0;9.0a"
     elif cuda_version > 1100:
-        DEFAULT_ARCHS_LIST = "8.0;8.6"
+        DEFAULT_ARCHS_LIST = "8.0;8.6;8.9"
     elif cuda_version == 1100:
         DEFAULT_ARCHS_LIST = "8.0"
     else:
@@ -197,6 +199,9 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
             continue
         # Sm90 requires nvcc 11.8+
         if num >= 90 and cuda_version < 1108:
+            continue
+        # Sm100 and Sm120 requires nvcc 12.7+
+        if num >= 100 and cuda_version < 1207:
             continue
         suffix = match.group("suffix")
         nvcc_archs_flags.append(
@@ -283,7 +288,7 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         match = PARSE_CUDA_ARCH_RE.match(arch)
         assert match is not None, f"Invalid sm version: {arch}"
         num = 10 * int(match.group("major")) + int(match.group("minor"))
-        if num != 90:  # only support Sm90
+        if num not in (90, 100, 120):  # support Sm90, Sm100 and Sm120
             continue
         suffix = match.group("suffix")
         nvcc_archs_flags.append(
