@@ -9,6 +9,7 @@
 #include <cmath>
 #include <tuple>
 #include "ck_fmha_util.h"
+#include "ck_tiled_fmha_fwd_async_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"

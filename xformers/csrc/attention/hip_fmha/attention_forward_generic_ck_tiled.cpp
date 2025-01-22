@@ -243,8 +243,8 @@ efficient_attention_forward_ck(
     bool use_split_kv;
     int num_kv_splits;
 
-    std::tie(use_split_kv, num_kv_splits) =
-        get_num_kv_splits_heuristic(p.B, p.Hq, p.M, std::max(p.K, p.Kv), 8);
+    std::tie(use_split_kv, num_kv_splits) = get_num_kv_splits_heuristic(
+        p.compute_logsumexp, p.B, p.Hq, p.M, std::max(p.K, p.Kv), 8);
 
     // 1) fmha fwd split-kv kernel does not support dropout
     // 2) Don't use split-kv for fmha-fwd training path
@@ -395,7 +395,12 @@ efficient_attention_forward_ck(
 
     // added for support split_kv
     std::tie(use_split_kv, num_kv_splits) = get_num_kv_splits_heuristic(
-        p.num_batches, p.Hq, p.max_seqlen_q, std::max(p.K, p.Kv), 8);
+        p.compute_logsumexp,
+        p.num_batches,
+        p.Hq,
+        p.max_seqlen_q,
+        std::max(p.K, p.Kv),
+        8);
 
     // 1) fmha fwd split-kv kernel does not support dropout
     // 2) Paged-KVcache is only available from the split-kv kernel at present

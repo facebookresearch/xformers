@@ -26,10 +26,16 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MTile>
 struct batched_infer_mask_bias_dropout_dispatch {
-  using FmhaShape = std::conditional_t<
-      MaxK <= 256,
-      typename FmhaFwdAsyncShape<MaxK, MTile>::Type,
-      typename FmhaFwdShape<MaxK, MTile>::Type>;
+  static constexpr bool kUseAsyncPipeline = (MaxK <= 256 && !kHasDropout);
+
+  constexpr static auto get_fmha_shape_type() {
+    if constexpr (kUseAsyncPipeline)
+      return typename FmhaFwdAsyncShape<MaxK, MTile>::Type{};
+    else
+      return typename FmhaFwdShape<MaxK, MTile>::Type{};
+  };
+
+  using FmhaShape = decltype(get_fmha_shape_type());
 
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
@@ -52,8 +58,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
   static void Run(BatchedForwardParams& param, hipStream_t stream) {
     using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-    constexpr ck_tile::index_t occupancy =
-        (MaxK == 64) ? 3 : ((MaxK >= 256) ? 1 : 2);
+    constexpr ck_tile::index_t occupancy = -1;
 
     constexpr auto kBiasEnum = kHasBias
         ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
@@ -92,11 +97,6 @@ struct batched_infer_mask_bias_dropout_dispatch {
           using FmhaPipelineProblem =
               FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
-          using FmhaPipeline = std::conditional_t<
-              MaxK <= 256,
-              ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>,
-              ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>>;
-
           using FmhaEpilogue =
               ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                   typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
@@ -104,9 +104,21 @@ struct batched_infer_mask_bias_dropout_dispatch {
                   kPadSeqLenQ,
                   kPadHeadDim>>;
 
-          using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+          if constexpr (kUseAsyncPipeline) {
+            using FmhaPipeline =
+                ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
-          RunWithKernel<FmhaKernel>(param, stream);
+            RunWithKernel<FmhaKernel>(param, stream);
+          } else {
+            using FmhaPipeline =
+                ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+
+            RunWithKernel<FmhaKernel>(param, stream);
+          }
         });
   };
 

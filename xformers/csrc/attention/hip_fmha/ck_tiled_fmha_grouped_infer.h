@@ -52,14 +52,14 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
         // dimension > 256
       }
     } else {
-      auto mtile = [&](auto) {
+      const auto mtile = [&]() {
         if constexpr (MaxK <= 256)
           return get_fmha_fwd_async_mtile(
               param.num_batches, param.Hq, param.max_seqlen_q);
         else
           return get_fmha_fwd_mtile(
               param.num_batches, param.Hq, param.max_seqlen_q);
-      )();
+      }();
 
       if (mtile == 128)
         grouped_infer_mask_bias_dropout_dispatch<
@@ -77,16 +77,15 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
             kHasDropout,
             MaxK,
             64>::Run(param, stream);
-      }
     }
-    else {
-      // at present, dropout of fwd kernel requires 32x32 WarpTile
-      grouped_infer_mask_bias_dropout_dispatch<
-          ScalarType,
-          kHasMask,
-          kHasBias,
-          kHasDropout,
-          MaxK,
-          128>::Run(param, stream);
-    }
-  };
+  } else {
+    // at present, dropout of fwd kernel requires 32x32 WarpTile
+    grouped_infer_mask_bias_dropout_dispatch<
+        ScalarType,
+        kHasMask,
+        kHasBias,
+        kHasDropout,
+        MaxK,
+        128>::Run(param, stream);
+  }
+};
