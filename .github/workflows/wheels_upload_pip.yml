@@ -15,7 +15,7 @@ on:
       filter:
         required: true
         type: string
-        description: Filter which runs to upload. Example '*+cu121*'
+        description: Filter which runs to upload. Example '*+cu126*'
       execute:
         required: true
         type: boolean
@@ -38,7 +38,7 @@ jobs:
         shell: bash
     steps:
       - name: Recursive checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
           path: "."

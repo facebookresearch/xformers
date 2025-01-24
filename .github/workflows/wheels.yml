@@ -28,11 +28,11 @@ jobs:
         import itertools
         environ = os.environ
 
-        PY_VERSIONS = ['3.9', '3.10', '3.11', '3.12']
+        PY_VERSIONS = ['3.9', '3.10', '3.11', '3.12', '3.13']
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['118', '121', '124']
-        ROCM_VERSIONS = ["6.1"] # <- 6.0 broken in `manylinux_2_28`
+        CU_VERSIONS = ['118', '121', '124', '126' '128']
+        ROCM_VERSIONS = ['6.1', '6.2', '6.3'] # <- 6.0 broken in `manylinux_2_28`
         PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
         PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
         print("Full matrix PY_CU", PY_CU)
@@ -42,11 +42,11 @@ jobs:
           for cu in CU_VERSIONS[1:]:
             PY_CU.append((PY_VERSIONS[-1], cu))
           print("Limited matrix PY_CU", PY_CU)
-          PY_ROCM = [(PY_VERSIONS[-1], ROCM_VERSIONS[-1])]
+          PY_ROCM = [(PY_VERSIONS[-1], ROCM_VERSIONS[-2])] # last is beta version
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
-          for torch_version in ['2.5.1']:
+          for torch_version in ['2.6.0']:
             # CUDA builds
             for python, cuda_short_version in PY_CU:
               if cuda_short_version != "124" and "windows" in os:
@@ -96,7 +96,7 @@ jobs:
     uses: ./.github/workflows/wheels_upload_pip.yml
     with:
       twine_username: __token__
-      filter: "*torch2.5.1+cu121*"
+      filter: "*torch2.6.0+cu126*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
@@ -110,12 +110,14 @@ jobs:
           - cu118
           - cu121
           - cu124
+          - cu126
           - rocm6.1
+          - rocm6.2
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
       s3_path: s3://pytorch/whl/${{ matrix.suffix }}/
       aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.5.1+${{ matrix.suffix }}*"
+      filter: "*torch2.6.0+${{ matrix.suffix }}*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}
 
