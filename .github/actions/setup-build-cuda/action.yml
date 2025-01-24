@@ -23,7 +23,7 @@ runs:
         import sys
         print(sys.version)
         cushort = "${{ inputs.toolkit_short_version }}"
-        TORCH_CUDA_DEFAULT = "126"  # pytorch 2.4.1
+        TORCH_CUDA_DEFAULT = "126"  # pytorch 2.6.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
           "128": ("12.8.0", "https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run"),
