@@ -111,6 +111,13 @@ struct batched_infer_mask_bias_dropout_dispatch {
                 ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
             RunWithKernel<FmhaKernel>(param, stream);
+          } else if constexpr (MaxK <= 256) {
+            using FmhaPipeline =
+                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+
+            RunWithKernel<FmhaKernel>(param, stream);
           } else {
             using FmhaPipeline =
                 ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
