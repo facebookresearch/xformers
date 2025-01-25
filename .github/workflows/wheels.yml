@@ -32,7 +32,7 @@ jobs:
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
         CU_VERSIONS = ['118', '121', '124', '126' '128']
-        ROCM_VERSIONS = ['6.1', '6.2', '6.3'] # <- 6.0 broken in `manylinux_2_28`
+        ROCM_VERSIONS = ['6.1', '6.2', '6.3']
         PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
         PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
         print("Full matrix PY_CU", PY_CU)
