@@ -31,7 +31,7 @@ jobs:
         PY_VERSIONS = ['3.9', '3.10', '3.11', '3.12', '3.13']
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['118', '121', '124', '126', '128']
+        CU_VERSIONS = ['118', '124', '126', '128']
         ROCM_VERSIONS = ['6.1', '6.2', '6.3']
         PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
         PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
@@ -108,7 +108,6 @@ jobs:
       matrix:
         suffix:
           - cu118
-          - cu121
           - cu124
           - cu126
           - rocm6.1

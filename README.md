@@ -30,8 +30,6 @@ xFormers is:
 ```bash
 # [linux only] cuda 11.8 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
-# [linux only] cuda 12.1 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu121
 # [linux & win] cuda 12.4 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124
 # [linux & win] cuda 12.6 version
