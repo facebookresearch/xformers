@@ -27,7 +27,7 @@ template struct FmhaFwdAsyncBlockTile<32>;
 
 template <ck_tile::index_t MTile>
 struct FmhaFwdAsyncBlockTile<64, MTile> {
-  using type = ck_tile::sequence<128, 64, 32, 64, 32, 64>;
+  using type = ck_tile::sequence<128, 64, 16, 64, 32, 64>;
   using gemm0_warps = ck_tile::sequence<4, 1, 1>;
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
@@ -36,7 +36,7 @@ template struct FmhaFwdAsyncBlockTile<64>;
 
 template <ck_tile::index_t MTile>
 struct FmhaFwdAsyncBlockTile<96, MTile> {
-  using type = ck_tile::sequence<128, 64, 32, 128, 32, 96>;
+  using type = ck_tile::sequence<128, 64, 16, 128, 32, 96>;
   using gemm0_warps = ck_tile::sequence<4, 1, 1>;
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
@@ -45,7 +45,7 @@ template struct FmhaFwdAsyncBlockTile<96>;
 
 template <>
 struct FmhaFwdAsyncBlockTile<128, 64> {
-  using type = ck_tile::sequence<64, 64, 32, 128, 32, 128>;
+  using type = ck_tile::sequence<64, 128, 32, 128, 32, 128>;
   using gemm0_warps = ck_tile::sequence<4, 1, 1>;
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
@@ -59,7 +59,7 @@ struct FmhaFwdAsyncBlockTile<128, 128> {
 
 template <ck_tile::index_t MTile>
 struct FmhaFwdAsyncBlockTile<256, MTile> {
-  using type = ck_tile::sequence<128, 32, 32, 256, 32, 256>;
+  using type = ck_tile::sequence<64, 32, 32, 256, 16, 256>;
   using gemm0_warps = ck_tile::sequence<4, 1, 1>;
   using gemm1_warps = ck_tile::sequence<4, 1, 1>;
 };
@@ -141,9 +141,9 @@ struct FmhaFwdAsyncShape<256, MTile> {
   using Type = ck_tile::TileFmhaShape<
       typename FmhaFwdAsyncBlockTile<256>::type,
       typename FmhaFwdAsyncBlockTile<256>::gemm0_warps,
-      FmhaFwdAsyncWarpTile1,
+      FmhaFwdAsyncWarpTile2,
       typename FmhaFwdAsyncBlockTile<256>::gemm1_warps,
-      FmhaFwdAsyncWarpTile1,
+      FmhaFwdAsyncWarpTile2,
       IsVLayoutRowMajor>;
 };
 
