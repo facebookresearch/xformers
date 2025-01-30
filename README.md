@@ -34,8 +34,8 @@ pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu124
 # [linux & win] cuda 12.6 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu126
-# [linux only] (EXPERIMENTAL) rocm 6.1 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.1
+# [linux only] (EXPERIMENTAL) rocm 6.2.4 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.2.4
 ```
 
 * **Development binaries**:

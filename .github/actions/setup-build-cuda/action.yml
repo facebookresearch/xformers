@@ -23,16 +23,19 @@ runs:
         import sys
         print(sys.version)
         cushort = "${{ inputs.toolkit_short_version }}"
-        TORCH_CUDA_DEFAULT = "121"  # pytorch 2.4.1
+        # Version uploaded to pypi (rather than PyTorch s3)
+        TORCH_CUDA_DEFAULT = "124"  # since pytorch 2.6.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
-          "126": ("12.6.1", "https://developer.download.nvidia.com/compute/cuda/12.6.1/local_installers/cuda_12.6.1_560.35.03_linux.run"),
+          "128": ("12.8.0", "https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run"),
+          "126": ("12.6.3", "https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_560.35.05_linux.run"),
           "124": ("12.4.1", "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_550.54.15_linux.run"),
           "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
           "118": ("11.8.0", "https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run"),
           "6.0": ("6.0.2", "https://repo.radeon.com/amdgpu-install/6.0.2/rhel/8.9/amdgpu-install-6.0.60002-1.el8.noarch.rpm"),
           "6.1": ("6.1.2", "https://repo.radeon.com/amdgpu-install/6.1.3/rhel/8.9/amdgpu-install-6.1.60103-1.el8.noarch.rpm"),
-          "6.2": ("6.2.3", "https://repo.radeon.com/amdgpu-install/6.2.3/rhel/8.9/amdgpu-install-6.2.60203-1.el8.noarch.rpm"),
+          "6.2": ("6.2.4", "https://repo.radeon.com/amdgpu-install/6.2.4/rhel/8.9/amdgpu-install-6.2.60204-1.el8.noarch.rpm"),
+          "6.3": ("6.3.1", "https://repo.radeon.com/amdgpu-install/6.3.1/rhel/8.9/amdgpu-install-6.3.60301-1.el8.noarch.rpm"),
         }[cushort]
         with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
           fp.write("CUDA_VERSION=" + full_version + "\n")
@@ -54,7 +57,7 @@ runs:
 
     - name: Install python
       if: runner.os == 'Windows'
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python }}
 
