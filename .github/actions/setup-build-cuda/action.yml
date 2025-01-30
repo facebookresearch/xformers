@@ -56,6 +56,7 @@ runs:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
     - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
+      shell: bash
       run: |
         echo "Installed cuda version is: ${{ steps.cuda-toolkit.outputs.cuda }}"
         echo "Cuda install location: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
