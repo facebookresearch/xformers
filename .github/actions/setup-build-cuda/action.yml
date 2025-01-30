@@ -50,14 +50,21 @@ runs:
     # WINDOWS STEPS
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
+      id: cuda-toolkit
       uses: Jimver/cuda-toolkit@v0.2.21
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
+    - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
+      run: |
+        echo "Installed cuda version is: ${{ steps.cuda-toolkit.outputs.cuda }}"
+        echo "Cuda install location: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
+        ls ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
+        echo "CUDA_HOME=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" >> ${GITHUB_ENV}
 
     - name: Install python
       if: runner.os == 'Windows'
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.python }}
 
