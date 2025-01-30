@@ -109,6 +109,9 @@ def list_files_in_commit(commit: git.Commit):
 
 
 def check_patterns_are_valid(patterns):
+    # Only check patterns in `fairinternal` repo
+    if os.environ.get("GITHUB_REPOSITORY", "") != "fairinternal/xformers":
+        return
     found_patterns = set()
     for f in all_files:
         for pattern in patterns:
