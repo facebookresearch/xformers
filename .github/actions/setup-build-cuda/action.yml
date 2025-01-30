@@ -60,8 +60,8 @@ runs:
       run: |
         echo "Installed cuda version is: ${{ steps.cuda-toolkit.outputs.cuda }}"
         echo "Cuda install location: ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}"
-        ls ${{ steps.cuda-toolkit.outputs.CUDA_PATH }}
         echo "CUDA_HOME=${{ steps.cuda-toolkit.outputs.CUDA_PATH }}" >> ${GITHUB_ENV}
+        cat ${GITHUB_ENV}
 
     - name: Install python
       if: runner.os == 'Windows'
