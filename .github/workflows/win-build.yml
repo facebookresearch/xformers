@@ -53,7 +53,7 @@ jobs:
 
       - name: HACKFIX for cutlass compiler bug
         if: runner.os == 'Windows'
-        run:
+        run: |
           # See https://github.com/NVIDIA/cutlass/issues/1732
           rm -f third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
           touch third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
