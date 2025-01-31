@@ -36,17 +36,20 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Workarounds for longpaths
+      - name: Workarounds for longpaths - git-config
         run: |
           git config --system core.longpaths true
-          mkdir x
-          python -c "import tempfile; print(tempfile.gettempdir())"
-          python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
+
+      - name: Workarounds for longpaths - TMPDIR
+        run: |
+          mkdir x
+          python -c "import tempfile; print(tempfile.gettempdir())"
+          python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
 
       - name: Setup Runner
         uses: ./.github/actions/setup-build-cuda
