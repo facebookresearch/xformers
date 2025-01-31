@@ -155,7 +155,7 @@ class FwOp(AttentionFwOpBase):
     OPERATOR = get_operator("xformers", "efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 256
+    SUPPORTED_MAX_K = 512
 
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
@@ -201,6 +201,7 @@ class FwOp(AttentionFwOpBase):
         96,
         128,  # 64x128 kernel
         256,  # 64x128 with accumulation in gmem
+        512,
     ]
 
     @classmethod
@@ -216,7 +217,7 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
-        # consider for expanded 5-D inputted
+        # when the input is expanded 5-D, the group dimension has zero stride
         if inp.key.stride()[3] == 0:
             assert (
                 inp.value.stride()[3] == 0

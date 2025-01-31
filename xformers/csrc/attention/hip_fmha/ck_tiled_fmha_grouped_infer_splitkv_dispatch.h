@@ -97,6 +97,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   false, // kDoFp8StaticQuant place-holder
                   kIsPagedKV,
                   true, // kHasUnevenSplits
+                  false, // kMergeNumHeadGroupsSeqLenQ
                   occupancy>;
 
               using ODataType =
@@ -132,6 +133,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   false, // kDoFp8StaticQuant place-holder
                   kIsPagedKV,
                   true, // kHasUnevenSplits
+                  false, // kMergeNumHeadGroupsSeqLenQ
                   occupancy>;
 
               using ODataType =
@@ -309,6 +311,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
     dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(
         param.num_batches,
         param.Hq,
+        param.Hkv,
         param.max_seqlen_q,
         param.Kv,
         param.num_kv_splits);
