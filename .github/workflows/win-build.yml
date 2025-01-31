@@ -15,6 +15,7 @@ env:
   MAX_JOBS: 6
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
+  TMPDIR: "./x"
 
 jobs:
   win_build:
@@ -35,8 +36,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Support longpaths
-        run: git config --system core.longpaths true
+      - name: Workarounds for longpaths
+        run: |
+          git config --system core.longpaths true
+          python -c "import tempfile; print(tempfile.gettempdir())"
+          python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
@@ -65,12 +69,16 @@ jobs:
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
           ninja --version
 
+      - name: Work around long-path issue
+        run: |
+            
       - name: Create sdist
         run: $PY setup.py sdist
 
       - name: Build from sdist
         shell: bash -l {0}
-        run: $PY -m pip install -v dist/*
+        run: |
+          $PY -m pip install -v dist/*
 
       - name: Info
         run: |
