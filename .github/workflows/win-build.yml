@@ -51,6 +51,13 @@ jobs:
           python -c "import tempfile; print(tempfile.gettempdir())"
           python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
 
+      - name: HACKFIX for cutlass compiler bug
+        if: runner.os == 'Windows'
+        run:
+          # See https://github.com/NVIDIA/cutlass/issues/1732
+          rm -f third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
+          touch third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
+
       - name: Setup Runner
         uses: ./.github/actions/setup-build-cuda
         with:
@@ -73,9 +80,6 @@ jobs:
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
           ninja --version
 
-      - name: Work around long-path issue
-        run: |
-            
       - name: Create sdist
         run: $PY setup.py sdist
 
@@ -90,6 +94,6 @@ jobs:
           XFORMERS_MORE_DETAILS=1 $PY -m xformers.info
 
       # Open an SSH session on failure to debug
-      - name: Setup tmate session
-        if: ${{ failure() }}
-        uses: mxschmitt/action-tmate@v3
+      # - name: Setup tmate session
+      #   if: ${{ failure() }}
+      #   uses: mxschmitt/action-tmate@v3
