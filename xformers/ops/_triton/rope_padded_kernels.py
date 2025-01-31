@@ -5,13 +5,9 @@
 import triton  # type: ignore
 import triton.language as tl  # type: ignore
 
-try:
-    from triton.language.extra.cuda.libdevice import pow
-except ImportError:
-    try:
-        from triton.language.math import pow
-    except ImportError:
-        from triton.language.libdevice import pow
+from xformers.triton.importing import libdevice_find
+
+pow = libdevice_find("pow")
 
 
 @triton.jit
