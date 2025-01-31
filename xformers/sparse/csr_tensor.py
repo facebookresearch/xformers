@@ -182,16 +182,19 @@ class SparseCSRTensor(torch.Tensor):
         row_indices = mask.__row_indices
         row_offsets = mask.__row_offsets
         column_indices = mask.__column_indices
-        a = a.contiguous()
+        values = mask._SparseCSRTensor__values
         out = _csr_ops._sddmm.apply(
-            a,
+            a.contiguous(),
             b.transpose(-2, -1).contiguous(),
             row_indices,
             row_offsets,
             column_indices,
             mask.__transp_info,
         )
-        # TODO add bias here
+        if values.dtype == torch.bool:
+            out = torch.where(values, out, float("-inf"))
+        else:
+            out = out + values
         return cls._wrap(
             mask.shape,
             out,
