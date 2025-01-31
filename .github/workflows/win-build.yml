@@ -47,7 +47,7 @@ jobs:
         uses: ./.github/actions/setup-build-cuda
         with:
           toolkit_type: "cuda"
-          toolkit_short_version: "124"
+          toolkit_short_version: "126"
           python: "3.9"
 
       - name: Remove internal code
@@ -75,3 +75,8 @@ jobs:
         run: |
           cd ../../  # So we don't have a folder named `xformers`
           XFORMERS_MORE_DETAILS=1 $PY -m xformers.info
+
+      # Open an SSH session on failure to debug
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3

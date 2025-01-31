@@ -42,7 +42,9 @@ jobs:
           for cu in CU_VERSIONS[1:]:
             PY_CU.append((PY_VERSIONS[-1], cu))
           print("Limited matrix PY_CU", PY_CU)
-          PY_ROCM = [(PY_VERSIONS[-1], ROCM_VERSIONS[-1])]
+          PY_ROCM = [(PY_VERSIONS[0], ROCM_VERSIONS[0])]
+          for rocm in ROCM_VERSIONS[1:]:
+            PY_ROCM.append((PY_VERSIONS[-1], rocm))
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
