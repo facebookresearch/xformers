@@ -63,6 +63,7 @@ jobs:
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
+          ninja --version
 
       - name: Create sdist
         run: $PY setup.py sdist
