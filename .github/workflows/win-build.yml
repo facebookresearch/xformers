@@ -39,6 +39,7 @@ jobs:
       - name: Workarounds for longpaths
         run: |
           git config --system core.longpaths true
+          mkdir x
           python -c "import tempfile; print(tempfile.gettempdir())"
           python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
       - name: Recursive checkout
@@ -65,7 +66,6 @@ jobs:
         run: |
           $PY -m pip install wheel setuptools ninja torch==2.6.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
           git config --global --add safe.directory "*"
-          mkdir x
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
           ninja --version
