@@ -20,6 +20,10 @@ except ImportError:
 
 
 def is_pt_cutlass_compatible(force: bool = False) -> bool:
+    if torch.version.hip is not None:
+        if force:
+            raise ImportError("CUTLASS is not supported on ROCm")
+        return False
     compatible = True
 
     fwd_schema_str = (
