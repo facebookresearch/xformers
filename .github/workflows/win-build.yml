@@ -69,6 +69,7 @@ jobs:
         run: $PY setup.py sdist
 
       - name: Build from sdist
+        shell: bash -l {0}
         run: $PY -m pip install -v dist/*
 
       - name: Info
