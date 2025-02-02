@@ -37,6 +37,10 @@ struct batched_infer_mask_bias_dropout_dispatch {
 
   using FmhaShape = decltype(get_fmha_shape_type());
 
+  static constexpr ck_tile::index_t kKLoadLength =
+      (kUseAsyncPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
+                                        : FmhaShape::kSubQKHeaddim;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -65,28 +69,25 @@ struct batched_infer_mask_bias_dropout_dispatch {
         : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
     const bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-    const bool pad_seqlen_k =
-        (param.N == 0) || !(param.N % FmhaShape::kN0 == 0);
-    const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
-    const bool pad_headdim_q = !(param.K % FmhaShape::kSubQKHeaddim == 0);
 
-    // usually headdim_q and headdim_v are same, consider them together to
-    // determine whether to do padding saving some compiling time
-    const bool pad_headdim = (pad_headdim_q || pad_headdim_v);
+    const bool pad_headdim_q = !(param.K % kKLoadLength == 0);
+    const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
+
+    constexpr bool kPadSeqLenK = true;
 
     BOOL_SWITCH_3(
         pad_seqlen_q,
         kPadSeqLenQ,
-        pad_seqlen_k,
-        kPadSeqLenK,
-        pad_headdim,
-        kPadHeadDim,
+        pad_headdim_q,
+        kPadHeadDimQ,
+        pad_headdim_v,
+        kPadHeadDimV,
         [&] {
           using FmhaTraits = ck_tile::TileFmhaTraits<
               kPadSeqLenQ,
               kPadSeqLenK,
-              kPadHeadDim, // kPadHeadDimQ,
-              kPadHeadDim, // kPadHeadDimV,
+              kPadHeadDimQ, // kPadHeadDimQ,
+              kPadHeadDimV, // kPadHeadDimV,
               kBiasEnum,
               false, // kHasBiasGrad place-holder
               false, // kStoreLSE
@@ -102,7 +103,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
                   typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
                   typename FmhaFwdTypeConfig<ScalarType>::ODataType,
                   kPadSeqLenQ,
-                  kPadHeadDim>>;
+                  kPadHeadDimV>>;
 
           if constexpr (kUseAsyncPipeline) {
             using FmhaPipeline =

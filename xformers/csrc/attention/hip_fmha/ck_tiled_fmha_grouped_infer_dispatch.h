@@ -37,6 +37,10 @@ struct grouped_infer_mask_bias_dropout_dispatch {
 
   using FmhaShape = decltype(get_fmha_shape_type());
 
+  static constexpr ck_tile::index_t kKLoadLength =
+      (kUseAsyncPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
+                                        : FmhaShape::kSubQKHeaddim;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -67,7 +71,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
     constexpr bool kPadSeqLenQ = true;
     constexpr bool kPadSeqLenK = true;
 
-    bool pad_headdim_q = !(param.K % FmhaShape::kSubQKHeaddim == 0);
+    bool pad_headdim_q = !(param.K % kKLoadLength == 0);
     bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
     BOOL_SWITCH_2(
