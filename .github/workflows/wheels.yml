@@ -51,7 +51,7 @@ jobs:
           for torch_version in ['2.6.0']:
             # CUDA builds
             for python, cuda_short_version in PY_CU:
-              if cuda_short_version != "124" and "windows" in os:
+              if fromJSON(cuda_short_version) < fromJSON("124") and "windows" in os:
                 print("Windows builder no longer compatible with cu<124")
                 continue
               include.append(dict(
