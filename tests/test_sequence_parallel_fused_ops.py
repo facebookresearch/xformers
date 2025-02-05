@@ -38,6 +38,8 @@ def compare_fused_and_non_fused_ops(
     dtype: torch.dtype,
     compile: bool,
 ):
+    os.environ["TORCH_SYMM_MEM_ALLOW_OVERLAPPING_DEVICES"] = "1"
+
     batch_dims = dims[:-2]
     subbatch_dims = (batch_dims[0] // world_size,) + batch_dims[1:]
     outer_dim = dims[-2]

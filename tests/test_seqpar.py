@@ -59,6 +59,8 @@ def inner_seqpar(
     compile: bool,
     seed: int,
 ):
+    os.environ["TORCH_SYMM_MEM_ALLOW_OVERLAPPING_DEVICES"] = "1"
+
     my_rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()

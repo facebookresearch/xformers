@@ -8,10 +8,10 @@ from typing import Callable, Dict, List, Optional, Sequence, Union, overload
 
 import torch
 import torch.distributed as dist
+import torch.distributed._symmetric_memory as symm_mem
 import torch.multiprocessing.reductions
 
 from .common import BaseOperator, get_xformers_operator, register_operator
-from .ipc import init_ipc
 
 # The sequence numbers will be communicated as 32-bit integers, due to
 # limitations in both CUDA (memset can only operate on 4 bytes at a time at
@@ -101,8 +101,7 @@ class _FusedSequenceParallel:
         self.my_device = device
         self.my_rank = group.rank()
         self.world_size = group.size()
-
-        self.p2p_comms = init_ipc(group, self.my_device)
+        self.group = group
 
         self.next_seq_num = 1
 
@@ -115,27 +114,25 @@ class _FusedSequenceParallel:
         ] * self.world_size
 
         # Allocate buffers for locally-hosted counters
-        self.op_finished_produce = torch.zeros(
+        self.op_finished_produce = symm_mem.empty(
             (), dtype=torch.int, device=self.my_device
-        )
-        self.comms_ready_consume = torch.zeros(
+        ).zero_()
+        self.comms_ready_consume = symm_mem.empty(
             (self.world_size,), dtype=torch.int, device=self.my_device
-        )
+        ).zero_()
 
         # Send my handles to buddies
-        for rank, conn in enumerate(self.p2p_comms):
-            if conn is not None:
-                conn.send(self.op_finished_produce)
-                conn.send(self.comms_ready_consume[rank])
+        op_finished_sm = symm_mem.rendezvous(self.op_finished_produce, group=self.group)
+        comms_ready_sm = symm_mem.rendezvous(self.comms_ready_consume, group=self.group)
 
         # Open buddies' inboxes as my outboxes
         self.op_finished_consume = [
-            torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
-            for conn in self.p2p_comms
+            op_finished_sm.get_buffer(rank, (), torch.int)
+            for rank in range(self.world_size)
         ]
         self.comms_ready_produce = [
-            torch.empty((0,), device=self.my_device) if conn is None else conn.recv()
-            for conn in self.p2p_comms
+            comms_ready_sm.get_buffer(rank, (self.world_size,), torch.int)[self.my_rank]
+            for rank in range(self.world_size)
         ]
 
         self.second_stream = torch.cuda.Stream()
@@ -161,21 +158,19 @@ class _FusedSequenceParallel:
             # When running with _memcpy=False (i.e., for benchmarks) we must
             # ensure that the staging buffer doesn't contain all zeroes as that
             # makes the matmuls go faster (better L2 compression or something).
-            self.staging = torch.empty(
+            self.staging = symm_mem.empty(
                 (self.world_size, total_num_bytes),
                 device=self.my_device,
                 dtype=torch.uint8,
             )
             if random_init:
                 self.staging.view(torch.bfloat16).normal_()
-            for rank, conn in enumerate(self.p2p_comms):
-                if conn is not None:
-                    conn.send(self.staging[rank])
+            staging_sm = symm_mem.rendezvous(self.staging, group=self.group)
             self.buddys_staging = [
-                torch.empty((0,), device=self.my_device)
-                if conn is None
-                else conn.recv()
-                for rank, conn in enumerate(self.p2p_comms)
+                staging_sm.get_buffer(
+                    rank, (self.world_size, total_num_bytes), torch.uint8
+                )[self.my_rank]
+                for rank in range(self.world_size)
             ]
 
     def make_stream_factory(

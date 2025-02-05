@@ -75,7 +75,6 @@ COMPONENTS = [
         dependencies=[
             "tests/multiprocessing_utils.py",
             "xformers/ops/sequence_parallel_fused_ops.py",
-            "xformers/ops/ipc.py",
         ],
     ),
     ComponentInfo(
