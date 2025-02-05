@@ -235,6 +235,16 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
+
+        # Signal to buddy that we have read from the data (in previous iter) so
+        # it can overwrite it (this write matches up with wait [B] below).
+        if _wait:
+            WriteValues.OPERATOR(
+                [self.op_finished_produce],
+                prev_seq_num,
+                current_stream,
+            )
+
         self.second_stream.wait_stream(current_stream)
         self.compute_wait_stream.wait_stream(current_stream)
         self.memcpy_wait_stream.wait_stream(current_stream)
@@ -244,7 +254,7 @@ class _FusedSequenceParallel:
             dst_rank = (self.my_rank + iter_) % self.world_size
 
             # Wait for buddy to signal that it read from the data before we
-            # overwrite it (this wait matches up with write [B] below).
+            # overwrite it (this wait matches up with write [B] above).
             if _wait:
                 WaitValues.OPERATOR(
                     [self.op_finished_consume[dst_rank]],
@@ -291,15 +301,6 @@ class _FusedSequenceParallel:
 
         current_stream.wait_stream(self.second_stream)
         current_stream.wait_stream(self.memcpy_stream)
-
-        # Signal to buddy that we have read from the data so it can
-        # overwrite it (this write matches up with wait [B] above).
-        if _wait:
-            WriteValues.OPERATOR(
-                [self.op_finished_produce],
-                seq_num,
-                current_stream,
-            )
 
     def linear_and_reducescatter(
         self,
@@ -355,6 +356,16 @@ class _FusedSequenceParallel:
         ]
 
         current_stream = torch.cuda.current_stream()
+
+        # Signal to buddy that we have read from the data (in previous iter)
+        # so it can overwrite it (this write matches up with wait [2] below).
+        if _wait:
+            WriteValues.OPERATOR(
+                [self.op_finished_produce],
+                prev_seq_num,
+                current_stream,
+            )
+
         self.second_stream.wait_stream(current_stream)
         self.compute_wait_stream.wait_stream(current_stream)
         self.memcpy_wait_stream.wait_stream(current_stream)
@@ -364,7 +375,7 @@ class _FusedSequenceParallel:
             dst_rank = (self.my_rank + iter_) % self.world_size
 
             # Wait for buddy to signal that it read from the data before we
-            # overwrite it (this wait matches up with write [2] below).
+            # overwrite it (this wait matches up with write [2] above).
             if _wait:
                 WaitValues.OPERATOR(
                     [self.op_finished_consume[dst_rank]],
@@ -425,15 +436,6 @@ class _FusedSequenceParallel:
 
         for go, so in zip(gathered_outputs, scattered_outputs):
             torch.sum(go, dim=0, out=so)
-
-        # Signal to buddy that we have read from the data so it can
-        # overwrite it (this write matches up with wait [2] above).
-        if _wait:
-            WriteValues.OPERATOR(
-                [self.op_finished_produce],
-                seq_num,
-                current_stream,
-            )
 
 
 # We'd store this as an attribute on the PG object itself, but some PGs are
