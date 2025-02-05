@@ -11,38 +11,10 @@ import torch.distributed as dist
 import torch.distributed._symmetric_memory as symm_mem
 import torch.multiprocessing.reductions
 
-from .common import BaseOperator, get_xformers_operator, register_operator
+OP_FINISHED_CHANNEL = 0
+COMMS_READY_CHANNEL = 1
 
-# The sequence numbers will be communicated as 32-bit integers, due to
-# limitations in both CUDA (memset can only operate on 4 bytes at a time at
-# most) and Triton (scalar arguments are int32 if they fit). 32 bits are not
-# enough to be sure that we'll never see overflow. Moreover, different parts of
-# the code use signed or unsigned ints. To be safe, let's simulate overflow
-# ourselves, at a value low enough so that it fits both a signed and an unsigned
-# 32-bit integer. And, in fact, let's make it so low that we're sure we'll hit
-# it in our tests, to avoid bugs that only manifest in long-running training.
-SEQ_NUM_WRAP_AROUND = 2**8
-
-
-@register_operator
-class WriteValues(BaseOperator):
-    OPERATOR = get_xformers_operator("write_values")
-    OPERATOR_CATEGORY = "sequence_parallel_fused"
-    NAME = "write_values"
-
-
-@register_operator
-class WaitValues(BaseOperator):
-    OPERATOR = get_xformers_operator("wait_values")
-    OPERATOR_CATEGORY = "sequence_parallel_fused"
-    NAME = "wait_values"
-
-
-@register_operator
-class Memset32bAsync(BaseOperator):
-    OPERATOR = get_xformers_operator("cuda_memset_32b_async")
-    OPERATOR_CATEGORY = "sequence_parallel_fused"
-    NAME = "cuda_memset_32b_async"
+MS_IN_S = 1_000
 
 
 def _is_fp8_dtype(dt: torch.dtype):
@@ -103,37 +75,16 @@ class _FusedSequenceParallel:
         self.world_size = group.size()
         self.group = group
 
-        self.next_seq_num = 1
-
         # My staging buffers
-        self.staging = torch.empty((0,), device=self.my_device)
+        self.staging = symm_mem.empty((0,), device=self.my_device)
 
         # (Mmapped view of a handle to) buddies' staging buffers
         self.buddys_staging = [
             torch.empty((0,), device=self.my_device)
         ] * self.world_size
 
-        # Allocate buffers for locally-hosted counters
-        self.op_finished_produce = symm_mem.empty(
-            (), dtype=torch.int, device=self.my_device
-        ).zero_()
-        self.comms_ready_consume = symm_mem.empty(
-            (self.world_size,), dtype=torch.int, device=self.my_device
-        ).zero_()
-
         # Send my handles to buddies
-        op_finished_sm = symm_mem.rendezvous(self.op_finished_produce, group=self.group)
-        comms_ready_sm = symm_mem.rendezvous(self.comms_ready_consume, group=self.group)
-
-        # Open buddies' inboxes as my outboxes
-        self.op_finished_consume = [
-            op_finished_sm.get_buffer(rank, (), torch.int)
-            for rank in range(self.world_size)
-        ]
-        self.comms_ready_produce = [
-            comms_ready_sm.get_buffer(rank, (self.world_size,), torch.int)[self.my_rank]
-            for rank in range(self.world_size)
-        ]
+        self.symm_mem = symm_mem.rendezvous(self.staging, group=self.group)
 
         self.second_stream = torch.cuda.Stream()
         # CUDA can schedule the matmul and the memcpy at the same time, but it
@@ -165,9 +116,9 @@ class _FusedSequenceParallel:
             )
             if random_init:
                 self.staging.view(torch.bfloat16).normal_()
-            staging_sm = symm_mem.rendezvous(self.staging, group=self.group)
+            self.symm_mem = symm_mem.rendezvous(self.staging, group=self.group)
             self.buddys_staging = [
-                staging_sm.get_buffer(
+                self.symm_mem.get_buffer(
                     rank, (self.world_size, total_num_bytes), torch.uint8
                 )[self.my_rank]
                 for rank in range(self.world_size)
@@ -206,10 +157,6 @@ class _FusedSequenceParallel:
             total_scattered_input_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
-        prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_num += 1
-
         stagings = [
             s.view((self.world_size,) + si.shape)
             for s, si in zip(
@@ -238,12 +185,11 @@ class _FusedSequenceParallel:
 
         # Signal to buddy that we have read from the data (in previous iter) so
         # it can overwrite it (this write matches up with wait [B] below).
-        if _wait:
-            WriteValues.OPERATOR(
-                [self.op_finished_produce],
-                prev_seq_num,
-                current_stream,
-            )
+        for iter_ in range(1, self.world_size):
+            src_rank = (self.my_rank - iter_) % self.world_size
+            if _wait:
+                with torch.cuda.stream(current_stream):
+                    self.symm_mem.put_signal(src_rank, OP_FINISHED_CHANNEL)
 
         self.second_stream.wait_stream(current_stream)
         self.compute_wait_stream.wait_stream(current_stream)
@@ -256,12 +202,12 @@ class _FusedSequenceParallel:
             # Wait for buddy to signal that it read from the data before we
             # overwrite it (this wait matches up with write [B] above).
             if _wait:
-                WaitValues.OPERATOR(
-                    [self.op_finished_consume[dst_rank]],
-                    prev_seq_num,
-                    self.memcpy_wait_stream,
-                    timeout_s,
-                )
+                with torch.cuda.stream(self.memcpy_wait_stream):
+                    self.symm_mem.wait_signal(
+                        dst_rank,
+                        OP_FINISHED_CHANNEL,
+                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
+                    )
 
             self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 
@@ -273,11 +219,13 @@ class _FusedSequenceParallel:
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [A] below).
             if _wait:
-                Memset32bAsync.OPERATOR(
-                    self.comms_ready_produce[dst_rank],
-                    seq_num,
-                    self.memcpy_stream,
-                )
+                with torch.cuda.stream(self.memcpy_stream):
+                    self.symm_mem.memset32(
+                        self.symm_mem.get_signal_pad(dst_rank),  # type: ignore[attr-defined]
+                        self.world_size * COMMS_READY_CHANNEL + self.my_rank,
+                        val=1,
+                        count=1,
+                    )
 
         my_matmul(scattered_inputs, self.my_rank, stream_factory)
 
@@ -287,12 +235,12 @@ class _FusedSequenceParallel:
             # Wait for buddy to signal that it wrote into the data before we
             # read from it (this wait matches up with write [A] above).
             if _wait:
-                WaitValues.OPERATOR(
-                    [self.comms_ready_consume[src_rank]],
-                    seq_num,
-                    self.compute_wait_stream,
-                    timeout_s,
-                )
+                with torch.cuda.stream(self.compute_wait_stream):
+                    self.symm_mem.wait_signal(
+                        src_rank,
+                        COMMS_READY_CHANNEL,
+                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
+                    )
 
             current_stream.wait_stream(self.compute_wait_stream)
             self.second_stream.wait_stream(self.compute_wait_stream)
@@ -327,10 +275,6 @@ class _FusedSequenceParallel:
             total_scattered_output_numel, random_init=_memcpy is False, dtype=dtype
         )
 
-        seq_num = self.next_seq_num % SEQ_NUM_WRAP_AROUND
-        prev_seq_num = (seq_num - 1) % SEQ_NUM_WRAP_AROUND
-        self.next_seq_num += 1
-
         stagings = [
             s.view((self.world_size,) + so.shape)
             for s, so in zip(
@@ -359,12 +303,11 @@ class _FusedSequenceParallel:
 
         # Signal to buddy that we have read from the data (in previous iter)
         # so it can overwrite it (this write matches up with wait [2] below).
-        if _wait:
-            WriteValues.OPERATOR(
-                [self.op_finished_produce],
-                prev_seq_num,
-                current_stream,
-            )
+        for iter_ in range(1, self.world_size):
+            src_rank = (self.my_rank - iter_) % self.world_size
+            if _wait:
+                with torch.cuda.stream(current_stream):
+                    self.symm_mem.put_signal(src_rank, OP_FINISHED_CHANNEL)
 
         self.second_stream.wait_stream(current_stream)
         self.compute_wait_stream.wait_stream(current_stream)
@@ -377,12 +320,12 @@ class _FusedSequenceParallel:
             # Wait for buddy to signal that it read from the data before we
             # overwrite it (this wait matches up with write [2] above).
             if _wait:
-                WaitValues.OPERATOR(
-                    [self.op_finished_consume[dst_rank]],
-                    prev_seq_num,
-                    self.compute_wait_stream,
-                    timeout_s,
-                )
+                with torch.cuda.stream(self.compute_wait_stream):
+                    self.symm_mem.wait_signal(
+                        dst_rank,
+                        OP_FINISHED_CHANNEL,
+                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
+                    )
 
             current_stream.wait_stream(self.compute_wait_stream)
             self.second_stream.wait_stream(self.compute_wait_stream)
@@ -399,11 +342,13 @@ class _FusedSequenceParallel:
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [1] below).
             if _wait:
-                Memset32bAsync.OPERATOR(
-                    self.comms_ready_produce[dst_rank],
-                    seq_num,
-                    final_stream,
-                )
+                with torch.cuda.stream(final_stream):
+                    self.symm_mem.memset32(
+                        self.symm_mem.get_signal_pad(dst_rank),  # type: ignore[attr-defined]
+                        self.world_size * COMMS_READY_CHANNEL + self.my_rank,
+                        val=1,
+                        count=1,
+                    )
 
         my_matmul(
             [o[self.my_rank] for o in gathered_outputs],
@@ -417,12 +362,12 @@ class _FusedSequenceParallel:
             # Wait for buddy to signal that it wrote into the data before we
             # read from it (this wait matches up with write [1] above).
             if _wait:
-                WaitValues.OPERATOR(
-                    [self.comms_ready_consume[src_rank]],
-                    seq_num,
-                    self.memcpy_wait_stream,
-                    timeout_s,
-                )
+                with torch.cuda.stream(self.memcpy_wait_stream):
+                    self.symm_mem.wait_signal(
+                        src_rank,
+                        COMMS_READY_CHANNEL,
+                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
+                    )
 
             self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
 

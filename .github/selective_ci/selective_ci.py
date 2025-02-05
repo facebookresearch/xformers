@@ -70,7 +70,6 @@ COMPONENTS = [
             "tests/test_seqpar.py",
             "tests/test_sequence_parallel_fused_ops.py",
             "tests/test_tiled_matmul.py",
-            "xformers/csrc/sequence_parallel_fused/*",
         ],
         dependencies=[
             "tests/multiprocessing_utils.py",
