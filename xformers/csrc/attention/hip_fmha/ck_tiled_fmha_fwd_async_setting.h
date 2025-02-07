@@ -131,9 +131,9 @@ struct FmhaFwdAsyncShape<128, 128> {
   using Type = ck_tile::TileFmhaShape<
       typename FmhaFwdAsyncBlockTile<128, 128>::type,
       typename FmhaFwdAsyncBlockTile<128, 128>::gemm0_warps,
-      FmhaFwdAsyncWarpTile1,
+      FmhaFwdAsyncWarpTile3,
       typename FmhaFwdAsyncBlockTile<128, 128>::gemm1_warps,
-      FmhaFwdAsyncWarpTile1,
+      FmhaFwdAsyncWarpTile2,
       IsVLayoutRowMajor>;
 };
 
