@@ -59,6 +59,8 @@ def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
         return ["--generate-line-info"]
     elif build_type == "release":
         return []
+    elif build_type == "debug":
+        return ["--device-debug"]
     else:
         raise ValueError(f"Unknown build type: {build_type}")
 
@@ -406,6 +408,10 @@ def get_extensions():
     ):
         source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
 
+    if "XFORMERS_SELECTIVE_BUILD" in os.environ:
+        pattern = os.environ["XFORMERS_SELECTIVE_BUILD"]
+        source_cuda = [f for f in source_cuda if pattern in str(f)]
+
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_util_dir = os.path.join(
         this_dir, "third_party", "cutlass", "tools", "util", "include"
@@ -513,12 +519,15 @@ def get_extensions():
 
         # NOTE: This should not be applied to Flash-Attention
         # see https://github.com/Dao-AILab/flash-attention/issues/359
-        extra_compile_args["nvcc"] += [
-            # Workaround for a regression with nvcc > 11.6
-            # See https://github.com/facebookresearch/xformers/issues/712
-            "--ptxas-options=-O2",
-            "--ptxas-options=-allow-expensive-optimizations=true",
-        ]
+        if (
+            "--device-debug" not in nvcc_flags and "-G" not in nvcc_flags
+        ):  # (incompatible with -G)
+            extra_compile_args["nvcc"] += [
+                # Workaround for a regression with nvcc > 11.6
+                # See https://github.com/facebookresearch/xformers/issues/712
+                "--ptxas-options=-O2",
+                "--ptxas-options=-allow-expensive-optimizations=true",
+            ]
     elif torch.version.hip and (
         torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
     ):
