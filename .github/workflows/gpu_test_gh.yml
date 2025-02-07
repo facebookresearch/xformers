@@ -71,7 +71,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           pip install -r .github/selective_ci/requirements.txt
-          python .github/selective_ci/selective_ci.py
+          python .github/selective_ci/selective_ci.py --base_commit ${{ github.event.pull_request.base.sha }}
       - name: Setup test requirements
         run: |
           which python
