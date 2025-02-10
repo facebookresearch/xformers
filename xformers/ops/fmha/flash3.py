@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import os
 from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
 
 import torch
@@ -195,6 +196,18 @@ if _C_flashattention3 is not None:
         assert 3 <= query.ndim <= 4
         assert 3 <= key.ndim <= 4
         assert 3 <= value.ndim <= 4
+        # This FLOP formula is used by torch.compile's partitioner "automatic
+        # activation checkpointing" (AutoAC) to decide which ops to preserve
+        # for backward or to recompute. However, this formula is data-dependent!
+        # This makes all invocations reuse the choices made based on the first
+        # inputs, which may be sub-optimal but also lead to inconsistent
+        # behavior across runs. In the presence of tensor parallelism it might
+        # also lead to deadlocks if AutoAC recomputes different collectives
+        # on different ranks. For distributed jobs it seems more robust to have
+        # all ranks always use the "worst case" FLOP estimate. Ranks are in
+        # lockstep anyways and will be going as fast as the slowest one.
+        if os.environ.get("XFORMERS_FLOP_FORMULA_WORST_CASE", "0") == "1":
+            cu_seqlens_q = cu_seqlens_k = max_seqlen_q = max_seqlen_k = None  # type: ignore[assignment]
         sizes = _unpack_flash_attention_nested_shapes(
             query=query.transpose(-2, -3) if query.ndim == 4 else query,
             key=key.transpose(-2, -3) if key.ndim == 4 else key,
@@ -209,7 +222,7 @@ if _C_flashattention3 is not None:
             for query_shape, key_shape, value_shape, _ in sizes
         )
         if is_causal:
-            res /= 2
+            res //= 2
         return res
 
     def _create_dq_dk_dv(
@@ -336,6 +349,9 @@ if _C_flashattention3 is not None:
         assert 3 <= query.ndim <= 4
         assert 3 <= key.ndim <= 4
         assert 3 <= value.ndim <= 4
+        # See the fwd FLOP formula above for reasoning behind this.
+        if os.environ.get("XFORMERS_FLOP_FORMULA_WORST_CASE", "0") == "1":
+            cu_seqlens_q = cu_seqlens_k = max_seqlen_q = max_seqlen_k = None  # type: ignore[assignment]
         res = _flash_attention_backward_flop(
             dout.transpose(-2, -3) if dout.ndim == 4 else dout,
             query.transpose(-2, -3) if query.ndim == 4 else query,
@@ -349,7 +365,7 @@ if _C_flashattention3 is not None:
             max_seqlen_k,
         )
         if is_causal:
-            res /= 2
+            res //= 2
         return res
 
 
