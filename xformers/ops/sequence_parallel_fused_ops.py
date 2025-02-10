@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Callable, List, Optional, Sequence, Union, overload
+from typing import Callable, List, Optional, Sequence, Union, cast, overload
 
 import torch
 import torch.distributed as dist
@@ -146,88 +146,69 @@ def fused_allgather_and_linear(
     assert scattered_input.ndim >= 2
     assert all(scattered_input.shape[-1] == w.shape[-1] for w in weights)
     assert scattered_input.is_contiguous()
-    gathered_input_shape = (world_size,) + scattered_input.shape
-    gathered_output_shapes = [gathered_input_shape[:-1] + w.shape[:-1] for w in weights]
+
+    # Fallback
+    if world_size == 1 or _should_use_fallback(group):
+        if world_size == 1:
+            gathered_input = scattered_input
+        else:
+            gathered_input = scattered_input.new_empty(
+                (world_size,) + scattered_input.shape
+            ).flatten(0, 1)
+            dist.all_gather_into_tensor(
+                output_tensor=gathered_input, input_tensor=scattered_input, group=group
+            )
+
+        if scale_scattered_input is None:
+            gathered_outputs = [torch.matmul(gathered_input, w.t()) for w in weights]
+        else:
+            gathered_outputs = [
+                torch._scaled_mm(
+                    gathered_input,
+                    w.t(),
+                    scale_scattered_input,
+                    cast(torch.Tensor, scale_w),
+                    out_dtype=out_dtype,
+                )
+                for w, scale_w in zip(weights, scales_weights)
+            ]
+
+    # Fast path
+    else:
+        if scale_scattered_input is None:
+            _, gathered_outputs = torch.ops.symm_mem.fused_all_gather_matmul(
+                scattered_input, [w.t() for w in weights], 0, group.group_name
+            )
+        else:
+            _, gathered_outputs = torch.ops.symm_mem.fused_all_gather_scaled_matmul(
+                scattered_input,
+                [w.t() for w in weights],
+                scale_scattered_input,
+                scales_weights,
+                0,
+                group.group_name,
+                biases=[None] * len(weights),
+                result_scales=[None] * len(weights),
+                out_dtypes=[out_dtype] * len(weights),
+                use_fast_accum=[False] * len(weights),
+            )
+
     if out is not None:
         assert isinstance(out, list) == isinstance(weight, list)
-        gathered_outputs = out if isinstance(out, list) else [out]
-        assert len(gathered_outputs) == len(gathered_output_shapes)
-        assert all(
-            go.shape == gos for go, gos in zip(gathered_outputs, gathered_output_shapes)
-        )
-        assert all(go.is_contiguous() for go in gathered_outputs)
-        if out_dtype is not None:
-            if isinstance(out, list):
-                for o in out:
-                    assert o.dtype == out_dtype
-            else:
-                assert out.dtype == out_dtype
-    else:
-        gathered_outputs = [
-            scattered_input.new_empty(
-                gos,
-                dtype=out_dtype if out_dtype is not None else scattered_input.dtype,
-            )
-            for gos in gathered_output_shapes
-        ]
-
-    torch.ops.xformers_python._fused_allgather_and_linear_impl(
-        scattered_input,
-        weights,
-        group.group_name,
-        gathered_outputs,
-        timeout_s=timeout_s,
-        scale_scattered_input=scale_scattered_input,
-        scales_weights=scales_weights,
-    )
+        outs = out if isinstance(out, list) else [out]
+        assert len(outs) == len(gathered_outputs)
+        for o, go in zip(outs, gathered_outputs):
+            assert o.device == go.device
+            assert o.dtype == go.dtype
+            assert o.shape == go.shape
+            if out_dtype is not None:
+                assert o.dtype == out_dtype
+            o.copy_(go)
 
     if isinstance(weight, list):
-        return [go.flatten(0, 1) for go in gathered_outputs]
+        return gathered_outputs
     else:
-        return gathered_outputs[0].flatten(0, 1)
-
-
-@torch.library.custom_op(
-    "xformers_python::_fused_allgather_and_linear_impl",
-    mutates_args={"gathered_outputs"},
-    device_types="cuda",
-)
-def _fused_allgather_and_linear_custom_op(
-    scattered_input: torch.Tensor,
-    weights: List[torch.Tensor],
-    process_group_name: str,
-    gathered_outputs: List[torch.Tensor],
-    timeout_s: int,
-    scale_scattered_input: torch.Tensor,
-    scales_weights: Sequence[Optional[torch.Tensor]],
-) -> None:
-    process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
-
-    def my_matmul(
-        input_: torch.Tensor,
-        src_rank: int,
-        stream_factory: Callable[[], torch.cuda.Stream],
-    ) -> None:
-        for w, scale_weight, go in zip(weights, scales_weights, gathered_outputs):
-            with torch.cuda.stream(stream_factory()):
-                if scale_scattered_input is not None and scale_weight is not None:
-                    torch._scaled_mm(
-                        input_,
-                        w.t(),
-                        out_dtype=go[src_rank].dtype,
-                        scale_a=scale_scattered_input,
-                        scale_b=scale_weight,
-                        out=go[src_rank],
-                    )
-                else:
-                    torch.matmul(input_, w.t(), out=go[src_rank])
-
-    fused_allgather_and_anything(
-        scattered_input,
-        my_matmul,
-        group=process_group,
-        timeout_s=timeout_s,
-    )
+        return gathered_outputs[0]
 
 
 def fused_allgather_and_anything(
@@ -313,77 +294,57 @@ def fused_linear_and_reducescatter(
     assert gathered_input.shape[-1] == weight.shape[-1]
     assert gathered_input.is_contiguous()
     assert gathered_input.shape[0] % world_size == 0
-    gathered_input = gathered_input.view(
-        (world_size, gathered_input.shape[0] // world_size) + gathered_input.shape[1:]
-    )
-    gathered_output_shape = gathered_input.shape[:-1] + weight.shape[:-1]
-    scattered_output_shape = gathered_output_shape[1:]
-    if out is not None:
-        scattered_output = out
-        assert scattered_output.device == gathered_input.device
-        assert scattered_output.dtype == gathered_input.dtype
-        assert scattered_output.shape == scattered_output_shape
-        if out_dtype is not None:
-            assert scattered_output.dtype == out_dtype
-    else:
-        scattered_output = gathered_input.new_empty(
-            scattered_output_shape,
-            dtype=out_dtype if out_dtype is not None else gathered_input.dtype,
-        )
 
-    torch.ops.xformers_python._fused_linear_and_reducescatter_impl(
-        gathered_input,
-        weight,
-        group.group_name,
-        scattered_output,
-        timeout_s=timeout_s,
-        scale_gathered_input=scale_gathered_input,
-        scale_weight=scale_weight,
-    )
+    # Fallback
+    if world_size == 1 or _should_use_fallback(group):
+        if scale_gathered_input is None:
+            gathered_output = torch.matmul(gathered_input, weight.t())
+        else:
+            gathered_output = torch._scaled_mm(
+                gathered_input,
+                weight.t(),
+                scale_gathered_input,
+                cast(torch.Tensor, scale_weight),
+                out_dtype=out_dtype,
+            )
+
+        if world_size == 1:
+            scattered_output = gathered_output
+        else:
+            scattered_output = torch.empty_like(
+                gathered_output.unflatten(0, (world_size, -1))[0]
+            )
+            dist.reduce_scatter_tensor(
+                output=scattered_output, input=gathered_output, group=group
+            )
+
+    # Fast path
+    else:
+        if scale_gathered_input is None:
+            scattered_output = torch.ops.symm_mem.fused_matmul_reduce_scatter(
+                gathered_input, weight.t(), "sum", 0, group.group_name
+            )
+        else:
+            scattered_output = torch.ops.symm_mem.fused_scaled_matmul_reduce_scatter(
+                gathered_input,
+                weight.t(),
+                scale_gathered_input,
+                scale_weight,
+                "sum",
+                0,
+                group.group_name,
+                out_dtype=out_dtype,
+            )
+
+    if out is not None:
+        assert out.device == scattered_output.device
+        assert out.dtype == scattered_output.dtype
+        assert out.shape == scattered_output.shape
+        if out_dtype is not None:
+            assert out.dtype == out_dtype
+        out.copy_(scattered_output)
 
     return scattered_output
-
-
-@torch.library.custom_op(
-    "xformers_python::_fused_linear_and_reducescatter_impl",
-    mutates_args={"scattered_output"},
-    device_types="cuda",
-)
-def _fused_linear_and_reducescatter_custom_op(
-    gathered_input: torch.Tensor,
-    weight: torch.Tensor,
-    process_group_name: str,
-    scattered_output: torch.Tensor,
-    timeout_s: int,
-    scale_gathered_input: Optional[torch.Tensor],
-    scale_weight: Optional[torch.Tensor],
-) -> None:
-    process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
-
-    def my_matmul(
-        output: torch.Tensor,
-        dst_rank: int,
-        stream_factory: Callable[[], torch.cuda.Stream],
-    ) -> None:
-        with torch.cuda.stream(stream_factory()):
-            if scale_gathered_input is not None and scale_weight is not None:
-                torch._scaled_mm(
-                    gathered_input[dst_rank],
-                    weight.t(),
-                    out_dtype=output.dtype,
-                    scale_a=scale_gathered_input,
-                    scale_b=scale_weight,
-                    out=output,
-                )
-            else:
-                torch.matmul(gathered_input[dst_rank], weight.t(), out=output)
-
-    fused_anything_and_reducescatter(
-        my_matmul,
-        scattered_output,
-        group=process_group,
-        timeout_s=timeout_s,
-    )
 
 
 def fused_anything_and_reducescatter(
