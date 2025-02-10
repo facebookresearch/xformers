@@ -4,307 +4,20 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Callable, Dict, List, Optional, Sequence, Union, overload
+from typing import Callable, List, Optional, Sequence, Union, overload
 
 import torch
 import torch.distributed as dist
-import torch.multiprocessing.reductions
-from torch.distributed._symmetric_memory import get_symm_mem_workspace
-
-OP_FINISHED_CHANNEL = 0
-COMMS_READY_CHANNEL = 1
-
-MS_IN_S = 1_000
+from torch.distributed._symmetric_memory import (
+    _pipelined_all_gather_and_consume,
+    _pipelined_produce_and_all2all,
+)
 
 
 def _is_fp8_dtype(dt: torch.dtype):
     # Detect if it's float8_e4m3fn or float8_e5m2 without mentioning them in
     # order to support old versions of PyTorch that don't define them.
     return dt.is_floating_point and torch.finfo(dt).bits == 8
-
-
-class _FusedSequenceParallel:
-    """Set up a communication ring and perform fused ops on it
-
-    Stores the persistent state needed to support a ring of connections between
-    processes, and the logic that can do fused comms + matmuls on it.
-
-    We want to achieve overlap between:
-    - a computation which reads from the data we received from a remote GPU
-    - and the communication where we send some data to another GPU
-    And in order to do that we need some staging buffers and a way to
-    synchronize access to them across processes.
-
-    To perform the communication over NVLink we make the processes exchange
-    their staging buffers using IPC (Inter-Process Communication) handles, which
-    "mounts"/"mmaps" an allocation on one GPU into the virtual address space of
-    another GPU: the memory remains backed by the original GPU but the other GPU
-    can access it as if it were local. We exchange these IPC handles using
-    multiprocessing Connections (and the "reductions" provided by PyTorch),
-    which we establish over UNIX domain sockets, whose addresses we exchange by
-    using a ProcessGroup.
-
-    To synchronize accesses we use a set of counters/sequence numbers that are
-    also allocated in memory shared over IPC handles. Processes signal that they
-    completed an operation by launching a kernel that increases that value, and
-    they wait for anoher process to complete an operation by launching a kernel
-    that busy-waits for that value to increase. Currently we implement these
-    kernels manually, but on recent CUDA drivers (515.43.04+, corresponding to
-    CUDA 11.7) we could use standard stream memory operations (see
-    https://docs.nvidia.com/cuda/archive/11.7.0/cuda-driver-api/group__CUDA__MEMOP.html).
-
-    We prefer to use these kernels (or the stream memory ops) over IPC events
-    because IPC events require signaling between processes at launch time to
-    ensure that the wait on one process occurs after the record on another
-    process. This signaling means that _launching_ our fused operation becomes a
-    synchronization barrier, which can increase the launch overhead. It would
-    also behave differently from NCCL, where launching is async and all the
-    synchronization happens on device in the kernels. A previous version of this
-    code which uses IPC events can be found here:
-    https://github.com/fairinternal/xformers/pull/504.
-
-    """
-
-    def __init__(
-        self,
-        device: torch.device,
-        group: dist.ProcessGroup,
-    ):
-        self.my_device = device
-        self.my_rank = group.rank()
-        self.world_size = group.size()
-        self.group = group
-
-        self.second_stream = torch.cuda.Stream()
-        # CUDA can schedule the matmul and the memcpy at the same time, but it
-        # tends to run the matmul first and delay the memcpy, which causes a
-        # domino effect. We thus "encourage" it to prioritize the memcpy.
-        self.memcpy_stream = torch.cuda.Stream(priority=-1)
-        # Use dedicated streams to run the wait kernels in the background.
-        self.compute_wait_stream = torch.cuda.Stream(priority=-1)
-        self.memcpy_wait_stream = torch.cuda.Stream(priority=-1)
-
-        self.next_stream_idx = 0
-
-    def make_stream_factory(
-        self, current_stream: torch.cuda.Stream
-    ) -> Callable[[], torch.cuda.Stream]:
-        def result():
-            stream = [current_stream, self.second_stream][self.next_stream_idx]
-            self.next_stream_idx += 1
-            self.next_stream_idx %= 2
-            return stream
-
-        return result
-
-    def allgather_and_linear(
-        self,
-        scattered_input: torch.Tensor,
-        my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
-        timeout_s: int,
-        _wait: bool = True,
-        _memcpy: bool = True,
-    ):
-        """Perform a fused all-gather followed by a linear layer"""
-
-        dtype = scattered_input.dtype
-
-        with torch.cuda.device(self.my_device):
-            symm_mem = get_symm_mem_workspace(
-                self.group.group_name,
-                self.world_size * scattered_input.numel() * dtype.itemsize,
-            )
-            # FIXME Do something about random_init if _memcpy is True.
-            buffers = [
-                symm_mem.get_buffer(
-                    rank, (self.world_size,) + scattered_input.shape, dtype
-                )
-                for rank in range(self.world_size)
-            ]
-
-        current_stream = torch.cuda.current_stream()
-
-        # Signal to buddy that we have read from the data (in previous iter) so
-        # it can overwrite it (this write matches up with wait [B] below).
-        for iter_ in range(1, self.world_size):
-            src_rank = (self.my_rank - iter_) % self.world_size
-            if _wait:
-                with torch.cuda.stream(current_stream):
-                    symm_mem.put_signal(src_rank, OP_FINISHED_CHANNEL)
-
-        self.second_stream.wait_stream(current_stream)
-        self.compute_wait_stream.wait_stream(current_stream)
-        self.memcpy_wait_stream.wait_stream(current_stream)
-        stream_factory = self.make_stream_factory(current_stream)
-
-        for iter_ in range(1, self.world_size):
-            dst_rank = (self.my_rank + iter_) % self.world_size
-
-            # Wait for buddy to signal that it read from the data before we
-            # overwrite it (this wait matches up with write [B] above).
-            if _wait:
-                with torch.cuda.stream(self.memcpy_wait_stream):
-                    symm_mem.wait_signal(
-                        dst_rank,
-                        OP_FINISHED_CHANNEL,
-                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
-                    )
-
-            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
-
-            if _memcpy:
-                with torch.cuda.stream(self.memcpy_stream):
-                    buffers[dst_rank][self.my_rank].copy_(scattered_input)
-
-            # Signal to buddy that we have written into the data so it can
-            # read from it (this write matches up with wait [A] below).
-            if _wait:
-                with torch.cuda.stream(self.memcpy_stream):
-                    symm_mem.memset32(
-                        symm_mem.get_signal_pad(dst_rank),  # type: ignore[attr-defined]
-                        self.world_size * COMMS_READY_CHANNEL + self.my_rank,
-                        val=1,
-                        count=1,
-                    )
-
-        my_matmul(scattered_input, self.my_rank, stream_factory)
-
-        for iter_ in range(1, self.world_size):
-            src_rank = (self.my_rank - iter_) % self.world_size
-
-            # Wait for buddy to signal that it wrote into the data before we
-            # read from it (this wait matches up with write [A] above).
-            if _wait:
-                with torch.cuda.stream(self.compute_wait_stream):
-                    symm_mem.wait_signal(
-                        src_rank,
-                        COMMS_READY_CHANNEL,
-                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
-                    )
-
-            current_stream.wait_stream(self.compute_wait_stream)
-            self.second_stream.wait_stream(self.compute_wait_stream)
-
-            my_matmul(buffers[self.my_rank][src_rank], src_rank, stream_factory)
-
-        current_stream.wait_stream(self.second_stream)
-        current_stream.wait_stream(self.memcpy_stream)
-
-    def linear_and_reducescatter(
-        self,
-        my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
-        gathered_output: torch.Tensor,
-        scattered_output: torch.Tensor,
-        timeout_s: int,
-        _wait: bool = True,
-        _memcpy: bool = True,
-    ):
-        """Perform a fused linear layer followed by a reduce-scatter"""
-
-        assert gathered_output.device == self.my_device
-        assert scattered_output.device == self.my_device
-        assert gathered_output.dtype == scattered_output.dtype
-        dtype = gathered_output.dtype
-
-        with torch.cuda.device(self.my_device):
-            symm_mem = get_symm_mem_workspace(
-                self.group.group_name,
-                self.world_size * scattered_output.numel() * dtype.itemsize,
-            )
-            # FIXME Do something about random_init if _memcpy is True.
-            buffers = [
-                symm_mem.get_buffer(
-                    rank, (self.world_size,) + scattered_output.shape, dtype
-                )
-                for rank in range(self.world_size)
-            ]
-
-        current_stream = torch.cuda.current_stream()
-
-        # Signal to buddy that we have read from the data (in previous iter)
-        # so it can overwrite it (this write matches up with wait [2] below).
-        for iter_ in range(1, self.world_size):
-            src_rank = (self.my_rank - iter_) % self.world_size
-            if _wait:
-                with torch.cuda.stream(current_stream):
-                    symm_mem.put_signal(src_rank, OP_FINISHED_CHANNEL)
-
-        self.second_stream.wait_stream(current_stream)
-        self.compute_wait_stream.wait_stream(current_stream)
-        self.memcpy_wait_stream.wait_stream(current_stream)
-        stream_factory = self.make_stream_factory(current_stream)
-
-        for iter_ in range(1, self.world_size):
-            dst_rank = (self.my_rank + iter_) % self.world_size
-
-            # Wait for buddy to signal that it read from the data before we
-            # overwrite it (this wait matches up with write [2] above).
-            if _wait:
-                with torch.cuda.stream(self.compute_wait_stream):
-                    symm_mem.wait_signal(
-                        dst_rank,
-                        OP_FINISHED_CHANNEL,
-                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
-                    )
-
-            current_stream.wait_stream(self.compute_wait_stream)
-            self.second_stream.wait_stream(self.compute_wait_stream)
-
-            my_matmul(buffers[self.my_rank][dst_rank], dst_rank, stream_factory)
-
-            # Deduce which stream contains the last kernel launched.
-            final_stream = [current_stream, self.second_stream][
-                (self.next_stream_idx - 1) % 2
-            ]
-            final_stream.wait_stream(current_stream)
-            final_stream.wait_stream(self.second_stream)
-
-            # Signal to buddy that we have written into the data so it can
-            # read from it (this write matches up with wait [1] below).
-            if _wait:
-                with torch.cuda.stream(final_stream):
-                    symm_mem.memset32(
-                        symm_mem.get_signal_pad(dst_rank),  # type: ignore[attr-defined]
-                        self.world_size * COMMS_READY_CHANNEL + self.my_rank,
-                        val=1,
-                        count=1,
-                    )
-
-        my_matmul(
-            gathered_output[self.my_rank],
-            self.my_rank,
-            stream_factory,
-        )
-
-        for iter_ in range(1, self.world_size):
-            src_rank = (self.my_rank - iter_) % self.world_size
-
-            # Wait for buddy to signal that it wrote into the data before we
-            # read from it (this wait matches up with write [1] above).
-            if _wait:
-                with torch.cuda.stream(self.memcpy_wait_stream):
-                    symm_mem.wait_signal(
-                        src_rank,
-                        COMMS_READY_CHANNEL,
-                        timeout_ms=timeout_s * MS_IN_S,  # type: ignore[call-arg]
-                    )
-
-            self.memcpy_stream.wait_stream(self.memcpy_wait_stream)
-
-            if _memcpy:
-                with torch.cuda.stream(self.memcpy_stream):
-                    gathered_output[src_rank].copy_(buffers[src_rank][self.my_rank])
-
-        current_stream.wait_stream(self.second_stream)
-        current_stream.wait_stream(self.memcpy_stream)
-
-        torch.sum(gathered_output, dim=0, out=scattered_output)
-
-
-# We'd store this as an attribute on the PG object itself, but some PGs are
-# pybind-bound classes and thus don't support it, so we simulate this as an
-# external cache.
-CACHE: Dict[int, Optional[_FusedSequenceParallel]] = {}
 
 
 def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> bool:
@@ -320,23 +33,15 @@ def _can_ranks_communicate_all_to_all_over_nvlink(group: dist.ProcessGroup) -> b
     return group.size() <= 8
 
 
-def _lazy_init(
-    device: torch.device, group: dist.ProcessGroup
-) -> Optional[_FusedSequenceParallel]:
+def _should_use_fallback(group: dist.ProcessGroup) -> bool:
     world_size = group.size()
-    try:
-        obj = CACHE[id(group)]
-    except KeyError:
-        if int(os.environ.get("DISABLE_FUSED_SEQUENCE_PARALLEL", "0")):
-            obj = None
-        elif world_size == 1:
-            obj = None
-        elif not _can_ranks_communicate_all_to_all_over_nvlink(group):
-            obj = None
-        else:
-            obj = _FusedSequenceParallel(device, group)
-        CACHE[id(group)] = obj
-    return obj
+    if int(os.environ.get("DISABLE_FUSED_SEQUENCE_PARALLEL", "0")):
+        return True
+    elif world_size == 1:
+        return True
+    elif not _can_ranks_communicate_all_to_all_over_nvlink(group):
+        return True
+    return False
 
 
 def _default_stream_factory() -> torch.cuda.Stream:
@@ -472,8 +177,6 @@ def fused_allgather_and_linear(
         group.group_name,
         gathered_outputs,
         timeout_s=timeout_s,
-        _wait=private_args_DO_NOT_USE.get("_wait", True),
-        _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
         scale_scattered_input=scale_scattered_input,
         scales_weights=scales_weights,
     )
@@ -495,8 +198,6 @@ def _fused_allgather_and_linear_custom_op(
     process_group_name: str,
     gathered_outputs: List[torch.Tensor],
     timeout_s: int,
-    _wait: bool,
-    _memcpy: bool,
     scale_scattered_input: torch.Tensor,
     scales_weights: Sequence[Optional[torch.Tensor]],
 ) -> None:
@@ -526,8 +227,6 @@ def _fused_allgather_and_linear_custom_op(
         my_matmul,
         group=process_group,
         timeout_s=timeout_s,
-        _wait=_wait,
-        _memcpy=_memcpy,
     )
 
 
@@ -545,13 +244,11 @@ def fused_allgather_and_anything(
 
     gathered_input_shape = (world_size,) + scattered_input.shape
 
-    obj = _lazy_init(scattered_input.device, group)
-
     if world_size == 1:
         my_matmul(scattered_input, 0, _default_stream_factory)
 
     # Fallback
-    elif obj is None:
+    elif _should_use_fallback(group):
         gathered_input = scattered_input.new_empty(gathered_input_shape)
         dist.all_gather_into_tensor(
             output_tensor=gathered_input, input_tensor=scattered_input, group=group
@@ -565,13 +262,15 @@ def fused_allgather_and_anything(
 
     # Fast path
     else:
-        assert scattered_input.device == obj.my_device
-        obj.allgather_and_linear(
+        def my_wrapper(t, rank):
+            my_matmul(t.squeeze(0), rank, _default_stream_factory)
+
+        gathered_input = scattered_input.new_empty(gathered_input_shape)
+        _pipelined_all_gather_and_consume(
             scattered_input,
-            my_matmul,
-            timeout_s=timeout_s,
-            _wait=private_args_DO_NOT_USE.get("_wait", True),
-            _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
+            my_wrapper,
+            gathered_input,
+            group.group_name,
         )
 
 
@@ -638,8 +337,6 @@ def fused_linear_and_reducescatter(
         group.group_name,
         scattered_output,
         timeout_s=timeout_s,
-        _wait=private_args_DO_NOT_USE.get("_wait", True),
-        _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
         scale_gathered_input=scale_gathered_input,
         scale_weight=scale_weight,
     )
@@ -658,8 +355,6 @@ def _fused_linear_and_reducescatter_custom_op(
     process_group_name: str,
     scattered_output: torch.Tensor,
     timeout_s: int,
-    _wait: bool,
-    _memcpy: bool,
     scale_gathered_input: Optional[torch.Tensor],
     scale_weight: Optional[torch.Tensor],
 ) -> None:
@@ -688,8 +383,6 @@ def _fused_linear_and_reducescatter_custom_op(
         scattered_output,
         group=process_group,
         timeout_s=timeout_s,
-        _wait=_wait,
-        _memcpy=_memcpy,
     )
 
 
@@ -707,13 +400,11 @@ def fused_anything_and_reducescatter(
 
     gathered_output_shape = (world_size,) + scattered_output.shape
 
-    obj = _lazy_init(scattered_output.device, group)
-
     if world_size == 1:
         my_matmul(scattered_output, 0, _default_stream_factory)
 
     # Fallback
-    elif obj is None:
+    elif _should_use_fallback(group):
         gathered_output = scattered_output.new_empty(gathered_output_shape)
         for dst_rank in range(world_size):
             my_matmul(
@@ -727,13 +418,14 @@ def fused_anything_and_reducescatter(
 
     # Fast path
     else:
-        assert scattered_output.device == obj.my_device
+        def my_wrapper(rank, t):
+            my_matmul(t.squeeze(0), rank, _default_stream_factory)
+
         gathered_output = scattered_output.new_empty(gathered_output_shape)
-        obj.linear_and_reducescatter(
-            my_matmul,
+        _pipelined_produce_and_all2all(
+            my_wrapper,
             gathered_output,
-            scattered_output,
-            timeout_s=timeout_s,
-            _wait=private_args_DO_NOT_USE.get("_wait", True),
-            _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
+            group.group_name,
         )
+
+        torch.sum(gathered_output, dim=0, out=scattered_output)

@@ -142,8 +142,6 @@ def run_one_rank(
     torch.distributed.init_process_group(backend="nccl", init_method="env://")
 
     subgroup = torch.distributed.new_group()
-    subgroup_nowait = torch.distributed.new_group()
-    subgroup_nowait_nomemcpy = torch.distributed.new_group()
 
     scenario = SCENARIOS[scenario_name](world_size)
     if step is Step.AllGather:
@@ -237,56 +235,6 @@ def run_one_rank(
             timeout_s=10,
         )
 
-    def run_fused_nowait_ag():
-        nonlocal gathered_outputs_fused
-        from xformers.ops import fused_allgather_and_linear
-
-        gathered_outputs_fused = fused_allgather_and_linear(
-            scattered_input,
-            [w.t() for w in weights],
-            group=subgroup_nowait,
-            _wait=False,
-            timeout_s=10,
-        )
-
-    def run_fused_nowait_rs():
-        nonlocal scattered_outputs_fused
-        from xformers.ops import fused_linear_and_reducescatter
-
-        scattered_outputs_fused = fused_linear_and_reducescatter(
-            gathered_input,
-            [w.t() for w in weights],
-            group=subgroup_nowait,
-            _wait=False,
-            timeout_s=10,
-        )
-
-    def run_fused_nowait_nomemcpy_ag():
-        nonlocal gathered_outputs_fused
-        from xformers.ops import fused_allgather_and_linear
-
-        gathered_outputs_fused = fused_allgather_and_linear(
-            scattered_input,
-            [w.t() for w in weights],
-            group=subgroup_nowait_nomemcpy,
-            _wait=False,
-            _memcpy=False,
-            timeout_s=10,
-        )
-
-    def run_fused_nowait_nomemcpy_rs():
-        nonlocal scattered_outputs_fused
-        from xformers.ops import fused_linear_and_reducescatter
-
-        scattered_outputs_fused = fused_linear_and_reducescatter(
-            gathered_input,
-            [w.t() for w in weights],
-            group=subgroup_nowait_nomemcpy,
-            _wait=False,
-            _memcpy=False,
-            timeout_s=10,
-        )
-
     print(f"Sizes: ({world_size}x{M // world_size})x({num_matrices}x{N})x{K}")
 
     if step is Step.AllGather:
@@ -354,10 +302,6 @@ def run_one_rank(
         ),
         "nccl_reference": Bench(ag=run_nccl_reference_ag, rs=run_nccl_reference_rs),
         "fused": Bench(ag=run_fused_ag, rs=run_fused_rs),
-        "fused_nowait": Bench(ag=run_fused_nowait_ag, rs=run_fused_nowait_rs),
-        "fused_nowait_nomemcpy": Bench(
-            ag=run_fused_nowait_nomemcpy_ag, rs=run_fused_nowait_nomemcpy_rs
-        ),
     }
 
     unused_events = deque(
