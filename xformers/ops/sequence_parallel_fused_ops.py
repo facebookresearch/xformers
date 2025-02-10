@@ -243,6 +243,7 @@ def fused_allgather_and_anything(
 
     # Fast path
     else:
+
         def my_wrapper(t, rank):
             my_matmul(t.squeeze(0), rank, _default_stream_factory)
 
@@ -379,6 +380,7 @@ def fused_anything_and_reducescatter(
 
     # Fast path
     else:
+
         def my_wrapper(rank, t):
             my_matmul(t.squeeze(0), rank, _default_stream_factory)
 
