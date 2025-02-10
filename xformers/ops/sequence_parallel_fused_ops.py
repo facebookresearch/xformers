@@ -99,39 +99,26 @@ class _FusedSequenceParallel:
 
     def allgather_and_linear(
         self,
-        scattered_inputs: List[torch.Tensor],
-        my_matmul: Callable[
-            [List[torch.Tensor], int, Callable[[], torch.cuda.Stream]], None
-        ],
+        scattered_input: torch.Tensor,
+        my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
     ):
         """Perform a fused all-gather followed by a linear layer"""
 
-        dtype = scattered_inputs[0].dtype
-        assert all(si.device == self.my_device for si in scattered_inputs)
-        assert all(si.dtype == dtype for si in scattered_inputs)
-
-        scattered_input_numels = [si.numel() for si in scattered_inputs]
-        total_scattered_input_numel = sum(scattered_input_numels)
+        dtype = scattered_input.dtype
 
         with torch.cuda.device(self.my_device):
             symm_mem = get_symm_mem_workspace(
                 self.group.group_name,
-                self.world_size * total_scattered_input_numel * dtype.itemsize,
+                self.world_size * scattered_input.numel() * dtype.itemsize,
             )
             # FIXME Do something about random_init if _memcpy is True.
             buffers = [
-                [
-                    s.view((self.world_size,) + si.shape)
-                    for s, si in zip(
-                        symm_mem.get_buffer(
-                            rank, [self.world_size, total_scattered_input_numel], dtype
-                        ).split(scattered_input_numels, dim=-1),
-                        scattered_inputs,
-                    )
-                ]
+                symm_mem.get_buffer(
+                    rank, (self.world_size,) + scattered_input.shape, dtype
+                )
                 for rank in range(self.world_size)
             ]
 
@@ -167,8 +154,7 @@ class _FusedSequenceParallel:
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
-                    for bs, si in zip(buffers[dst_rank], scattered_inputs):
-                        bs[self.my_rank].copy_(si)
+                    buffers[dst_rank][self.my_rank].copy_(scattered_input)
 
             # Signal to buddy that we have written into the data so it can
             # read from it (this write matches up with wait [A] below).
@@ -181,7 +167,7 @@ class _FusedSequenceParallel:
                         count=1,
                     )
 
-        my_matmul(scattered_inputs, self.my_rank, stream_factory)
+        my_matmul(scattered_input, self.my_rank, stream_factory)
 
         for iter_ in range(1, self.world_size):
             src_rank = (self.my_rank - iter_) % self.world_size
@@ -199,51 +185,37 @@ class _FusedSequenceParallel:
             current_stream.wait_stream(self.compute_wait_stream)
             self.second_stream.wait_stream(self.compute_wait_stream)
 
-            my_matmul(
-                [s[src_rank] for s in buffers[self.my_rank]], src_rank, stream_factory
-            )
+            my_matmul(buffers[self.my_rank][src_rank], src_rank, stream_factory)
 
         current_stream.wait_stream(self.second_stream)
         current_stream.wait_stream(self.memcpy_stream)
 
     def linear_and_reducescatter(
         self,
-        my_matmul: Callable[
-            [List[torch.Tensor], int, Callable[[], torch.cuda.Stream]], None
-        ],
-        gathered_outputs: List[torch.Tensor],
-        scattered_outputs: List[torch.Tensor],
+        my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
+        gathered_output: torch.Tensor,
+        scattered_output: torch.Tensor,
         timeout_s: int,
         _wait: bool = True,
         _memcpy: bool = True,
     ):
         """Perform a fused linear layer followed by a reduce-scatter"""
 
-        dtype = gathered_outputs[0].dtype
-        assert all(go.device == self.my_device for go in gathered_outputs)
-        assert all(go.dtype == dtype for go in gathered_outputs)
-        assert all(so.device == self.my_device for so in scattered_outputs)
-        assert all(so.dtype == dtype for so in scattered_outputs)
-
-        scattered_output_numels = [so.numel() for so in scattered_outputs]
-        total_scattered_output_numel = sum(scattered_output_numels)
+        assert gathered_output.device == self.my_device
+        assert scattered_output.device == self.my_device
+        assert gathered_output.dtype == scattered_output.dtype
+        dtype = gathered_output.dtype
 
         with torch.cuda.device(self.my_device):
             symm_mem = get_symm_mem_workspace(
                 self.group.group_name,
-                self.world_size * total_scattered_output_numel * dtype.itemsize,
+                self.world_size * scattered_output.numel() * dtype.itemsize,
             )
             # FIXME Do something about random_init if _memcpy is True.
             buffers = [
-                [
-                    s.view((self.world_size,) + so.shape)
-                    for s, so in zip(
-                        symm_mem.get_buffer(
-                            rank, [self.world_size, total_scattered_output_numel], dtype
-                        ).split(scattered_output_numels, dim=-1),
-                        scattered_outputs,
-                    )
-                ]
+                symm_mem.get_buffer(
+                    rank, (self.world_size,) + scattered_output.shape, dtype
+                )
                 for rank in range(self.world_size)
             ]
 
@@ -278,9 +250,7 @@ class _FusedSequenceParallel:
             current_stream.wait_stream(self.compute_wait_stream)
             self.second_stream.wait_stream(self.compute_wait_stream)
 
-            my_matmul(
-                [s[dst_rank] for s in buffers[self.my_rank]], dst_rank, stream_factory
-            )
+            my_matmul(buffers[self.my_rank][dst_rank], dst_rank, stream_factory)
 
             # Deduce which stream contains the last kernel launched.
             final_stream = [current_stream, self.second_stream][
@@ -301,7 +271,7 @@ class _FusedSequenceParallel:
                     )
 
         my_matmul(
-            [o[self.my_rank] for o in gathered_outputs],
+            gathered_output[self.my_rank],
             self.my_rank,
             stream_factory,
         )
@@ -323,14 +293,12 @@ class _FusedSequenceParallel:
 
             if _memcpy:
                 with torch.cuda.stream(self.memcpy_stream):
-                    for go, bs in zip(gathered_outputs, buffers[src_rank]):
-                        go[src_rank].copy_(bs[self.my_rank])
+                    gathered_output[src_rank].copy_(buffers[src_rank][self.my_rank])
 
         current_stream.wait_stream(self.second_stream)
         current_stream.wait_stream(self.memcpy_stream)
 
-        for go, so in zip(gathered_outputs, scattered_outputs):
-            torch.sum(go, dim=0, out=so)
+        torch.sum(gathered_output, dim=0, out=scattered_output)
 
 
 # We'd store this as an attribute on the PG object itself, but some PGs are
@@ -535,7 +503,7 @@ def _fused_allgather_and_linear_custom_op(
     process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
 
     def my_matmul(
-        inputs: List[torch.Tensor],
+        input_: torch.Tensor,
         src_rank: int,
         stream_factory: Callable[[], torch.cuda.Stream],
     ) -> None:
@@ -543,7 +511,7 @@ def _fused_allgather_and_linear_custom_op(
             with torch.cuda.stream(stream_factory()):
                 if scale_scattered_input is not None and scale_weight is not None:
                     torch._scaled_mm(
-                        inputs[0],
+                        input_,
                         w.t(),
                         out_dtype=go[src_rank].dtype,
                         scale_a=scale_scattered_input,
@@ -551,10 +519,10 @@ def _fused_allgather_and_linear_custom_op(
                         out=go[src_rank],
                     )
                 else:
-                    torch.matmul(inputs[0], w.t(), out=go[src_rank])
+                    torch.matmul(input_, w.t(), out=go[src_rank])
 
     fused_allgather_and_anything(
-        [scattered_input],
+        scattered_input,
         my_matmul,
         group=process_group,
         timeout_s=timeout_s,
@@ -564,10 +532,8 @@ def _fused_allgather_and_linear_custom_op(
 
 
 def fused_allgather_and_anything(
-    scattered_inputs: List[torch.Tensor],
-    my_matmul: Callable[
-        [List[torch.Tensor], int, Callable[[], torch.cuda.Stream]], None
-    ],
+    scattered_input: torch.Tensor,
+    my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
     *,
     group: dist.ProcessGroup,
     timeout_s: int = 60 * 60,
@@ -575,42 +541,33 @@ def fused_allgather_and_anything(
 ) -> None:
     world_size = group.size()
 
-    if len(scattered_inputs) == 0:
-        for src_rank in range(world_size):
-            my_matmul([], src_rank, _default_stream_factory)
-        return
+    assert scattered_input.is_contiguous()
 
-    assert all(si.is_contiguous() for si in scattered_inputs)
-    assert all(si.device == scattered_inputs[0].device for si in scattered_inputs)
-    assert all(si.dtype == scattered_inputs[0].dtype for si in scattered_inputs)
+    gathered_input_shape = (world_size,) + scattered_input.shape
 
-    gathered_input_shapes = [(world_size,) + si.shape for si in scattered_inputs]
-
-    obj = _lazy_init(scattered_inputs[0].device, group)
+    obj = _lazy_init(scattered_input.device, group)
 
     if world_size == 1:
-        my_matmul(scattered_inputs, 0, _default_stream_factory)
+        my_matmul(scattered_input, 0, _default_stream_factory)
 
     # Fallback
     elif obj is None:
-        gathered_inputs = [
-            si.new_empty(gis)
-            for si, gis in zip(scattered_inputs, gathered_input_shapes)
-        ]
-        for si, gi in zip(scattered_inputs, gathered_inputs):
-            dist.all_gather_into_tensor(output_tensor=gi, input_tensor=si, group=group)
+        gathered_input = scattered_input.new_empty(gathered_input_shape)
+        dist.all_gather_into_tensor(
+            output_tensor=gathered_input, input_tensor=scattered_input, group=group
+        )
         for src_rank in range(world_size):
             my_matmul(
-                [gi[src_rank] for gi in gathered_inputs],
+                gathered_input[src_rank],
                 src_rank,
                 _default_stream_factory,
             )
 
     # Fast path
     else:
-        assert scattered_inputs[0].device == obj.my_device
+        assert scattered_input.device == obj.my_device
         obj.allgather_and_linear(
-            scattered_inputs,
+            scattered_input,
             my_matmul,
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
@@ -618,7 +575,6 @@ def fused_allgather_and_anything(
         )
 
 
-@overload
 def fused_linear_and_reducescatter(
     gathered_input: torch.Tensor,
     weight: torch.Tensor,
@@ -627,41 +583,10 @@ def fused_linear_and_reducescatter(
     out: Optional[torch.Tensor] = None,
     timeout_s: int = 60 * 60,
     scale_gathered_input: Optional[torch.Tensor] = None,
-    scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
+    scale_weight: Optional[torch.Tensor] = None,
     out_dtype: Optional[torch.dtype] = None,
     **private_args_DO_NOT_USE,
 ) -> torch.Tensor:
-    ...
-
-
-@overload
-def fused_linear_and_reducescatter(
-    gathered_input: torch.Tensor,
-    weight: List[torch.Tensor],
-    *,
-    group: dist.ProcessGroup,
-    out: Optional[List[torch.Tensor]] = None,
-    timeout_s: int = 60 * 60,
-    scale_gathered_input: Optional[torch.Tensor] = None,
-    scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    out_dtype: Optional[torch.dtype] = None,
-    **private_args_DO_NOT_USE,
-) -> List[torch.Tensor]:
-    ...
-
-
-def fused_linear_and_reducescatter(
-    gathered_input: torch.Tensor,
-    weight: Union[torch.Tensor, List[torch.Tensor]],
-    *,
-    group: dist.ProcessGroup,
-    out: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    timeout_s: int = 60 * 60,
-    scale_gathered_input: Optional[torch.Tensor] = None,
-    scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
-    out_dtype: Optional[torch.dtype] = None,
-    **private_args_DO_NOT_USE,
-) -> Union[torch.Tensor, List[torch.Tensor]]:
     """Performs a fused linear op followed by a reduce-scatter
 
     It is equivalent to the following plain PyTorch code:
@@ -679,112 +604,88 @@ def fused_linear_and_reducescatter(
     gathered_input datatype.
     """
     world_size = group.size()
-    weights = weight if isinstance(weight, list) else [weight]
     assert (scale_gathered_input is None) == (scale_weight is None)
     if scale_weight is not None:
-        assert isinstance(weight, list) == isinstance(scale_weight, list)
-        scales_weights: Sequence[Optional[torch.Tensor]] = (
-            scale_weight if isinstance(scale_weight, list) else [scale_weight]
-        )
-        assert len(weights) == len(scales_weights)
         assert _is_fp8_dtype(gathered_input.dtype)
-        assert all(_is_fp8_dtype(w.dtype) for w in weights)
+        assert _is_fp8_dtype(weight.dtype)
         assert out_dtype is not None, "output_dtype is required with FP8"
-    else:
-        scales_weights = [None] * len(weights)
-    assert all(w.ndim == 2 for w in weights)
+    assert weight.ndim == 2
     assert gathered_input.ndim >= 2
-    assert all(gathered_input.shape[-1] == w.shape[-1] for w in weights)
+    assert gathered_input.shape[-1] == weight.shape[-1]
     assert gathered_input.is_contiguous()
     assert gathered_input.shape[0] % world_size == 0
     gathered_input = gathered_input.view(
         (world_size, gathered_input.shape[0] // world_size) + gathered_input.shape[1:]
     )
-    gathered_output_shapes = [gathered_input.shape[:-1] + w.shape[:-1] for w in weights]
-    scattered_output_shapes = [gos[1:] for gos in gathered_output_shapes]
+    gathered_output_shape = gathered_input.shape[:-1] + weight.shape[:-1]
+    scattered_output_shape = gathered_output_shape[1:]
     if out is not None:
-        assert isinstance(out, list) == isinstance(weight, list)
-        scattered_outputs = out if isinstance(out, list) else [out]
-        assert len(scattered_outputs) == scattered_output_shapes
-        assert all(so.device == gathered_input.device for so in scattered_outputs)
-        assert all(so.dtype == gathered_input.dtype for so in scattered_outputs)
-        assert all(
-            so.shape == sos
-            for so, sos in zip(scattered_outputs, scattered_output_shapes)
-        )
+        scattered_output = out
+        assert scattered_output.device == gathered_input.device
+        assert scattered_output.dtype == gathered_input.dtype
+        assert scattered_output.shape == scattered_output_shape
         if out_dtype is not None:
-            if isinstance(out, list):
-                for o in out:
-                    assert o.dtype == out_dtype
-            else:
-                assert out.dtype == out_dtype
+            assert scattered_output.dtype == out_dtype
     else:
-        scattered_outputs = [
-            gathered_input.new_empty(
-                sos,
-                dtype=out_dtype if out_dtype is not None else gathered_input.dtype,
-            )
-            for sos in scattered_output_shapes
-        ]
+        scattered_output = gathered_input.new_empty(
+            scattered_output_shape,
+            dtype=out_dtype if out_dtype is not None else gathered_input.dtype,
+        )
 
     torch.ops.xformers_python._fused_linear_and_reducescatter_impl(
         gathered_input,
-        weights,
+        weight,
         group.group_name,
-        scattered_outputs,
+        scattered_output,
         timeout_s=timeout_s,
         _wait=private_args_DO_NOT_USE.get("_wait", True),
         _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
         scale_gathered_input=scale_gathered_input,
-        scales_weights=scales_weights,
+        scale_weight=scale_weight,
     )
 
-    if isinstance(weight, list):
-        return scattered_outputs
-    else:
-        return scattered_outputs[0]
+    return scattered_output
 
 
 @torch.library.custom_op(
     "xformers_python::_fused_linear_and_reducescatter_impl",
-    mutates_args={"scattered_outputs"},
+    mutates_args={"scattered_output"},
     device_types="cuda",
 )
 def _fused_linear_and_reducescatter_custom_op(
     gathered_input: torch.Tensor,
-    weights: List[torch.Tensor],
+    weight: torch.Tensor,
     process_group_name: str,
-    scattered_outputs: List[torch.Tensor],
+    scattered_output: torch.Tensor,
     timeout_s: int,
     _wait: bool,
     _memcpy: bool,
-    scale_gathered_input: torch.Tensor,
-    scales_weights: Sequence[Optional[torch.Tensor]],
+    scale_gathered_input: Optional[torch.Tensor],
+    scale_weight: Optional[torch.Tensor],
 ) -> None:
     process_group = dist.distributed_c10d._resolve_process_group(process_group_name)
 
     def my_matmul(
-        outputs: List[torch.Tensor],
+        output: torch.Tensor,
         dst_rank: int,
         stream_factory: Callable[[], torch.cuda.Stream],
     ) -> None:
-        for w, scale_weight, o in zip(weights, scales_weights, outputs):
-            with torch.cuda.stream(stream_factory()):
-                if scale_gathered_input is not None and scale_weight is not None:
-                    torch._scaled_mm(
-                        gathered_input[dst_rank],
-                        w.t(),
-                        out_dtype=o.dtype,
-                        scale_a=scale_gathered_input,
-                        scale_b=scale_weight,
-                        out=o,
-                    )
-                else:
-                    torch.matmul(gathered_input[dst_rank], w.t(), out=o)
+        with torch.cuda.stream(stream_factory()):
+            if scale_gathered_input is not None and scale_weight is not None:
+                torch._scaled_mm(
+                    gathered_input[dst_rank],
+                    weight.t(),
+                    out_dtype=output.dtype,
+                    scale_a=scale_gathered_input,
+                    scale_b=scale_weight,
+                    out=output,
+                )
+            else:
+                torch.matmul(gathered_input[dst_rank], weight.t(), out=output)
 
     fused_anything_and_reducescatter(
         my_matmul,
-        scattered_outputs,
+        scattered_output,
         group=process_group,
         timeout_s=timeout_s,
         _wait=_wait,
@@ -793,10 +694,8 @@ def _fused_linear_and_reducescatter_custom_op(
 
 
 def fused_anything_and_reducescatter(
-    my_matmul: Callable[
-        [List[torch.Tensor], int, Callable[[], torch.cuda.Stream]], None
-    ],
-    scattered_outputs: List[torch.Tensor],
+    my_matmul: Callable[[torch.Tensor, int, Callable[[], torch.cuda.Stream]], None],
+    scattered_output: torch.Tensor,
     *,
     group: dist.ProcessGroup,
     timeout_s: int = 60 * 60,
@@ -804,47 +703,36 @@ def fused_anything_and_reducescatter(
 ) -> None:
     world_size = group.size()
 
-    if len(scattered_outputs) == 0:
-        for dst_rank in range(world_size):
-            my_matmul([], dst_rank, _default_stream_factory)
-        return
+    assert scattered_output.is_contiguous()
 
-    assert all(so.is_contiguous() for so in scattered_outputs)
-    assert all(so.device == scattered_outputs[0].device for so in scattered_outputs)
-    assert all(so.dtype == scattered_outputs[0].dtype for so in scattered_outputs)
+    gathered_output_shape = (world_size,) + scattered_output.shape
 
-    gathered_output_shapes = [(world_size,) + so.shape for so in scattered_outputs]
-
-    obj = _lazy_init(scattered_outputs[0].device, group)
+    obj = _lazy_init(scattered_output.device, group)
 
     if world_size == 1:
-        my_matmul(scattered_outputs, 0, _default_stream_factory)
+        my_matmul(scattered_output, 0, _default_stream_factory)
 
     # Fallback
     elif obj is None:
-        gathered_outputs = [
-            so.new_empty(gos)
-            for so, gos in zip(scattered_outputs, gathered_output_shapes)
-        ]
+        gathered_output = scattered_output.new_empty(gathered_output_shape)
         for dst_rank in range(world_size):
             my_matmul(
-                [go[dst_rank] for go in gathered_outputs],
+                gathered_output[dst_rank],
                 dst_rank,
                 _default_stream_factory,
             )
-        for go, so in zip(gathered_outputs, scattered_outputs):
-            dist.reduce_scatter_tensor(output=so, input=go, group=group)
+        dist.reduce_scatter_tensor(
+            output=scattered_output, input=gathered_output, group=group
+        )
 
     # Fast path
     else:
-        assert scattered_outputs[0].device == obj.my_device
-        gathered_outputs = [
-            scattered_outputs[0].new_empty(gos) for gos in gathered_output_shapes
-        ]
+        assert scattered_output.device == obj.my_device
+        gathered_output = scattered_output.new_empty(gathered_output_shape)
         obj.linear_and_reducescatter(
             my_matmul,
-            gathered_outputs,
-            scattered_outputs,
+            gathered_output,
+            scattered_output,
             timeout_s=timeout_s,
             _wait=private_args_DO_NOT_USE.get("_wait", True),
             _memcpy=private_args_DO_NOT_USE.get("_memcpy", True),
