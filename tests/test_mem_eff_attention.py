@@ -195,7 +195,6 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                         type(None),
                         fmha.attn_bias.LowerTriangularMask,
                     ]:
-                        B, Mq, Mkv, H, K, Kv = shape
                         B = min(B, 12)
 
                         if bias_type in {
