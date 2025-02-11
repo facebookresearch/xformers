@@ -97,20 +97,21 @@ def sequence_parallel_leading_matmul_bwd(
         ]
 
         def my_si_matmul(
-            grad_gathered_input: torch.Tensor,
+            grad_gathered_inputs: List[torch.Tensor],
             dst_rank: int,
             stream_factory: Callable[[], torch.cuda.Stream],
         ) -> None:
+            (grad_gi,) = grad_gathered_inputs
             with torch.cuda.stream(stream_factory()):
                 tiled_matmul_out(
                     [[grad_gos[dst_rank] for grad_gos in grad_gathered_outputss]],
                     [[w.t()] for w in weights],
-                    out=[[grad_gathered_input]],
+                    out=[[grad_gi]],
                 )
 
         fused_anything_and_reducescatter(
             my_si_matmul,
-            grad_scattered_input,
+            [grad_scattered_input],
             group=process_group,
         )
 
@@ -120,20 +121,21 @@ def sequence_parallel_leading_matmul_bwd(
         events = [torch.cuda.Event() for _ in weights]
 
         def my_w_matmul(
-            gathered_input_shard: torch.Tensor,
+            gathered_inputs_shard: List[torch.Tensor],
             src_rank: int,
             stream_factory: Callable[[], torch.cuda.Stream],
         ) -> None:
+            (gi_shard,) = gathered_inputs_shard
             for grad_gos, grad_w, event in zip(
                 grad_gathered_outputss, grad_weights, events
             ):
                 with torch.cuda.stream(stream_factory()):
                     event.wait()
-                    grad_w.t().addmm_(grad_gos[src_rank].t(), gathered_input_shard)
+                    grad_w.t().addmm_(grad_gos[src_rank].t(), gi_shard)
                     event.record()
 
         fused_allgather_and_anything(
-            scattered_input,
+            [scattered_input],
             my_w_matmul,
             group=process_group,
         )
@@ -280,23 +282,20 @@ def sequence_parallel_trailing_matmul_bwd(
         grad_gathered_inputs = grad_gathered_input.tensor_split(mp_size, dim=0)
 
         def my_gi_and_w_matmul(
-            grad_gathered_output_shard: torch.Tensor,
+            grad_gathered_outputs_shard: List[torch.Tensor],
             src_rank: int,
             stream_factory: Callable[[], torch.cuda.Stream],
         ) -> None:
+            (grad_go_shard,) = grad_gathered_outputs_shard
             with torch.cuda.stream(stream_factory()):
                 torch.matmul(
-                    grad_gathered_output_shard,
-                    weight.t(),
-                    out=grad_gathered_inputs[src_rank],
+                    grad_go_shard, weight.t(), out=grad_gathered_inputs[src_rank]
                 )
             with torch.cuda.stream(stream_factory()):
-                grad_weight.t().addmm_(
-                    grad_gathered_output_shard.t(), gathered_inputs[src_rank]
-                )
+                grad_weight.t().addmm_(grad_go_shard.t(), gathered_inputs[src_rank])
 
         fused_allgather_and_anything(
-            grad_scattered_output,
+            [grad_scattered_output],
             my_gi_and_w_matmul,
             group=process_group,
         )
