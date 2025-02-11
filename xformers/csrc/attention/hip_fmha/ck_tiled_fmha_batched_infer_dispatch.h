@@ -68,16 +68,17 @@ struct batched_infer_mask_bias_dropout_dispatch {
         ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
         : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-    const bool pad_seqlen_q = !(param.M % FmhaShape::kM0 == 0);
-
+    const bool pad_seqlen_k = !(param.N % FmhaShape::kN0 == 0);
     const bool pad_headdim_q = !(param.K % kKLoadLength == 0);
     const bool pad_headdim_v = !(param.Kv % FmhaShape::kN1 == 0);
 
-    constexpr bool kPadSeqLenK = true;
+    // no need to check seqlen_q since it is not used as fastest dim,
+    // buffer_load_dwordxx/buffer_store_dwordxx can handle oob access
+    constexpr bool kPadSeqLenQ = false;
 
     BOOL_SWITCH_3(
-        pad_seqlen_q,
-        kPadSeqLenQ,
+        pad_seqlen_k,
+        kPadSeqLenK,
         pad_headdim_q,
         kPadHeadDimQ,
         pad_headdim_v,

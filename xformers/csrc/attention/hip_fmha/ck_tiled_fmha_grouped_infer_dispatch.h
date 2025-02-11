@@ -68,7 +68,9 @@ struct grouped_infer_mask_bias_dropout_dispatch {
         ? ck_tile::BlockAttentionBiasEnum::ELEMENTWISE_BIAS
         : ck_tile::BlockAttentionBiasEnum::NO_BIAS;
 
-    constexpr bool kPadSeqLenQ = true;
+    // no need to check seqlen_q since it is not used as fastest dim,
+    // buffer_load_dwordxx/buffer_store_dwordxx can handle oob access
+    constexpr bool kPadSeqLenQ = false;
     constexpr bool kPadSeqLenK = true;
 
     bool pad_headdim_q = !(param.K % kKLoadLength == 0);
