@@ -1147,3 +1147,6 @@ def test_sparse24_fp8_sm90_cutlass_gemm_random_tensor(
         A, B, scale_a=a_scale, scale_b=b_scale, out_dtype=out_xformers.dtype
     )
     assert torch.allclose(out_xformers, out_ref, rtol=0.01, atol=0.01)
+
+
+# end of OSS file
