@@ -191,11 +191,11 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                 for dtype in sorted(op.SUPPORTED_DTYPES, key=str):
                     bias_type = r.choice(LIST_MASKS)
                     # Avoid using too much memory
+                    B, Mq, Mkv, H, K, Kv = shape
                     if bias_type not in [
                         type(None),
                         fmha.attn_bias.LowerTriangularMask,
                     ]:
-                        B, Mq, Mkv, H, K, Kv = shape
                         B = min(B, 12)
 
                         if bias_type in {
@@ -212,8 +212,8 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                             fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
                         }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
-                        shape = (B, Mq, Mkv, H, K, Kv)
-                    combination.append((op, device, dtype, bias_type, *shape))
+                    new_shape = (B, Mq, Mkv, H, K, Kv)
+                    combination.append((op, device, dtype, bias_type, *new_shape))
                     ids.append(
                         f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
                         f"-{'-'.join([str(s) for s in shape])}"
