@@ -181,13 +181,14 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     for op in ops_list:
         op_count = 0
         # Sort list of masks, so it's deterministic across runs
-        LIST_MASKS = list(sorted(op.SUPPORTED_ATTN_BIAS_TYPES, key=lambda x: str(x)))
+        LIST_MASKS = sorted(op.SUPPORTED_ATTN_BIAS_TYPES, key=str)
         for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             has_one = False
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
-                for dtype in op.SUPPORTED_DTYPES:
+                # Sort set of dtypes to make it deterministic across runs
+                for dtype in sorted(op.SUPPORTED_DTYPES, key=str):
                     bias_type = r.choice(LIST_MASKS)
                     # Avoid using too much memory
                     if bias_type not in [
@@ -237,7 +238,8 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
-                for dtype in op.SUPPORTED_DTYPES:
+                # Sort set of dtypes to make it deterministic across runs
+                for dtype in sorted(op.SUPPORTED_DTYPES, key=str):
                     combination.append((op, device, dtype, bias_type, *shape))
     return {
         "argvalues": combination,
