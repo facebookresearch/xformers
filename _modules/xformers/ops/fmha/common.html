@@ -276,6 +276,93 @@
     <span class="k">return</span> <span class="n">attn_bias</span>
 
 
+<span class="k">class</span><span class="w"> </span><span class="nc">ScaledTensor</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">):</span>
+    <span class="vm">__slots__</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;scale&quot;</span><span class="p">,</span> <span class="s2">&quot;dequant_func&quot;</span><span class="p">,</span> <span class="s2">&quot;original_dtype&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Disabling custom torch function handling for this class</span>
+    <span class="n">__torch_function__</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">_C</span><span class="o">.</span><span class="n">_disabled_torch_function_impl</span>
+
+    <span class="nd">@staticmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__new__</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">data</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">scale</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">dequant_func</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
+        <span class="n">original_dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span>
+        <span class="n">require_grad</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;ScaledTensor&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a new ScaledTensor subclass instance.</span>
+
+<span class="sd">        Parameters:</span>
+<span class="sd">        - data: The underlying quantized tensor (e.g., int8, int4).</span>
+<span class="sd">        - scale: The scale tensor or scalar to be used for dequantization.</span>
+<span class="sd">        - dequant_func: A callable that applies dequantization, which takes both the data and scale as input.</span>
+<span class="sd">        - original_dtype: The data type before quantization (e.g., float32, float16).</span>
+<span class="sd">        - require_grad: Whether or not to track gradients (default: False for inference use).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Use _make_subclass to create a new ScaledTensor instance, which is a subclass of torch.Tensor.</span>
+        <span class="n">instance</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="o">.</span><span class="n">_make_subclass</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">require_grad</span><span class="o">=</span><span class="n">require_grad</span><span class="p">)</span>
+
+        <span class="c1"># Store the dequantization scale and function as attributes.</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">scale</span> <span class="o">=</span> <span class="n">scale</span>  <span class="c1"># type: ignore</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">dequant_func</span> <span class="o">=</span> <span class="n">dequant_func</span>  <span class="c1"># type: ignore</span>
+
+        <span class="c1"># Store the original data type of the tensor, so we can cast it back after dequantization.</span>
+        <span class="n">instance</span><span class="o">.</span><span class="n">original_dtype</span> <span class="o">=</span> <span class="n">original_dtype</span>  <span class="c1"># type: ignore</span>
+
+        <span class="c1"># Return the new instance of ScaledTensor.</span>
+        <span class="k">return</span> <span class="n">instance</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">dequantize</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Applies the custom dequantization function provided at the tensor&#39;s creation.</span>
+<span class="sd">        After dequantization, the data is cast back to its original data type.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Explicitly create a new torch.Tensor to ensure the return type is torch.Tensor, not ScaledTensor.</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">float</span><span class="p">())</span>
+
+        <span class="c1"># Call the dequantization function, passing in the data and the scale.</span>
+        <span class="n">dequantized_data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">dequant_func</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+        <span class="c1"># Cast the dequantized data back to the original data type.</span>
+        <span class="k">return</span> <span class="n">dequantized_data</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">original_dtype</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">unpack</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Unpacks the ScaledTensor by returning its data and scale as a tuple.</span>
+<span class="sd">        Returns:</span>
+<span class="sd">        - A tuple of (data, scale), both of which are torch.Tensor objects.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">scale</span>  <span class="c1"># type: ignore</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Custom string representation for ScaledTensor.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;ScaledTensor(data=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="si">}</span><span class="s2">, scale=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">scale</span><span class="si">}</span><span class="s2">, original_dtype=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">original_dtype</span><span class="si">}</span><span class="s2">)&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">pack_fp8_tensorwise_per_head</span><span class="p">(</span>
+    <span class="n">x</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">scale</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="nb">float</span><span class="p">],</span> <span class="n">original_dtype</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ScaledTensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Pack a tensor into a tensorwise fp8 ScaledTensor.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">scale</span><span class="p">,</span> <span class="nb">float</span><span class="p">):</span>
+        <span class="n">scale</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="n">scale</span><span class="p">],</span> <span class="n">device</span><span class="o">=</span><span class="n">x</span><span class="o">.</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">dequant_func</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">scale</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="n">scale</span><span class="p">[:,</span> <span class="kc">None</span><span class="p">,</span> <span class="p">:,</span> <span class="kc">None</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">ScaledTensor</span><span class="p">(</span>
+        <span class="n">data</span><span class="o">=</span><span class="n">x</span><span class="p">,</span>
+        <span class="n">scale</span><span class="o">=</span><span class="n">scale</span><span class="p">,</span>
+        <span class="n">dequant_func</span><span class="o">=</span><span class="n">dequant_func</span><span class="p">,</span>
+        <span class="n">original_dtype</span><span class="o">=</span><span class="n">original_dtype</span><span class="p">,</span>
+    <span class="p">)</span>
+
+
 <span class="nd">@dataclass</span>
 <span class="k">class</span><span class="w"> </span><span class="nc">Inputs</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>

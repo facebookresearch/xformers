@@ -280,13 +280,16 @@
     <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-                <span class="n">flash_attn_cuda</span> <span class="k">as</span> <span class="n">_C_flashattention</span><span class="p">,</span>
-            <span class="p">)</span>
+            <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span>
+
+            <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="p">,</span> <span class="s2">&quot;flash_attn_cuda&quot;</span><span class="p">):</span>
+                <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_cuda</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_gpu</span>
 
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
-            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
+            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">6</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+            <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
             <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
             <span class="k">if</span> <span class="p">(</span>
                 <span class="n">flash_ver_parsed</span> <span class="o">&lt;</span> <span class="n">FLASH_VER_MIN</span> <span class="ow">or</span> <span class="n">flash_ver_parsed</span> <span class="o">&gt;</span> <span class="n">FLASH_VER_LAST</span>
@@ -297,9 +300,9 @@
                     <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">.&quot;</span>
                 <span class="p">)</span>
             <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+        <span class="k">except</span> <span class="ne">ImportError</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
             <span class="k">if</span> <span class="ow">not</span> <span class="n">_TRY_PT_FLASH_ATTN</span><span class="p">:</span>
-                <span class="k">raise</span>
+                <span class="k">raise</span> <span class="n">e</span>
             <span class="k">assert</span> <span class="n">is_pt_flash_compatible</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">_get_flash_version</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
             <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;v</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
@@ -572,6 +575,7 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_convert_input_format</span><span class="p">(</span>
     <span class="n">inp</span><span class="p">:</span> <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">supports_mqa</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span>
+    <span class="n">use_kvsplit</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span>
     <span class="n">Inputs</span><span class="p">,</span>
     <span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span>
@@ -653,6 +657,15 @@
             <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">num_pages</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="o">*</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
             <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">num_pages</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="o">*</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
 
+    <span class="k">if</span> <span class="n">use_kvsplit</span><span class="p">:</span>
+        <span class="c1"># For kvsplit case, we want</span>
+        <span class="c1"># q: [batch, seqlen, num_heads, head_dim_q]</span>
+        <span class="c1"># k: [batch x max_kv_len, num_heads, head_dim_kv]</span>
+        <span class="c1"># v: [batch x max_kv_len, num_heads, head_dim_kv]</span>
+        <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span>
+        <span class="n">batch</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># type: ignore</span>
+        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">batch</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]])</span>
+
     <span class="n">new_inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
         <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
         <span class="n">key</span><span class="o">=</span><span class="n">key</span><span class="p">,</span>
@@ -687,7 +700,7 @@
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_is_paged_attention_supported</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">):</span>
-        <span class="k">return</span> <span class="n">FLASH_VERSION</span> <span class="o">&gt;</span> <span class="s2">&quot;2.5.6&quot;</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_USE_PT_FLASH_ATTN</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="n">_USE_PT_FLASH_ATTN</span>
 
     <span class="k">return</span> <span class="kc">True</span>
 
