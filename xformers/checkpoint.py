@@ -141,7 +141,9 @@ class NullTorchDispatchMode(TorchDispatchMode):
         return func(*args, **kwargs)
 
 
-def selective_checkpoint_context_fn(policy_fn=None):
+def selective_checkpoint_context_fn(
+    policy_fn=None,
+) -> Tuple[ContextManager[None], ContextManager[None]]:
     """An activation checkpoint context_fn for selectively deciding what to
     store and what to recompute. Accepts a custom policy.
     Args:
@@ -164,7 +166,7 @@ def selective_checkpoint_context_fn(policy_fn=None):
     # assumption: grad_mode doesn't change inside function
     caching_mode: ContextManager[None]
     if torch.is_grad_enabled():
-        caching_mode = _CachingTorchDispatchMode(deepcopy(policy_fn), temp_storage)
+        caching_mode = _CachingTorchDispatchMode(deepcopy(policy_fn), temp_storage)  # type: ignore
     else:
         caching_mode = NullTorchDispatchMode()
     cached_mode = CachedTorchDispatchMode(deepcopy(policy_fn), temp_storage, True)

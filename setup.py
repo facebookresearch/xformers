@@ -231,7 +231,10 @@ def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
         if "hdim224" in Path(f).name:
             continue
         sources.append(str(Path(f).relative_to(flash_root)))
-    common_extra_compile_args = ["-DFLASHATTENTION_DISABLE_ALIBI"]
+    common_extra_compile_args = [
+        "-DFLASHATTENTION_DISABLE_ALIBI",
+        "-DFLASHATTENTION_DISABLE_SOFTCAP",
+    ]
     return [
         CUDAExtension(
             name="xformers._C_flashattention",
