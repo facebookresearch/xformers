@@ -242,7 +242,7 @@ class FwOp(AttentionFwOpBase):
         attn_bias_replace = inp.attn_bias
         if isinstance(inp.attn_bias, LowerTriangularMaskWithTensorBias):
             bias_tensor = _get_tensor_bias(inp.attn_bias)
-            if bias_tensor.ndim == 5:
+            if bias_tensor is not None and bias_tensor.ndim == 5:
                 attn_bias_replace = LowerTriangularMaskWithTensorBias(
                     bias_tensor.flatten(1, 2)
                 )
