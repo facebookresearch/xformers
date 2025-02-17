@@ -85,6 +85,12 @@ jobs:
           # NOTE: we check GPU version by default to determine if triton should be used
           # and this initializes CUDA context, unless we set `XFORMERS_ENABLE_TRITON`
           XFORMERS_ENABLE_TRITON=1 python -c "import xformers; import xformers.ops; import torch; assert not torch.cuda.is_initialized()"
+      - name: FA3 was built
+        run: |
+          if [[ ${{ matrix.gpu.sm }} != 7.5 && -z "$XFORMERS_DISABLE_FLASH_ATTN" ]]
+          then
+            python -c "from xformers.ops.fmha.flash3 import _C_flashattention3 ; assert _C_flashattention3 is not None, 'FA3 not built'"
+          fi
       - name: Unit tests
         run: |
           python -m pytest --verbose --random-order-bucket=global --maxfail=20 --junitxml=test-results/junit.xml --cov-report=xml --cov=./ tests
