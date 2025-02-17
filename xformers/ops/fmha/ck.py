@@ -240,7 +240,13 @@ class FwOp(AttentionFwOpBase):
 
         [_, _, G, Hq, _] = inp.query.shape
         attn_bias_replace = inp.attn_bias
-        if isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim != 0:
+        if isinstance(inp.attn_bias, LowerTriangularMaskWithTensorBias):
+            bias_tensor = _get_tensor_bias(inp.attn_bias)
+            if bias_tensor is not None and bias_tensor.ndim == 5:
+                attn_bias_replace = LowerTriangularMaskWithTensorBias(
+                    bias_tensor.flatten(1, 2)
+                )
+        elif isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim == 5:
             attn_bias_replace = inp.attn_bias.flatten(1, 2)
         inp = replace(
             inp,
