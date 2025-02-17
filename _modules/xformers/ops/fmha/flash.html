@@ -227,6 +227,7 @@
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
 
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib.util</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">itertools</span><span class="w"> </span><span class="kn">import</span> <span class="n">zip_longest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Set</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Union</span>
@@ -269,42 +270,46 @@
 <span class="n">_TRY_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">hip</span> <span class="ow">is</span> <span class="kc">None</span>
 <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">False</span>
 
-<span class="k">try</span><span class="p">:</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">...</span><span class="w"> </span><span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
-        <span class="kn">from</span><span class="w"> </span><span class="nn">..._cpp_lib</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_metadata</span>
 
-        <span class="k">if</span> <span class="n">_build_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-            <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">_build_metadata</span><span class="o">.</span><span class="n">flash_version</span>
-        <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
-    <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-        <span class="k">try</span><span class="p">:</span>
-            <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn</span>
-            <span class="kn">from</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-                <span class="n">flash_attn_cuda</span> <span class="k">as</span> <span class="n">_C_flashattention</span><span class="p">,</span>
-            <span class="p">)</span>
+<span class="k">if</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;..._C_flashattention&quot;</span><span class="p">,</span> <span class="n">package</span><span class="o">=</span><span class="n">__package__</span><span class="p">):</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">...</span><span class="w"> </span><span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
+    <span class="kn">from</span><span class="w"> </span><span class="nn">..._cpp_lib</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_metadata</span>
 
-            <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
-            <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-            <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
-            <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
-            <span class="k">if</span> <span class="p">(</span>
-                <span class="n">flash_ver_parsed</span> <span class="o">&lt;</span> <span class="n">FLASH_VER_MIN</span> <span class="ow">or</span> <span class="n">flash_ver_parsed</span> <span class="o">&gt;</span> <span class="n">FLASH_VER_LAST</span>
-            <span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XFORMERS_IGNORE_FLASH_VERSION_CHECK&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;1&quot;</span><span class="p">:</span>
-                <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
-                    <span class="sa">f</span><span class="s2">&quot;Requires Flash-Attention version &gt;=</span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">FLASH_VER_MIN</span><span class="p">])</span><span class="si">}</span><span class="s2">,&quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;&lt;=</span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">FLASH_VER_LAST</span><span class="p">])</span><span class="si">}</span><span class="s2"> &quot;</span>
-                    <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">.&quot;</span>
-                <span class="p">)</span>
-            <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-            <span class="k">if</span> <span class="ow">not</span> <span class="n">_TRY_PT_FLASH_ATTN</span><span class="p">:</span>
-                <span class="k">raise</span>
-            <span class="k">assert</span> <span class="n">is_pt_flash_compatible</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">_get_flash_version</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
-            <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;v</span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">&quot;</span>
-            <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
-            <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="k">if</span> <span class="n">_build_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">_build_metadata</span><span class="o">.</span><span class="n">flash_version</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot;v&quot;</span><span class="p">)</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="k">elif</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;flash_attn&quot;</span><span class="p">):</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span>
+
+    <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="p">,</span> <span class="s2">&quot;flash_attn_cuda&quot;</span><span class="p">):</span>
+        <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_cuda</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_gpu</span>
+
+    <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
+    <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+    <span class="n">FLASH_VER_LAST</span> <span class="o">=</span> <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">7</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>  <span class="c1"># last supported, inclusive</span>
+    <span class="n">flash_ver_parsed</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">s</span><span class="p">)</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">FLASH_VERSION</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;.&quot;</span><span class="p">)[:</span><span class="mi">3</span><span class="p">])</span>
+    <span class="k">if</span> <span class="p">(</span>
+        <span class="n">flash_ver_parsed</span> <span class="o">&lt;</span> <span class="n">FLASH_VER_MIN</span> <span class="ow">or</span> <span class="n">flash_ver_parsed</span> <span class="o">&gt;</span> <span class="n">FLASH_VER_LAST</span>
+    <span class="p">)</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;XFORMERS_IGNORE_FLASH_VERSION_CHECK&quot;</span><span class="p">,</span> <span class="s2">&quot;0&quot;</span><span class="p">)</span> <span class="o">!=</span> <span class="s2">&quot;1&quot;</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ImportError</span><span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Requires Flash-Attention version &gt;=</span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">FLASH_VER_MIN</span><span class="p">])</span><span class="si">}</span><span class="s2">,&quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;&lt;=</span><span class="si">{</span><span class="s1">&#39;.&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">([</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="n">FLASH_VER_LAST</span><span class="p">])</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;but got </span><span class="si">{</span><span class="n">FLASH_VERSION</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="p">)</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="k">elif</span> <span class="n">_TRY_PT_FLASH_ATTN</span><span class="p">:</span>
+    <span class="k">assert</span> <span class="n">is_pt_flash_compatible</span><span class="p">(</span><span class="n">force</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="o">.</span><span class="n">attention</span><span class="o">.</span><span class="n">_get_flash_version</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+    <span class="n">VARLEN_LSE_PACKED</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">True</span>
+
+
+<span class="k">if</span> <span class="n">FLASH_VERSION</span> <span class="o">!=</span> <span class="s2">&quot;0.0.0&quot;</span><span class="p">:</span>
 
     <span class="nd">@torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">custom_op</span><span class="p">(</span>
         <span class="s2">&quot;xformers_flash::flash_fwd&quot;</span><span class="p">,</span>
@@ -564,9 +569,6 @@
             <span class="p">)</span>
             <span class="k">return</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">1</span><span class="p">),</span> <span class="n">chunk</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="o">-</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
         <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">query</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">key</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">value</span><span class="p">)</span>
-
-<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
-    <span class="k">pass</span>
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_convert_input_format</span><span class="p">(</span>
