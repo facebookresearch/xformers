@@ -3,20 +3,8 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-import sys
-
 import torch
 from torch._C import parse_schema
-
-try:
-    # This function was added in https://github.com/pytorch/pytorch/pull/131894
-    # (which hadn't landed yet at the time of writing), thus will only arrive in
-    # PyTorch 2.5+. In the meantime we need a fallback.
-    from torch.modules.cuda import is_flash_attention_available
-except ImportError:
-
-    def is_flash_attention_available():
-        return sys.platform == "linux"
 
 
 def is_pt_cutlass_compatible(force: bool = False) -> bool:
@@ -72,7 +60,7 @@ def is_pt_cutlass_compatible(force: bool = False) -> bool:
 
 
 def is_pt_flash_compatible(force: bool) -> bool:
-    if not is_flash_attention_available():
+    if not torch.backends.cuda.is_flash_attention_available():
         if force:
             raise ImportError("Flash SDP backend is disabled")
         return False

@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import importlib.util
 import os
 from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
 
@@ -44,18 +45,21 @@ from .flash import (
 )
 
 FLASH_VERSION = "0.0.0"
-try:
+
+
+if importlib.util.find_spec("..._C_flashattention3", package=__package__):
     from ... import _C_flashattention3  # type: ignore[attr-defined]
     from ..._cpp_lib import _build_metadata
 
     if _build_metadata is not None:
-        FLASH_VERSION = _build_metadata.flash_version
-except ImportError:
-    try:
-        from flash_attn_interface import flashattn_hopper_cuda as _C_flashattention3
-    except ImportError:
-        # We end up here is arch is not 90a
-        _C_flashattention3 = None
+        FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+
+elif importlib.util.find_spec("flash_attn_interface"):
+    from flash_attn_interface import flashattn_hopper_cuda as _C_flashattention3
+
+else:
+    # We end up here is arch is not 90a
+    _C_flashattention3 = None
 
 
 # Copied from PyTorch, modified to support MQA/GQA.
