@@ -212,6 +212,9 @@ if _C_flashattention3 is not None:
         # lockstep anyways and will be going as fast as the slowest one.
         if os.environ.get("XFORMERS_FLOP_FORMULA_WORST_CASE", "0") == "1":
             cu_seqlens_q = cu_seqlens_k = max_seqlen_q = max_seqlen_k = None  # type: ignore[assignment]
+            query = query.unsqueeze(0) if query.ndim == 3 else query
+            key = key.unsqueeze(0) if key.ndim == 3 else key
+            value = value.unsqueeze(0) if value.ndim == 3 else value
         sizes = _unpack_flash_attention_nested_shapes(
             query=query.transpose(-2, -3) if query.ndim == 4 else query,
             key=key.transpose(-2, -3) if key.ndim == 4 else key,
@@ -356,6 +359,10 @@ if _C_flashattention3 is not None:
         # See the fwd FLOP formula above for reasoning behind this.
         if os.environ.get("XFORMERS_FLOP_FORMULA_WORST_CASE", "0") == "1":
             cu_seqlens_q = cu_seqlens_k = max_seqlen_q = max_seqlen_k = None  # type: ignore[assignment]
+            dout = dout.unsqueeze(0) if dout.ndim == 3 else dout
+            query = query.unsqueeze(0) if query.ndim == 3 else query
+            key = key.unsqueeze(0) if key.ndim == 3 else key
+            value = value.unsqueeze(0) if value.ndim == 3 else value
         res = _flash_attention_backward_flop(
             dout.transpose(-2, -3) if dout.ndim == 4 else dout,
             query.transpose(-2, -3) if query.ndim == 4 else query,
