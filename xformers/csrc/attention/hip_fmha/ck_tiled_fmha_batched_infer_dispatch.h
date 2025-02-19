@@ -26,10 +26,11 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MTile>
 struct batched_infer_mask_bias_dropout_dispatch {
-  static constexpr bool kUseAsyncPipeline = (MaxK <= 256 && !kHasDropout);
+  static constexpr bool kUseWholeKPrefetchPipeline =
+      (MaxK <= 256 && !kHasDropout);
 
   constexpr static auto get_fmha_shape_type() {
-    if constexpr (kUseAsyncPipeline)
+    if constexpr (kUseWholeKPrefetchPipeline)
       return typename FmhaFwdAsyncShape<MaxK, MTile>::Type{};
     else
       return typename FmhaFwdShape<MaxK, MTile>::Type{};
@@ -38,8 +39,8 @@ struct batched_infer_mask_bias_dropout_dispatch {
   using FmhaShape = decltype(get_fmha_shape_type());
 
   static constexpr ck_tile::index_t kKLoadLength =
-      (kUseAsyncPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
-                                        : FmhaShape::kSubQKHeaddim;
+      (kUseWholeKPrefetchPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
+                                                 : FmhaShape::kSubQKHeaddim;
 
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
@@ -106,9 +107,9 @@ struct batched_infer_mask_bias_dropout_dispatch {
                   kPadSeqLenQ,
                   kPadHeadDimV>>;
 
-          if constexpr (kUseAsyncPipeline) {
-            using FmhaPipeline =
-                ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
+          if constexpr (kUseWholeKPrefetchPipeline) {
+            using FmhaPipeline = ck_tile::BlockFmhaPipelineQRKSVSWholeKPrefetch<
+                FmhaPipelineProblem>;
             using FmhaKernel =
                 ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
