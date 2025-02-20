@@ -44,7 +44,9 @@ from .torch_attention_compat import is_pt_flash_compatible
 
 FLASH_VERSION = "0.0.0"
 VARLEN_LSE_PACKED = False
-_TRY_PT_FLASH_ATTN = torch.version.hip is None
+_TRY_PT_FLASH_ATTN = (
+    torch.version.hip is None and torch.backends.cuda.is_flash_attention_available()
+)
 _USE_PT_FLASH_ATTN = False
 
 
@@ -67,7 +69,7 @@ elif importlib.util.find_spec("flash_attn"):
 
     FLASH_VERSION = flash_attn.__version__
     FLASH_VER_MIN = (2, 7, 1)
-    FLASH_VER_LAST = (2, 7, 2)  # last supported, inclusive
+    FLASH_VER_LAST = (2, 7, 4)  # last supported, inclusive
     flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
     if (
         flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
@@ -351,6 +353,7 @@ if FLASH_VERSION != "0.0.0":
 def _convert_input_format(
     inp: Inputs,
     supports_mqa: bool,
+    use_kvsplit: bool = False,
 ) -> Tuple[
     Inputs,
     Optional[torch.Tensor],
@@ -432,6 +435,14 @@ def _convert_input_format(
             key = key.view(num_pages, attn_bias.page_size, *key.shape[1:])
             value = value.view(num_pages, attn_bias.page_size, *value.shape[1:])
 
+    if use_kvsplit:
+        # For kvsplit case, we want
+        # q: [batch, seqlen, num_heads, head_dim]
+        # k,v are already [batch x max_kv_len, num_heads, head_dim]
+        assert query.ndim == 3 and key.ndim == 3 and value.ndim == 3
+        batch = len(attn_bias.q_seqinfo.seqstart_py) - 1  # type: ignore
+        query = query.view([batch, -1, query.shape[1], query.shape[2]])
+
     new_inp = Inputs(
         query=query,
         key=key,
@@ -466,7 +477,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
 
 def _is_paged_attention_supported(attn_bias_type) -> bool:
     if issubclass(attn_bias_type, PagedBlockDiagonalPaddedKeysMask):
-        return FLASH_VERSION > "2.5.6" and not _USE_PT_FLASH_ATTN
+        return not _USE_PT_FLASH_ATTN
 
     return True
 
