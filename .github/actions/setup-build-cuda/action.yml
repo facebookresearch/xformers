@@ -80,12 +80,29 @@ runs:
       run: rm /usr/bin/link
 
     # LINUX STEPS
-    - if: runner.os == 'Linux'
+    - if: ${{ runner.os == 'Linux' && !(contains(inputs.toolkit_type, 'cuda') && fromJSON(inputs.toolkit_short_version) > 124) }}
       shell: bash
       run: |
+        # Use GCC11 for ROCM / cu118 / cu124
         yum list installed
         yum install gcc-toolset-11-gcc gcc-toolset-11-gcc-c++ gcc-toolset-11-libstdc++-devel wget git -y
         echo "source /opt/rh/gcc-toolset-11/enable" >> ~/.profile
+
+    - if: ${{ runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda') && fromJSON(inputs.toolkit_short_version) > 124 }}
+      shell: bash
+      run: |
+        # Use GCC13 for cu126+
+        yum list installed
+        yum install gcc-toolset-13-gcc gcc-toolset-13-gcc-c++ gcc-toolset-13-libstdc++-devel wget git -y
+        echo "source /opt/rh/gcc-toolset-13/enable" >> ~/.profile
+
+    - if: runner.os == 'Linux'
+      shell: bash -l {0}
+      run: |
+        yum list installed
+        yum install wget git -y
+        which g++
+        g++ --version
 
     - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda')
       name: (Linux) install cuda
