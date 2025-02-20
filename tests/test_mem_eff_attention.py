@@ -116,7 +116,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
             shapes.append((B, M, Mkv, H, K, K))
             shapes.append((B, Mq, M, H, K, K))
-        for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 256 + 2, 256 + 8, 512]:
+        Ks = [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 192, 256 + 2, 256 + 8, 512]
+        for _K in Ks:
             if op.SUPPORTED_MIN_K <= _K <= op.SUPPORTED_MAX_K:
                 shapes.append((B, Mq, Mkv, H, _K, _K))
         # Different value for K / Kv

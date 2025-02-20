@@ -598,8 +598,8 @@ class FwOp(AttentionFwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
-        if d.query.shape[-1] not in [64, 128, 256]:
-            reasons.append("only head-dim 64,128,256 is supported")
+        if d.query.shape[-1] not in [64, 128, 192, 256]:
+            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
 
         _check_needs_no_topleft(d, reasons)
 
@@ -718,8 +718,8 @@ class BwOp(AttentionBwOpBase):
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         _check_needs_no_topleft(d, reasons)
-        if d.query.shape[-1] not in [64, 128]:
-            reasons.append("only head-dim 64 or 128 is supported")
+        if d.query.shape[-1] not in [64, 128, 192, 256]:
+            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
 
         _check_needs_no_topleft(d, reasons)
         return reasons
