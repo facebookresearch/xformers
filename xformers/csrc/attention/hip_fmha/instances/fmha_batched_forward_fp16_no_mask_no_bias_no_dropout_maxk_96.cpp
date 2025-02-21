@@ -6,6 +6,8 @@
  * LICENSE file in the root directory of this source tree.
  *
  * The file is automatically generated, don't modify!
+ * See the generator script
+ * `xformers/csrc/attention/hip_fmha/generate_instances.py`
  */
 
 #include <ck_tile/core/numeric/half.hpp>

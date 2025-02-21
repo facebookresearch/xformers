@@ -168,6 +168,73 @@ class AttentionDecodingCUTLASS(AttentionDecodingBase):
 class AttentionDecodingCK(AttentionDecodingBase):
     OP = xops.fmha.ck.FwOp
 
+    def __init__(
+        self,
+        B: int,
+        Mq: int,
+        Mkv: int,
+        Hq: int,
+        Hkv: int,
+        K: int,
+        bw: bool,
+        attn_bias_type,
+    ) -> None:
+        dtype = torch.float16
+        torch.manual_seed(10)
+        self.sub_label = (
+            f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
+            f"{((B * Mkv * Hkv * K * 2) + (B * Mq * Hq * K) + (B * Mq * Hq * K)) * 2}"
+        )
+        self.label = "attn_decoding"
+        self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
+
+        assert Hkv <= Hq
+        assert Hq % Hkv == 0
+        self.q = torch.randn(
+            [B, Mq, Hkv, Hq // Hkv, K], device="cuda", dtype=dtype, requires_grad=bw
+        )
+        self.k = torch.randn(
+            [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
+        self.v = torch.randn(
+            [B, Mkv, Hkv, 1, K], device="cuda", dtype=dtype, requires_grad=bw
+        ).expand(-1, -1, -1, Hq // Hkv, -1)
+
+        if Hq == Hkv:
+            self.q = self.q[:, :, :, 0]
+            self.k = self.k[:, :, :, 0]
+            self.v = self.v[:, :, :, 0]
+
+        self.attn_bias = create_attn_bias(
+            attn_bias_type,
+            batch_size=B,
+            num_heads=Hq,
+            num_heads_groups=Hq // Hkv,
+            q_len=Mq,
+            kv_len=Mkv,
+            dtype=dtype,
+            device=device,
+            requires_grad=False,
+            fmt="BMHK",
+            op=self.OP,
+        )
+
+        if isinstance(
+            self.attn_bias,
+            xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        ):
+            self.q = self.q.view(1, -1, *self.q.shape[2:])
+            self.k = self.k.view(1, -1, *self.k.shape[2:])
+            self.v = self.v.view(1, -1, *self.v.shape[2:])
+
+        if hasattr(self.OP, "not_supported_reasons"):
+            inp = xops.fmha.Inputs(
+                query=self.q, key=self.k, value=self.v, attn_bias=self.attn_bias
+            )
+            not_supported_reasons = self.OP.not_supported_reasons(inp)
+            if not_supported_reasons:
+                raise NotSupportedInputError(not_supported_reasons)
+
 
 class AttentionDecodingCKDecoder(AttentionDecodingBase):
     OP = xops.fmha.ck_decoder.FwOp
