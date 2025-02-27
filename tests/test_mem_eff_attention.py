@@ -218,6 +218,8 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                             fmha.attn_bias.BlockDiagonalPaddedKeysMask,
                             fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
                             fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                            fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+                            fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
                         }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
                     new_shape = (B, Mq, Mkv, H, K, Kv)

@@ -483,7 +483,7 @@ def _fwd_kernel_splitK(
             qk = tl.where(tl.arange(0, BLOCK_N) < hi - start_n, qk, float("-inf"))
         if IS_CAUSAL:
             # -- apply the causal mask --
-            qk = tl.where(diag_idx_shifted >= start_n, qk, float("-inf"))
+            qk = tl.where(diag_idx_shifted >= start_n - start_kv_idx, qk, float("-inf"))
         # -- compute scaling constant ---
         m_i_new = tl.maximum(m_i, tl.max(qk, 1))
         alpha = tl.math.exp2(m_i - m_i_new)

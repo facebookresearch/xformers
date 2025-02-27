@@ -29,6 +29,7 @@ from .attn_bias import (
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
     BlockDiagonalPaddedKeysMask,
+    PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
@@ -50,6 +51,7 @@ def _is_supported_causal_bias(attn_bias: Any) -> bool:
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalWithOffsetGappyKeysMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+            PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
         ),
     )
 
@@ -196,6 +198,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
         PagedBlockDiagonalGappyKeysMask,
         PagedBlockDiagonalPaddedKeysMask,
     )
@@ -321,7 +324,7 @@ class FwOp(AttentionFwOpBase):
         if torch.version.hip:
             split_k = max(Mk + bh - 1, 1024) // bh
             max_chunk_size = 64
-            split_k_stop_val = 1024 / (B * G * H)
+            split_k_stop_val = max(1024 / (B * G * H), 1)
             while split_k > 1 and Mk / (split_k - 1) < max_chunk_size:
                 split_k = split_k - 1
 
@@ -408,6 +411,7 @@ class FwOp(AttentionFwOpBase):
                         BlockDiagonalCausalWithOffsetGappyKeysMask,
                         BlockDiagonalPaddedKeysMask,
                         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
                         PagedBlockDiagonalGappyKeysMask,
                         PagedBlockDiagonalPaddedKeysMask,
                     ]
