@@ -528,9 +528,9 @@ def get_extensions():
             # If we force 'torch FA switch' then setup will fail when no compatibility
             if (
                 xformers_pt_flash_attn is None or xformers_pt_flash_attn == "1"
-            ) and attn_compat_module.is_pt_flash_compatible(
+            ) and attn_compat_module.is_pt_flash_old(
                 force=xformers_pt_flash_attn == "1"
-            ):
+            ) is not None:
                 use_pt_flash = True
             else:
                 ext_modules += get_flash_attention2_extensions(

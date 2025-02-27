@@ -40,10 +40,11 @@ from .common import (
     Inputs,
     check_lastdim_alignment_stride1,
 )
-from .torch_attention_compat import is_pt_flash_compatible
+from .torch_attention_compat import is_pt_flash_old
 
 FLASH_VERSION = "0.0.0"
 VARLEN_LSE_PACKED = False
+pt_flash_is_old = False
 _TRY_PT_FLASH_ATTN = (
     torch.version.hip is None and torch.backends.cuda.is_flash_attention_available()
 )
@@ -82,9 +83,9 @@ elif importlib.util.find_spec("flash_attn"):
     VARLEN_LSE_PACKED = True
 
 elif _TRY_PT_FLASH_ATTN:
-    assert is_pt_flash_compatible(force=True)
+    pt_flash_is_old = is_pt_flash_old(force=True) is True
     FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
-    VARLEN_LSE_PACKED = False
+    VARLEN_LSE_PACKED = not pt_flash_is_old
     _USE_PT_FLASH_ATTN = True
 
 
@@ -114,13 +115,7 @@ if FLASH_VERSION != "0.0.0":
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
-            (
-                attention,
-                logsumexp,
-                philox_seed,
-                philox_offset,
-                _,
-            ) = torch.ops.aten._flash_attention_forward(
+            ret = torch.ops.aten._flash_attention_forward(
                 query,
                 key,
                 value,
@@ -137,7 +132,17 @@ if FLASH_VERSION != "0.0.0":
                 seqused_k=seqused_k,
                 alibi_slopes=None,  # alibi_slopes
             )
-            rng_state = torch.stack([philox_seed, philox_offset])
+            if pt_flash_is_old:
+                (
+                    attention,
+                    logsumexp,
+                    philox_seed,
+                    philox_offset,
+                    _,
+                ) = ret
+                rng_state = torch.stack([philox_seed, philox_offset])
+            else:
+                attention, logsumexp, rng_state, _, _ = ret
             return attention, logsumexp, rng_state
         else:
             if cu_seqlens_q is None:
@@ -244,11 +249,11 @@ if FLASH_VERSION != "0.0.0":
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
             assert softcap == 0.0
-            if rng_state is not None:
-                philox_seed = rng_state[0]
-                philox_offset = rng_state[1]
+            if rng_state is not None and pt_flash_is_old:
+                rng_state0 = rng_state[0]
+                rng_state1 = rng_state[1]
             else:
-                philox_seed = philox_offset = None
+                rng_state0 = rng_state1 = rng_state
             dq, dk, dv = torch.ops.aten._flash_attention_backward(
                 grad,
                 query,
@@ -262,8 +267,8 @@ if FLASH_VERSION != "0.0.0":
                 max_seqlen_k,
                 p,
                 is_causal,
-                philox_seed,
-                philox_offset,
+                rng_state0,
+                rng_state1,
                 scale=softmax_scale,
                 window_size_left=window_left,
                 window_size_right=window_right,
