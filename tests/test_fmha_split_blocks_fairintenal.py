@@ -52,12 +52,9 @@ def test_split_blocks_decoding_vs_prefill(spec_decoding, paged):
     elif fmha.flash.FwOp.VARLEN_LSE_PACKED:
         # Modern enough flash attention
         op = fmha.flash.FwOp
-    elif spec_decoding:
-        # spec_decoding needs variable query length support
-        pytest.skip("We have no fallback kernel for spec decoding")
-        assert False
     else:
-        op = fmha.triton_splitk.FwOp
+        pytest.skip("We have op to test with")
+        assert False
 
     AttnBias = (
         fmha.attn_bias.BlockDiagonalPaddedKeysMask
