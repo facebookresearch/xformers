@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import importlib.util
 import os
 from itertools import zip_longest
 from typing import Any, Iterable, List, Optional, Set, Tuple, Union
@@ -39,49 +40,56 @@ from .common import (
     Inputs,
     check_lastdim_alignment_stride1,
 )
-from .torch_attention_compat import is_pt_flash_compatible
+from .torch_attention_compat import is_pt_flash_old
 
 FLASH_VERSION = "0.0.0"
 VARLEN_LSE_PACKED = False
-_TRY_PT_FLASH_ATTN = torch.version.hip is None
+pt_flash_is_old = False
+_TRY_PT_FLASH_ATTN = (
+    torch.version.hip is None and torch.backends.cuda.is_flash_attention_available()
+)
 _USE_PT_FLASH_ATTN = False
 
-try:
-    try:
-        from ... import _C_flashattention  # type: ignore[attr-defined]
-        from ..._cpp_lib import _build_metadata
 
-        if _build_metadata is not None:
-            FLASH_VERSION = _build_metadata.flash_version
-        VARLEN_LSE_PACKED = True
-    except ImportError:
-        try:
-            import flash_attn
-            from flash_attn.flash_attn_interface import (
-                flash_attn_cuda as _C_flashattention,
-            )
+if importlib.util.find_spec("..._C_flashattention", package=__package__):
+    from ... import _C_flashattention  # type: ignore[attr-defined]
+    from ..._cpp_lib import _build_metadata
 
-            FLASH_VERSION = flash_attn.__version__
-            FLASH_VER_MIN = (2, 7, 1)
-            FLASH_VER_LAST = (2, 7, 2)  # last supported, inclusive
-            flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
-            if (
-                flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
-            ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
-                raise ImportError(
-                    f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
-                    f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
-                    f"but got {FLASH_VERSION}."
-                )
-            VARLEN_LSE_PACKED = True
-        except ImportError:
-            if not _TRY_PT_FLASH_ATTN:
-                raise
-            assert is_pt_flash_compatible(force=True)
-            FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
-            FLASH_VERSION = f"v{FLASH_VERSION}"
-            VARLEN_LSE_PACKED = False
-            _USE_PT_FLASH_ATTN = True
+    if _build_metadata is not None:
+        FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+    VARLEN_LSE_PACKED = True
+
+elif importlib.util.find_spec("flash_attn"):
+    import flash_attn
+    import flash_attn.flash_attn_interface
+
+    if hasattr(flash_attn.flash_attn_interface, "flash_attn_cuda"):
+        _C_flashattention = flash_attn.flash_attn_interface.flash_attn_cuda
+    else:
+        _C_flashattention = flash_attn.flash_attn_interface.flash_attn_gpu
+
+    FLASH_VERSION = flash_attn.__version__
+    FLASH_VER_MIN = (2, 7, 1)
+    FLASH_VER_LAST = (2, 7, 4)  # last supported, inclusive
+    flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
+    if (
+        flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
+    ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
+        raise ImportError(
+            f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
+            f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
+            f"but got {FLASH_VERSION}."
+        )
+    VARLEN_LSE_PACKED = True
+
+elif _TRY_PT_FLASH_ATTN:
+    pt_flash_is_old = is_pt_flash_old(force=True) is True
+    FLASH_VERSION = torch.nn.attention._get_flash_version()  # type: ignore
+    VARLEN_LSE_PACKED = not pt_flash_is_old
+    _USE_PT_FLASH_ATTN = True
+
+
+if FLASH_VERSION != "0.0.0":
 
     @torch.library.custom_op(
         "xformers_flash::flash_fwd",
@@ -107,13 +115,7 @@ try:
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
-            (
-                attention,
-                logsumexp,
-                philox_seed,
-                philox_offset,
-                _,
-            ) = torch.ops.aten._flash_attention_forward(
+            ret = torch.ops.aten._flash_attention_forward(
                 query,
                 key,
                 value,
@@ -130,7 +132,17 @@ try:
                 seqused_k=seqused_k,
                 alibi_slopes=None,  # alibi_slopes
             )
-            rng_state = torch.stack([philox_seed, philox_offset])
+            if pt_flash_is_old:
+                (
+                    attention,
+                    logsumexp,
+                    philox_seed,
+                    philox_offset,
+                    _,
+                ) = ret
+                rng_state = torch.stack([philox_seed, philox_offset])
+            else:
+                attention, logsumexp, rng_state, _, _ = ret
             return attention, logsumexp, rng_state
         else:
             if cu_seqlens_q is None:
@@ -237,11 +249,11 @@ try:
         softcap = 0.0
         if _USE_PT_FLASH_ATTN:
             assert softcap == 0.0
-            if rng_state is not None:
-                philox_seed = rng_state[0]
-                philox_offset = rng_state[1]
+            if rng_state is not None and pt_flash_is_old:
+                rng_state0 = rng_state[0]
+                rng_state1 = rng_state[1]
             else:
-                philox_seed = philox_offset = None
+                rng_state0 = rng_state1 = rng_state
             dq, dk, dv = torch.ops.aten._flash_attention_backward(
                 grad,
                 query,
@@ -255,8 +267,8 @@ try:
                 max_seqlen_k,
                 p,
                 is_causal,
-                philox_seed,
-                philox_offset,
+                rng_state0,
+                rng_state1,
                 scale=softmax_scale,
                 window_size_left=window_left,
                 window_size_right=window_right,
@@ -342,13 +354,11 @@ try:
             return chunk.select(-3, 0), chunk.select(-3, 1), chunk.select(-3, 2)
         return torch.empty_like(query), torch.empty_like(key), torch.empty_like(value)
 
-except ImportError:
-    pass
-
 
 def _convert_input_format(
     inp: Inputs,
     supports_mqa: bool,
+    use_kvsplit: bool = False,
 ) -> Tuple[
     Inputs,
     Optional[torch.Tensor],
@@ -430,6 +440,14 @@ def _convert_input_format(
             key = key.view(num_pages, attn_bias.page_size, *key.shape[1:])
             value = value.view(num_pages, attn_bias.page_size, *value.shape[1:])
 
+    if use_kvsplit:
+        # For kvsplit case, we want
+        # q: [batch, seqlen, num_heads, head_dim]
+        # k,v are already [batch x max_kv_len, num_heads, head_dim]
+        assert query.ndim == 3 and key.ndim == 3 and value.ndim == 3
+        batch = len(attn_bias.q_seqinfo.seqstart_py) - 1  # type: ignore
+        query = query.view([batch, -1, query.shape[1], query.shape[2]])
+
     new_inp = Inputs(
         query=query,
         key=key,
@@ -464,7 +482,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
 
 def _is_paged_attention_supported(attn_bias_type) -> bool:
     if issubclass(attn_bias_type, PagedBlockDiagonalPaddedKeysMask):
-        return FLASH_VERSION > "2.5.6" and not _USE_PT_FLASH_ATTN
+        return not _USE_PT_FLASH_ATTN
 
     return True
 

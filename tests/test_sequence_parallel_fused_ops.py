@@ -18,9 +18,6 @@ from .multiprocessing_utils import launch_subprocesses
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
-cuda_sm70_only = pytest.mark.skipif(
-    compute_capability < (7, 0), reason="requires sm70+"
-)
 cuda_sm80_only = pytest.mark.skipif(
     compute_capability < (8, 0), reason="requires sm80+"
 )
@@ -38,6 +35,8 @@ def compare_fused_and_non_fused_ops(
     dtype: torch.dtype,
     compile: bool,
 ):
+    os.environ["TORCH_SYMM_MEM_ALLOW_OVERLAPPING_DEVICES"] = "1"
+
     batch_dims = dims[:-2]
     subbatch_dims = (batch_dims[0] // world_size,) + batch_dims[1:]
     outer_dim = dims[-2]
@@ -148,7 +147,9 @@ def inner_sequence_parallel_fused(
     )
 
 
-@cuda_sm70_only
+# PyTorch doesn't support pre-sm80 for its signaling kernels
+# https://github.com/pytorch/pytorch/pull/146308
+@cuda_sm80_only
 @pytest.mark.parametrize(
     "kind",
     ["singleton", pytest.param("fallback", marks=at_least_2_gpus), "pytorch"],
@@ -214,7 +215,9 @@ def inner_sequence_parallel_fused_handle_all_dtypes(
         )
 
 
-@cuda_sm70_only
+# PyTorch doesn't support pre-sm80 for its signaling kernels
+# https://github.com/pytorch/pytorch/pull/146308
+@cuda_sm80_only
 @pytest.mark.parametrize("step", ["all-gather", "reduce-scatter"])
 @pytest.mark.parametrize(
     "dims",

@@ -551,7 +551,7 @@ class _GappySeqInfo(_SeqLenInfo):
         min_seqlen: 1
         seqstart_py: [0, 7, 12, 14]
         seqstart: torch.IntTensor([0, 7, 12, 14])
-        seqlen_py: [6, 3 1]
+        seqlen_py: [6, 3, 1]
         seqlen: torch.IntTensor([6, 3, 1])
 
     (2) For paged masks:
@@ -623,7 +623,7 @@ class _GappySeqInfo(_SeqLenInfo):
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
     ) -> List[torch.Tensor]:
-        raise NotImplementedError("_PaddedSeqLenInfo.split")
+        raise NotImplementedError("_GappySeqInfo.split")
 
 
 @dataclass
@@ -1355,11 +1355,9 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
             raise ValueError("q shapes wrong", (shape, self.q_seqinfo))
         mask = torch.empty(shape[-2:], dtype=dtype, device=device)
         mask.fill_(-math.inf)
-        for i, ((q_start, q_end), (k_start, k_end)) in enumerate(
-            zip(
-                self.q_seqinfo.intervals(),
-                self.k_seqinfo.intervals(),
-            )
+        for (q_start, q_end), (k_start, k_end) in zip(
+            self.q_seqinfo.intervals(),
+            self.k_seqinfo.intervals(),
         ):
             mask[q_start:q_end, k_start:k_end] = 0
         for _ in range(len(shape) - 2):
@@ -1400,8 +1398,6 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
         Assuming our keys actually live in separate blocks of length
         notional_padding, convert to a Paged version.
         """
-        # Our child class does not yet have a paged version.
-        assert self.__class__ is BlockDiagonalGappyKeysMask
         max_row_len = block_tables.shape[1] * page_size
         new_seqstarts = [
             start - i * notional_padding
@@ -1584,6 +1580,31 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
             k_seqinfo=k_seqinfo,
             block_tables=block_tables,
             page_size=page_size,
+        )
+
+
+@dataclass
+class PagedBlockDiagonalCausalWithOffsetGappyKeysMask(PagedBlockDiagonalGappyKeysMask):
+    """
+    Same as BlockDiagonalCausalWithOffsetGappyKeysMask, but for paged attention.
+    block_tables has shape [batch_size, max_num_pages] and K/V have shape
+    [1, max_num_pages * page_size, num_heads, head_dim] or
+    [1, max_num_pages * page_size, num_groups, num_heads, head_dim]
+    """
+
+    _UNPAGED_TYPE = BlockDiagonalCausalWithOffsetGappyKeysMask
+
+    def to(
+        self, device: torch.device
+    ) -> "PagedBlockDiagonalCausalWithOffsetGappyKeysMask":
+        assert (
+            type(self) is PagedBlockDiagonalCausalWithOffsetGappyKeysMask
+        ), "Please implement in subclass"
+        return PagedBlockDiagonalCausalWithOffsetGappyKeysMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+            block_tables=self.block_tables.to(device),
+            page_size=self.page_size,
         )
 
 
@@ -1841,6 +1862,7 @@ class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
             torch.ops.aten.detach,
             torch.ops.aten._to_copy,
             torch.ops.aten.to,
+            torch.ops.aten.view,
         ]:
             output = func(
                 *[a._subtensor if isinstance(a, cls) else a for a in args],

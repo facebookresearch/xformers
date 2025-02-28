@@ -118,7 +118,7 @@ std::
     if (backend == "cusparselt") {
       return sparse24_sparsify_both_ways_typed<
           ElementT,
-          MetadataCuSparseLt,
+          MetadataCuSparseLtSm80,
           kIsMeta>(input, algorithm);
     } else {
       TORCH_CHECK(
@@ -126,7 +126,7 @@ std::
           "backend argument only supports `cutlass` or `cusparselt`");
       return sparse24_sparsify_both_ways_typed<
           ElementT,
-          MetadataCutlass,
+          MetadataCutlassSm80,
           kIsMeta>(input, algorithm);
     }
   };
