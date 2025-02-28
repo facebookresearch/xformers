@@ -8,7 +8,7 @@
 #include <ck_tile/host/kernel_launch.hpp>
 #include <ck_tile/host/stream_config.hpp>
 
-#include "ck_attention_forward_decoder_splitk.h"
+#include "ck_tile_attention_forward_decoder_splitk.h"
 
 namespace {
 constexpr int32_t kThreadsPerWavefront = 64;
@@ -31,12 +31,12 @@ struct c10_to_data_t<float> {
 
 template <>
 struct c10_to_data_t<c10::Half> {
-  using type = ck::half_t;
+  using type = ck_tile::fp16_t;
 };
 
 template <>
 struct c10_to_data_t<c10::BFloat16> {
-  using type = ck::bhalf_t;
+  using type = ck_tile::bf16_t;
 };
 } // namespace
 

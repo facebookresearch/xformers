@@ -1,17 +1,15 @@
 #pragma once
 
-#include <ck/utility/data_type.hpp>
-#include <ck/utility/math.hpp>
+#include <ck_tile/core.hpp>
 
-#include "ck_attention_inner_product.h"
-#include "ck_attention_math_ext.h"
+#include "ck_tile_attention_inner_product.h"
 
 namespace {
 
 template <typename data_t, int32_t vec_size>
-__device__ typename ck::vector_type<float, vec_size>::type scalar_scale_acc(
-    typename ck::vector_type<float, vec_size>::type acc,
-    typename ck::vector_type<data_t, vec_size>::type a,
+__device__ ck_tile::ext_vector_t<float, vec_size> scalar_scale_acc(
+    ck_tile::ext_vector_t<float, vec_size> acc,
+    ck_tile::ext_vector_t<data_t, vec_size> a,
     float b) {
   union {
     decltype(acc) vec;
@@ -24,7 +22,7 @@ __device__ typename ck::vector_type<float, vec_size>::type scalar_scale_acc(
 
 #pragma unroll
   for (int32_t i = 0; i < vec_size; ++i) {
-    acc_u.arr[i] += ck::type_convert<float>(a_u.arr[i]) * b;
+    acc_u.arr[i] += ck_tile::type_convert<float>(a_u.arr[i]) * b;
   }
 
   return acc_u.vec;
@@ -99,8 +97,8 @@ struct ForwardDecoderSplitKReduceKernelImpl {
     const int32_t h = blockIdx.x % arg.Q_size_h;
 
     using data_t = scalar_t;
-    using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
-    using compute_vec_t = typename ck::vector_type<compute_t, vec_size>::type;
+    using data_vec_t = ck_tile::ext_vector_t<data_t, vec_size>;
+    using compute_vec_t = ck_tile::ext_vector_t<compute_t, vec_size>;
 
     union {
       data_vec_t vec;
@@ -129,7 +127,7 @@ struct ForwardDecoderSplitKReduceKernelImpl {
     }
 
     compute_t global_sumexp = 0;
-    compute_t global_max = ck::NumericLimits<compute_t>::Lowest();
+    compute_t global_max = ck_tile::numeric<compute_t>::lowest();
 
     for (int32_t split_idx = 0; split_idx < arg.split_k; ++split_idx) {
       load_v<data_t, data_vec_t>(
@@ -141,7 +139,7 @@ struct ForwardDecoderSplitKReduceKernelImpl {
 #pragma unroll
       for (int32_t i = 0; i < vec_size; ++i) {
         O_split_compute.arr[i] =
-            ck::type_convert<compute_t>(O_split_data.arr[i]);
+            ck_tile::type_convert<compute_t>(O_split_data.arr[i]);
       }
       compute_t local_max =
           *(arg.split_max + blockIdx.x * arg.split_k + split_idx);
@@ -150,7 +148,7 @@ struct ForwardDecoderSplitKReduceKernelImpl {
 
       compute_t log_alpha = -std::abs(local_max - global_max);
       compute_t alpha =
-          isnan(log_alpha) ? compute_t{1.} : ck::math::exp(log_alpha);
+          ck_tile::isnan(log_alpha) ? compute_t{1.} : ck_tile::exp(log_alpha);
 
       bool pick_new = local_max < global_max;
       compute_t pick_current_coef = pick_new ? 1. : alpha;
@@ -160,12 +158,13 @@ struct ForwardDecoderSplitKReduceKernelImpl {
           pick_current_coef * global_sumexp + pick_new_coef * local_sumexp;
       global_O_compute.vec = pick_current_coef * global_O_compute.vec +
           pick_new_coef * O_split_compute.vec;
-      global_max = ck::math::max(local_max, global_max);
+      global_max = ck_tile::max(local_max, global_max);
     }
     global_O_compute.vec /= global_sumexp;
 #pragma unroll
     for (int32_t i = 0; i < vec_size; ++i) {
-      global_O_data.arr[i] = ck::type_convert<data_t>(global_O_compute.arr[i]);
+      global_O_data.arr[i] =
+          ck_tile::type_convert<data_t>(global_O_compute.arr[i]);
     }
     store_v<data_t, data_vec_t>(
         arg.O + b * arg.XQ_stride_b + m * arg.XQ_stride_m +
@@ -223,8 +222,11 @@ struct ForwardDecoderSplitKAttnKernelImpl {
     const auto* __restrict__ cache_V_base = arg.cache_V + cache_KV_base_offset;
 
     using data_t = scalar_t;
-    using data_vec_t = typename ck::vector_type<data_t, vec_size>::type;
-    using compute_vec_t = typename ck::vector_type<compute_t, vec_size>::type;
+    using data_vec_t = std::conditional_t<
+        vec_size == 1,
+        data_t,
+        ck_tile::ext_vector_t<data_t, vec_size>>;
+    using compute_vec_t = ck_tile::ext_vector_t<compute_t, vec_size>;
 
     const bool lane_active_for_io = lane_idx * vec_size < arg.Q_size_k;
 
@@ -237,7 +239,7 @@ struct ForwardDecoderSplitKAttnKernelImpl {
       load_v<data_t, data_vec_t>(q_, lane_idx, &q_thread);
     }
 
-    compute_t max_qk_acc = ck::NumericLimits<compute_t>::Lowest();
+    compute_t max_qk_acc = ck_tile::numeric<compute_t>::lowest();
 
     // Compute S[0:t_max] =
     // ```
@@ -279,12 +281,12 @@ struct ForwardDecoderSplitKAttnKernelImpl {
 #pragma unroll n_loop_unroll
       for (auto ttt = 0; ttt < n_loop_unroll; ++ttt) {
         compute_t qk_acc = 0;
-        ck::inner_product<data_vec_t, data_vec_t, compute_t>(
+        ck_tile::inner_product<data_vec_t, data_vec_t, compute_t>(
             q_thread, k_loads[ttt], qk_acc);
         qk_acc *= arg.qk_scale;
 
         qk_acc = wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
-        max_qk_acc = ck::math::max(qk_acc, max_qk_acc);
+        max_qk_acc = ck_tile::max(qk_acc, max_qk_acc);
         if (lane_idx == 0) {
           smem[tt + ttt - n_unrolled_loops * dtt * split_idx] = qk_acc;
         }
@@ -308,13 +310,13 @@ struct ForwardDecoderSplitKAttnKernelImpl {
         compute_t qk_acc = 0;
         const int32_t t = tt + ttt;
         if (t < t_max) {
-          ck::inner_product<data_vec_t, data_vec_t, compute_t>(
+          ck_tile::inner_product<data_vec_t, data_vec_t, compute_t>(
               q_thread, k_loads[ttt], qk_acc);
           qk_acc *= arg.qk_scale;
 
           qk_acc =
               wavefrontReduce(qk_acc, [](auto a, auto b) { return a + b; });
-          max_qk_acc = ck::math::max(qk_acc, max_qk_acc);
+          max_qk_acc = ck_tile::max(qk_acc, max_qk_acc);
 
           // write accumulated sums to smem.
           if (lane_idx == 0) {
@@ -331,7 +333,7 @@ struct ForwardDecoderSplitKAttnKernelImpl {
     }
     __syncthreads();
     if (lane_idx < wavefronts_per_block) {
-      max_qk_acc = ck::math::max(max_qk_acc, smem[KV_M_MAX + lane_idx]);
+      max_qk_acc = ck_tile::max(max_qk_acc, smem[KV_M_MAX + lane_idx]);
     }
     // shared across all threads in block
     max_qk_acc = wavefrontReduce(
@@ -350,7 +352,7 @@ struct ForwardDecoderSplitKAttnKernelImpl {
           : t_max;
       for (int32_t t = t_low + thread_linear_idx; t < t_high;
            t += threads_per_block) {
-        const auto s = ck::math::exp(smem[t - t_low] - max_qk_acc);
+        const auto s = ck_tile::exp(smem[t - t_low] - max_qk_acc);
         softmax_denominator += s;
         smem[t - t_low] = s;
       }
@@ -445,7 +447,7 @@ struct ForwardDecoderSplitKAttnKernelImpl {
       } bf_r;
 #pragma unroll
       for (int32_t i = 0; i < vec_size; ++i) {
-        bf_r.arr[i] = ck::type_convert<data_t>(r.arr[i]);
+        bf_r.arr[i] = ck_tile::type_convert<data_t>(r.arr[i]);
       }
       // write output row O[b][m][g][h][:]
       data_t* __restrict__ o_ =
