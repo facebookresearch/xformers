@@ -26,7 +26,7 @@ template <
     ck_tile::index_t MTile>
 struct batched_infer_mask_bias_dropout_dispatch {
   static constexpr bool kUseWholeKPrefetchPipeline =
-      (MaxK <= 256 && !kHasDropout);
+      (MaxK <= 128 && !kHasDropout);
 
   using FmhaShape = typename FmhaFwdShape<MaxK, MTile>::Type;
 
@@ -69,19 +69,74 @@ struct batched_infer_mask_bias_dropout_dispatch {
     // buffer_load_dwordxx/buffer_store_dwordxx can handle oob access
     constexpr bool kPadSeqLenQ = false;
 
-    BOOL_SWITCH_3(
-        pad_seqlen_k,
-        kPadSeqLenK,
-        pad_headdim_q,
-        kPadHeadDimQ,
-        pad_headdim_v,
-        kPadHeadDimV,
-        [&] {
+    // only use qr_ks_vs_async pipeline with hdim-96
+    const bool use_async_pipeline =
+        (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) &&
+         (MaxK == 96));
+
+    if (!use_async_pipeline) {
+      BOOL_SWITCH_3(
+          pad_seqlen_k,
+          kPadSeqLenK,
+          pad_headdim_q,
+          kPadHeadDimQ,
+          pad_headdim_v,
+          kPadHeadDimV,
+          [&] {
+            using FmhaTraits = ck_tile::TileFmhaTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ, // kPadHeadDimQ,
+                kPadHeadDimV, // kPadHeadDimV,
+                kBiasEnum,
+                false, // kHasBiasGrad place-holder
+                false, // kStoreLSE
+                kHasDropout,
+                false, // kDoFp8StaticQuant place-holder
+                occupancy>;
+
+            using FmhaPipelineProblem =
+                FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
+
+            using FmhaEpilogue =
+                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                    typename FmhaFwdTypeConfig<ScalarType>::ODataType,
+                    kPadSeqLenQ,
+                    kPadHeadDimV>>;
+
+            if constexpr (kUseWholeKPrefetchPipeline) {
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaPipelineQRKSVSWholeKPrefetch<
+                      FmhaPipelineProblem>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+
+              RunWithKernel<FmhaKernel>(param, stream);
+            } else if constexpr (MaxK <= 256) {
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+
+              RunWithKernel<FmhaKernel>(param, stream);
+            } else {
+              using FmhaPipeline =
+                  ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
+              using FmhaKernel =
+                  ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+
+              RunWithKernel<FmhaKernel>(param, stream);
+            }
+          });
+    } else {
+      BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
+        if constexpr (MaxK == 96) {
           using FmhaTraits = ck_tile::TileFmhaTraits<
-              kPadSeqLenQ,
+              true, // kPadSeqLenQ,
               kPadSeqLenK,
-              kPadHeadDimQ, // kPadHeadDimQ,
-              kPadHeadDimV, // kPadHeadDimV,
+              true, // kPadHeadDimQ,
+              true, // kPadHeadDimV,
               kBiasEnum,
               false, // kHasBiasGrad place-holder
               false, // kStoreLSE
@@ -92,36 +147,24 @@ struct batched_infer_mask_bias_dropout_dispatch {
           using FmhaPipelineProblem =
               FmhaPipelineProblemTemp<FmhaTraits, FmhaMask>;
 
+          using FmhaPipeline =
+              ck_tile::BlockFmhaPipelineQRKSVSAsync<FmhaPipelineProblem>;
+
           using FmhaEpilogue =
               ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
                   typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
                   typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-                  kPadSeqLenQ,
-                  kPadHeadDimV>>;
+                  true,
+                  true>>;
 
-          if constexpr (kUseWholeKPrefetchPipeline) {
-            using FmhaPipeline = ck_tile::BlockFmhaPipelineQRKSVSWholeKPrefetch<
-                FmhaPipelineProblem>;
-            using FmhaKernel =
-                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
+          using FmhaKernel = ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
 
-            RunWithKernel<FmhaKernel>(param, stream);
-          } else if constexpr (MaxK <= 256) {
-            using FmhaPipeline =
-                ck_tile::BlockFmhaPipelineQRKSVS<FmhaPipelineProblem>;
-            using FmhaKernel =
-                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
-
-            RunWithKernel<FmhaKernel>(param, stream);
-          } else {
-            using FmhaPipeline =
-                ck_tile::BlockFmhaPipelineQSKSVS<FmhaPipelineProblem>;
-            using FmhaKernel =
-                ck_tile::FmhaFwdKernel<FmhaPipeline, FmhaEpilogue>;
-
-            RunWithKernel<FmhaKernel>(param, stream);
-          }
-        });
+          RunWithKernel<FmhaKernel>(param, stream);
+        } else {
+          /* runtime will never get here, so no codes to compile */
+        };
+      });
+    };
   };
 
   template <typename FmhaKernel>
