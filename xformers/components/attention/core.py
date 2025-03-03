@@ -103,7 +103,7 @@ def _matmul_with_mask(
             repeat_factor = att.shape[0] // mask.shape[0]
             mask = mask.repeat([repeat_factor, 1, 1])
             logger.info("Mismatched batch dimensions for mask, repeating mask.")
-        att += mask
+        att += mask  # type: ignore
     return att
 
 
