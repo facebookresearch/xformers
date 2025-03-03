@@ -13,7 +13,6 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_async_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_params.h"
 #include "ck_tiled_headdim_switch.h"
@@ -29,14 +28,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
   static constexpr bool kUseWholeKPrefetchPipeline =
       (MaxK <= 256 && !kHasDropout);
 
-  constexpr static auto get_fmha_shape_type() {
-    if constexpr (kUseWholeKPrefetchPipeline)
-      return typename FmhaFwdAsyncShape<MaxK, MTile>::Type{};
-    else
-      return typename FmhaFwdShape<MaxK, MTile>::Type{};
-  };
-
-  using FmhaShape = decltype(get_fmha_shape_type());
+  using FmhaShape = typename FmhaFwdShape<MaxK, MTile>::Type;
 
   static constexpr ck_tile::index_t kKLoadLength =
       (kUseWholeKPrefetchPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim

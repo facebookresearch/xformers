@@ -9,7 +9,6 @@
 #include <cmath>
 #include <tuple>
 #include "ck_fmha_util.h"
-#include "ck_tiled_fmha_fwd_async_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_smallq_setting.h"
@@ -28,7 +27,6 @@ static int generate_splits_list(int i) {
 };
 
 static std::pair<bool, int> get_num_kv_splits_heuristic(
-    bool compute_lse,
     int num_batches,
     int num_heads,
     int max_seqlen_q,
@@ -37,9 +35,7 @@ static std::pair<bool, int> get_num_kv_splits_heuristic(
   int num_SMs = get_number_of_cu();
   auto ceildiv = [](int a, int b) { return (a + b - 1) / b; };
 
-  int mtile_size_for_pipeline_default = compute_lse
-      ? get_fmha_fwd_least_mtile()
-      : get_fmha_fwd_async_least_mtile();
+  int mtile_size_for_pipeline_default = get_fmha_fwd_least_mtile();
   int mtile_size_for_splitkv = 64;
   int mtile_size_for_splitkv_smallq = 16;
 

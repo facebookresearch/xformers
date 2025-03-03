@@ -7,7 +7,6 @@
 #pragma once
 
 #include <algorithm>
-#include "ck_tiled_fmha_fwd_async_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_smallq_selector.h"
 #include "ck_tiled_fmha_grouped_infer_dispatch.h"
@@ -52,14 +51,8 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
         // dimension > 256
       }
     } else {
-      const auto mtile = [&]() {
-        if constexpr (MaxK <= 256)
-          return get_fmha_fwd_async_mtile(
-              param.num_batches, param.Hq, param.max_seqlen_q);
-        else
-          return get_fmha_fwd_mtile(
-              param.num_batches, param.Hq, param.max_seqlen_q);
-      }();
+      const auto mtile =
+          get_fmha_fwd_mtile(param.num_batches, param.Hq, param.max_seqlen_q);
 
       if (mtile == 128)
         grouped_infer_mask_bias_dropout_dispatch<
