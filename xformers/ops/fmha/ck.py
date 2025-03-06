@@ -155,7 +155,7 @@ class FwOp(AttentionFwOpBase):
     OPERATOR = get_operator("xformers", "efficient_attention_forward_ck")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.half, torch.bfloat16}
-    SUPPORTED_MAX_K = 256
+    SUPPORTED_MAX_K = 512
 
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
@@ -201,6 +201,7 @@ class FwOp(AttentionFwOpBase):
         96,
         128,  # 64x128 kernel
         256,  # 64x128 with accumulation in gmem
+        512,
     ]
 
     @classmethod
@@ -216,7 +217,7 @@ class FwOp(AttentionFwOpBase):
         assert inp.query.ndim == 5, f"query has shape {inp.query.shape}"
         ctx: Optional[Context] = None
 
-        # consider for expanded 5-D inputted
+        # when the input is expanded 5-D, the group dimension has zero stride
         if inp.key.stride()[3] == 0:
             assert (
                 inp.value.stride()[3] == 0
@@ -239,7 +240,13 @@ class FwOp(AttentionFwOpBase):
 
         [_, _, G, Hq, _] = inp.query.shape
         attn_bias_replace = inp.attn_bias
-        if isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim != 0:
+        if isinstance(inp.attn_bias, LowerTriangularMaskWithTensorBias):
+            bias_tensor = _get_tensor_bias(inp.attn_bias)
+            if bias_tensor is not None and bias_tensor.ndim == 5:
+                attn_bias_replace = LowerTriangularMaskWithTensorBias(
+                    bias_tensor.flatten(1, 2)
+                )
+        elif isinstance(inp.attn_bias, torch.Tensor) and inp.attn_bias.ndim == 5:
             attn_bias_replace = inp.attn_bias.flatten(1, 2)
         inp = replace(
             inp,

@@ -6,7 +6,6 @@
 #
 
 import os
-import sys
 from pathlib import Path
 from typing import List
 
@@ -18,8 +17,12 @@ FMHA_COPYRIGHT_HEADER = """
  * LICENSE file in the root directory of this source tree.
  *
  * The file is automatically generated, don't modify!
+ * See the generator script
+ * `{file}`
  */
-"""
+""".format(
+    file=os.path.relpath(os.path.realpath(__file__), start=Path(__file__).parents[4])
+)
 
 FMHA_INFER_INSTANCE_TEMPLATE_INC = """
 #include <ck_tile/core/numeric/{dtype_file}.hpp>
@@ -103,13 +106,7 @@ BOOL_MAP_DROPOUT = {
     False: "no_dropout",
 }
 
-INT_MAP_MAX_K = {
-    32: "maxk_32",
-    64: "maxk_64",
-    96: "maxk_96",
-    128: "maxk_128",
-    256: "maxk_256",
-}
+INT_MAP_MAX_K = {hd: f"maxk_{hd}" for hd in [32, 64, 96, 128, 256, 512]}
 
 TYPE_CTYPE_MAP = {
     "fp16": "ck_tile::fp16_t",
@@ -356,18 +353,8 @@ def create_backward_instances_ref(instance_dir: Path, headdims: List) -> None:
 
 
 if __name__ == "__main__":
-    disable_hd256 = False
-
-    for arg in sys.argv:
-        if arg == "--ignore-hd256":
-            disable_hd256 = True
-
-    if disable_hd256:
-        headdims_fwd = [32, 64, 96, 128]
-        headdims_bwd = [32, 64, 96, 128]
-    else:
-        headdims_fwd = [32, 64, 96, 128, 256]
-        headdims_bwd = [32, 64, 96, 128, 256]
+    headdims_fwd = [32, 64, 96, 128, 256, 512]
+    headdims_bwd = [32, 64, 96, 128, 256]
 
     this_dir = os.path.dirname(__file__)
     output_dir = Path(this_dir) / "instances"

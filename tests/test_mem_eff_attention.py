@@ -472,6 +472,16 @@ def test_forward(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv, packed, fmt, **kwargs)
     if fmt == "BMK" and not fmha.common._is_bias_type_supported_in_BMK(bias_type):
         pytest.skip("BMK incompatible with this bias")
 
+    if op is fmha.ck.FwOp:
+        if (k > 256 or kv > 256) and issubclass(
+            bias_type,
+            (
+                fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+            ),
+        ):
+            pytest.skip("ck.FwOp hdim-512 is not supported when Paged-KVCache is used!")
+
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
         fmt="BMHK" if packed else fmt,
@@ -559,6 +569,18 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
         k,
         kv,
     ) = opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv
+
+    if op is fmha.ck.FwOp:
+        if issubclass(
+            bias_type,
+            (
+                fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
+            ),
+        ):
+            pytest.skip(
+                "With ck.FwOp Paged-KVCache has some problem with forward training!"
+            )
 
     query, key, value, attn_bias = create_tensors(
         *opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv,
