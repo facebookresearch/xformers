@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.29.post2] - 2025-01-31
+Pre-built binary wheels are available for PyTorch 2.6.0. Following PyTorch, we build wheels for CUDA 11.8, 12.4, and 12.6 only (we no longer build for CUDA 12.1).
+xFormers now requires PyTorch >= 2.6
+
+
 ## [0.0.29] - 2024-12-27
 ### Improved:
 - [fMHA] Creating a `LowerTriangularMask` no longer creates a CUDA tensor

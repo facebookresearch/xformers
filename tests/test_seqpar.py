@@ -20,8 +20,8 @@ from .multiprocessing_utils import launch_subprocesses
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")
-cuda_sm70_only = pytest.mark.skipif(
-    compute_capability < (7, 0), reason="requires sm70+"
+cuda_sm80_only = pytest.mark.skipif(
+    compute_capability < (8, 0), reason="requires sm70+"
 )
 at_least_2_gpus = pytest.mark.skipif(
     torch.cuda.device_count() < 2, reason="needs at least 2 GPUs"
@@ -59,6 +59,8 @@ def inner_seqpar(
     compile: bool,
     seed: int,
 ):
+    os.environ["TORCH_SYMM_MEM_ALLOW_OVERLAPPING_DEVICES"] = "1"
+
     my_rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()
@@ -224,7 +226,9 @@ def inner_seqpar(
         )
 
 
-@cuda_sm70_only
+# PyTorch doesn't support pre-sm80 for its signaling kernels
+# https://github.com/pytorch/pytorch/pull/146308
+@cuda_sm80_only
 @pytest.mark.parametrize(
     "kind",
     [

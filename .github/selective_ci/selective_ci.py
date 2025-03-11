@@ -3,6 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+import argparse
 import fnmatch
 import os
 from dataclasses import dataclass, field
@@ -70,12 +71,10 @@ COMPONENTS = [
             "tests/test_seqpar.py",
             "tests/test_sequence_parallel_fused_ops.py",
             "tests/test_tiled_matmul.py",
-            "xformers/csrc/sequence_parallel_fused/*",
         ],
         dependencies=[
             "tests/multiprocessing_utils.py",
             "xformers/ops/sequence_parallel_fused_ops.py",
-            "xformers/ops/ipc.py",
         ],
     ),
     ComponentInfo(
@@ -109,6 +108,9 @@ def list_files_in_commit(commit: git.Commit):
 
 
 def check_patterns_are_valid(patterns):
+    # Only check patterns in `fairinternal` repo
+    if os.environ.get("GITHUB_REPOSITORY", "") != "fairinternal/xformers":
+        return
     found_patterns = set()
     for f in all_files:
         for pattern in patterns:
@@ -119,9 +121,14 @@ def check_patterns_are_valid(patterns):
             assert False, f"Pattern does not match any file: `{pattern}`"
 
 
+parser = argparse.ArgumentParser("xFormers selective CI")
+parser.add_argument("--base_commit", default="origin/main")
+args = parser.parse_args()
+
+base_commit = repo.rev_parse(args.base_commit)
 all_files = list_files_in_commit(repo.head.commit) + [sm.path for sm in repo.submodules]
 all_modified_files = set()
-for item in repo.head.commit.diff(repo.rev_parse("origin/main")):
+for item in repo.head.commit.diff(base_commit):
     if item.a_path is not None:
         all_modified_files.add(item.a_path)
     if item.b_path is not None:

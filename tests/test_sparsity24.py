@@ -5,7 +5,7 @@
 
 import functools
 import random
-from typing import cast
+from typing import Tuple, cast
 
 import pytest
 import torch
@@ -26,6 +26,12 @@ if torch.cuda.is_available():
 requires_sp24 = pytest.mark.skipif(compute_capability < (8, 0), reason="requires sm80+")
 requires_sp24_gemm = pytest.mark.skipif(
     compute_capability != (8, 0), reason="requires sm80"
+)
+requires_h100_s24 = pytest.mark.skipif(
+    compute_capability != (9, 0)
+    or torch.version.cuda is None
+    or int(torch.version.cuda.split(".")[0]) < 12,
+    reason="requires sm90",
 )
 parametrize_dtype = pytest.mark.parametrize(
     "dtype", [torch.float16, torch.bfloat16], ids=["f16", "bf16"]
@@ -1043,3 +1049,104 @@ def test_compile_unflatten():
     )
     fnc = torch.compile(_Sp24X.apply)
     fnc(x)
+
+
+def _to_fp8_rowwise(x: torch.Tensor, dtype) -> Tuple[torch.Tensor, torch.Tensor]:
+    max_v = torch.finfo(dtype).max
+    x_scale = (x.abs().max(1, keepdim=True)[0] / max_v).float()
+    x = (x / x_scale).to(dtype)
+    return x, x_scale
+
+
+@cuda_only
+@pytest.mark.parametrize("M", [4, 8])
+@pytest.mark.parametrize("sort_preproc", ["largest", "largest_abs"])
+def test_sparseNM_dense(M: int, sort_preproc: str) -> None:
+    dtype = torch.bfloat16
+    torch.manual_seed(0)
+    N = 2
+
+    A = torch.randn([128, 128], device="cuda", dtype=dtype)
+    As = torch.ops.xformers.sparseNM_dense(A, N=N, M=M, sort_preproc=sort_preproc)
+    Amask = A.reshape([-1, M])
+    if sort_preproc == "largest_abs":
+        Amask = Amask.abs()
+    # NOTE: We want to know which of the 4 values will be masked out after
+    # sparsity. We use 2 argsorts to compute the rank of each element
+    # Example:
+    # [8, 1, 2, 9] < Array values
+    # [1, 2, 0, 3] < After the first `argsort`
+    # [2, 0, 1, 3] < After the second `argsort`
+    #  |  ^ 9 is in index 0 of the sorted array
+    #  ^ 8 is in index 2 of the sorted array
+    Amask = Amask.argsort().argsort()
+    As_ref = A.clone().reshape([-1, M])
+    As_ref[Amask < (M - N)] = 0
+    As_ref = As_ref.reshape_as(A)
+    # NOTE: Sometimes we have ties
+    # [0, 1, 1, 2] can be sparsified as [0, 1, 0, 2] or [0, 0, 1, 2]
+    # Both are valid so there is a small margin for error here
+    assert (As != As_ref).mean(dtype=torch.float).item() < 0.002
+
+
+@requires_h100_s24
+def test_sparse24_fp8_sm90_cutlass_gemm_eye(
+    M=512, K=256, dtype=torch.float8_e4m3fn
+) -> None:
+    torch.manual_seed(0)
+    A = torch.randn([M, K], device="cuda", dtype=torch.bfloat16)
+    A[A == 0] = 1
+    A = torch.ops.xformers.sparseNM_dense(A, N=2, M=4, sort_preproc="largest")
+    A, _ = _to_fp8_rowwise(A, dtype)
+
+    # NOTE: CUTLASS compression kernel expects the input to be *exactly*
+    # 2:4 sparse already (eg it does not select the largest values)
+    A_packed, A_mdata = torch.ops.xformers._sparse24_sm90_cutlass_compress(A)
+    assert torch.allclose(
+        A_packed.float().sum(), A.float().sum()
+    )  # Check all values are there
+
+    # Check MM without scale
+    eye = torch.eye(A.shape[1], device=A.device, dtype=A.dtype).T
+    A_reconstructed = torch.ops.xformers._sparse24_fp8_sm90_cutlass_gemm(
+        A_packed, A_mdata, eye
+    )
+    assert torch.allclose(A.float(), A_reconstructed.float())
+
+    # Check MM with scale
+    b_scale = torch.randn([1, A.shape[1]], device=eye.device, dtype=torch.float32)
+    a_scale = torch.randn([A.shape[0], 1], device=eye.device, dtype=torch.float32)
+    A_reconstructed = torch.ops.xformers._sparse24_fp8_sm90_cutlass_gemm(
+        A_packed, A_mdata, eye, a_scale=a_scale, b_scale=b_scale
+    )
+    assert torch.allclose(
+        A.float() * b_scale * a_scale, A_reconstructed.float(), rtol=0.01
+    )
+
+
+@requires_h100_s24
+def test_sparse24_fp8_sm90_cutlass_gemm_random_tensor(
+    M=512, N=1024, K=256, dtype=torch.float8_e4m3fn
+) -> None:
+    torch.manual_seed(0)
+    A = torch.randn([M, K], device="cuda", dtype=torch.bfloat16)
+    A[A == 0] = 1
+    A = torch.ops.xformers.sparseNM_dense(A, N=2, M=4, sort_preproc="largest")
+    A, a_scale = _to_fp8_rowwise(A, dtype)
+    B, b_scale = _to_fp8_rowwise(
+        torch.randn([N, K], device="cuda", dtype=torch.bfloat16), dtype
+    )
+    B = B.T
+    b_scale = b_scale.T
+
+    A_packed, A_mdata = torch.ops.xformers._sparse24_sm90_cutlass_compress(A)
+    out_xformers = torch.ops.xformers._sparse24_fp8_sm90_cutlass_gemm(
+        A_packed, A_mdata, B, a_scale=a_scale, b_scale=b_scale
+    )
+    out_ref = torch._scaled_mm(
+        A, B, scale_a=a_scale, scale_b=b_scale, out_dtype=out_xformers.dtype
+    )
+    assert torch.allclose(out_xformers, out_ref, rtol=0.01, atol=0.01)
+
+
+# end of OSS file

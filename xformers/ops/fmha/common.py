@@ -53,6 +53,92 @@ def _attn_bias_apply(
     return attn_bias
 
 
+class ScaledTensor(torch.Tensor):
+    __slots__ = ["scale", "dequant_func", "original_dtype"]
+
+    # Disabling custom torch function handling for this class
+    __torch_function__ = torch._C._disabled_torch_function_impl
+
+    def __new__(
+        cls,
+        data: torch.Tensor,
+        scale: torch.Tensor,
+        dequant_func: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+        original_dtype: torch.dtype,
+        require_grad: bool = False,
+    ) -> "ScaledTensor":
+        """
+        Creates a new ScaledTensor subclass instance.
+
+        Parameters:
+        - data: The underlying quantized tensor (e.g., int8, int4).
+        - scale: The scale tensor or scalar to be used for dequantization.
+        - dequant_func: A callable that applies dequantization, which takes both the data and scale as input.
+        - original_dtype: The data type before quantization (e.g., float32, float16).
+        - require_grad: Whether or not to track gradients (default: False for inference use).
+        """
+        # Use _make_subclass to create a new ScaledTensor instance, which is a subclass of torch.Tensor.
+        instance = torch.Tensor._make_subclass(cls, data, require_grad=require_grad)
+
+        # Store the dequantization scale and function as attributes.
+        instance.scale = scale  # type: ignore
+        instance.dequant_func = dequant_func  # type: ignore
+
+        # Store the original data type of the tensor, so we can cast it back after dequantization.
+        instance.original_dtype = original_dtype  # type: ignore
+
+        # Return the new instance of ScaledTensor.
+        return instance
+
+    def dequantize(self) -> torch.Tensor:
+        """
+        Applies the custom dequantization function provided at the tensor's creation.
+        After dequantization, the data is cast back to its original data type.
+        """
+        # Explicitly create a new torch.Tensor to ensure the return type is torch.Tensor, not ScaledTensor.
+        data = torch.Tensor(self.float())
+
+        # Call the dequantization function, passing in the data and the scale.
+        dequantized_data = self.dequant_func(data, self.scale)  # type: ignore
+
+        # Cast the dequantized data back to the original data type.
+        return dequantized_data.to(self.original_dtype)  # type: ignore
+
+    def unpack(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Unpacks the ScaledTensor by returning its data and scale as a tuple.
+        Returns:
+        - A tuple of (data, scale), both of which are torch.Tensor objects.
+        """
+        return self.data, self.scale  # type: ignore
+
+    def __repr__(self):
+        """
+        Custom string representation for ScaledTensor.
+        """
+        return f"ScaledTensor(data={self.data}, scale={self.scale}, original_dtype={self.original_dtype})"
+
+
+def pack_fp8_tensorwise_per_head(
+    x: torch.Tensor, scale: Union[torch.Tensor, float], original_dtype
+) -> ScaledTensor:
+    """
+    Pack a tensor into a tensorwise fp8 ScaledTensor.
+    """
+    if isinstance(scale, float):
+        scale = torch.tensor([scale], device=x.device)
+
+    def dequant_func(x, scale):
+        return x * scale[:, None, :, None]
+
+    return ScaledTensor(
+        data=x,
+        scale=scale,
+        dequant_func=dequant_func,
+        original_dtype=original_dtype,
+    )
+
+
 @dataclass
 class Inputs:
     """
