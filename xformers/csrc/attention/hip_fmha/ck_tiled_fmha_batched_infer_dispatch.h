@@ -72,7 +72,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
     // only use qr_ks_vs_async pipeline with hdim-96
     const bool use_async_pipeline =
         (!kHasBias && (param.K % 8 == 0) && (param.Kv % 8 == 0) &&
-         (MaxK == 96));
+         (MaxK <= 128 && MTile == 128));
 
     if (!use_async_pipeline) {
       BOOL_SWITCH_3(
@@ -131,7 +131,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
           });
     } else {
       BOOL_SWITCH(pad_seqlen_k, kPadSeqLenK, [&] {
-        if constexpr (MaxK == 96) {
+        if constexpr (MaxK <= 128 && MTile == 128) {
           using FmhaTraits = ck_tile::TileFmhaTraits<
               true, // kPadSeqLenQ,
               kPadSeqLenK,
