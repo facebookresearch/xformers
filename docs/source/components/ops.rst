@@ -29,10 +29,6 @@ Available implementations
     :members: FwOp, BwOp
     :member-order: bysource
 
-.. automodule:: xformers.ops.fmha.ck_decoder
-    :members: FwOp
-    :member-order: bysource
-
 .. automodule:: xformers.ops.fmha.ck_splitk
     :members: FwOp
     :member-order: bysource

@@ -1540,18 +1540,7 @@ def _kv_heads_label(kv_heads: Optional[int]) -> str:
     return f"gqa{kv_heads}"
 
 
-@sm70_or_better_only
-@pytest.mark.parametrize(
-    "op",
-    [
-        fmha.ck_decoder.FwOp,
-    ],
-)
-@pytest.mark.parametrize("kv_heads", [None, 1, 2], ids=_kv_heads_label)
-@pytest.mark.parametrize("bsz,n_heads", [(1, 1), (1, 16), (1, 32), (8, 1), (4, 8)])
-@pytest.mark.parametrize("padding", [32, 4096])
-@pytest.mark.parametrize("dtype", ["f16", "bf16", "f32"])
-def test_decoder(
+def _test_decoder(
     op,
     n_heads: int,
     kv_heads: Optional[int],
@@ -1673,7 +1662,7 @@ def test_triton_splitk_decoder(
     dtype: str,
 ) -> None:
     # We omit dequant with f16: it needs a very high tol
-    test_decoder(
+    _test_decoder(
         op,
         kv_heads=kv_heads,
         n_heads=n_heads,
@@ -1703,7 +1692,7 @@ def test_ck_splitk_decoder(
     d: int,
 ) -> None:
     # no quantized impl compared to cuda
-    test_decoder(
+    _test_decoder(
         op,
         kv_heads=kv_heads,
         n_heads=n_heads,
@@ -1738,7 +1727,7 @@ def test_triton_splitk_decoder_manyqueries(
     num_queries: int,
 ) -> None:
     kv_heads = 1 if multiquery else None
-    test_decoder(
+    _test_decoder(
         op,
         kv_heads=kv_heads,
         n_heads=n_heads,
