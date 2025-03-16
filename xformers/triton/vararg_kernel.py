@@ -241,7 +241,11 @@ def unroll_varargs(kernel, N: int, mode: VarargMode = VarargMode.UNROLL):
     fn = next(iter(_locals.values()))
 
     jitted_fn = triton.jit(fn)
-    jitted_fn.src = new_src
+    if hasattr(jitted_fn, "_unsafe_update_src"):
+        jitted_fn._unsafe_update_src(new_src)
+        jitted_fn.hash = None
+    else:
+        jitted_fn.src = new_src
     return jitted_fn
 
 
