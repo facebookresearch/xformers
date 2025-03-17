@@ -43,6 +43,7 @@ COMPONENTS = [
             "tests/test_attention_patterns.py",
             "tests/test_rope_padded.py",
             "tests/test_tree_attention*.py",
+            "tests/test_fmha*.py",
         ],
         dependencies=[
             "xformers/ops/fmha/*",
@@ -50,6 +51,7 @@ COMPONENTS = [
             "third_party/flash-attention",
             "third_party/composable_kernel_tiled",
             "xformers/csrc/attention/*",
+            "xformers/triton/*",
         ],
         disable_set_env={
             "XFORMERS_DISABLE_FLASH_ATTN": "1",
