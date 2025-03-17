@@ -224,7 +224,6 @@ Tensor _sparse24_fp8_sm90_cutlass_gemm(
   }
 
   using K = SparseRowwiseKernel<cutlass::float_e4m3_t>;
-
   // For now, only CC 9.x devices are supported.
   if (!kIsMeta) {
     const auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -289,9 +288,8 @@ Tensor _sparse24_fp8_sm90_cutlass_gemm(
   auto& mulA_op = mulB_op.op_1;
   mulA_op.op_0 = {a_scale_ptr, default_scale};
 
-  using SparseConfig = typename K::CollectiveMainloop::SparseConfig;
-  args.mainloop.layout_a = SparseConfig::fill_layoutA(args.problem_shape);
-  args.mainloop.layout_e = SparseConfig::fill_layoutE(args.problem_shape);
+  args.mainloop.layout_a = K::CollectiveMainloop::SparseConfig::fill_layoutA(args.problem_shape);
+  args.mainloop.layout_e = K::CollectiveMainloop::SparseConfig::fill_layoutE(args.problem_shape);
   args.mainloop.dB = cute::make_int_tuple_from<typename K::GemmKernel::StrideB>(
       tensor_b.stride(1), 0);
   args.epilogue.dC = cute::make_int_tuple_from<typename K::GemmKernel::StrideC>(
