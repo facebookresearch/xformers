@@ -51,8 +51,10 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
         // dimension > 256
       }
     } else {
-      if (get_fmha_fwd_mtile(param.num_batches, param.Hq, param.max_seqlen_q) ==
-          128)
+      const auto mtile =
+          get_fmha_fwd_mtile(param.num_batches, param.Hq, param.max_seqlen_q);
+
+      if (mtile == 128)
         grouped_infer_mask_bias_dropout_dispatch<
             ScalarType,
             kHasMask,
