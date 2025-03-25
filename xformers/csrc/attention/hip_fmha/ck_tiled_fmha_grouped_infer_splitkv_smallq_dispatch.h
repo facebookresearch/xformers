@@ -78,7 +78,8 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
       // indicates to the splitkv kernel whether should it merge Hq/Hkv with
       // seqlen_q
       const bool merge_nhead_groups_seqlen_q =
-          ((param.max_seqlen_q == 1) && (param.Hq > param.Hkv) && !kHasBias);
+          ((param.max_seqlen_q == 1) && (param.Hq > param.Hkv) && !kHasBias &&
+           !kHasMask);
 
       if (merge_nhead_groups_seqlen_q) {
         using FmhaMaskNone = ck_tile::SimplifiedGenericAttentionMask<false>;
