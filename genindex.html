@@ -137,18 +137,6 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="what_is_xformers.html">What is xFormers?</a></li>
 </ul>
-<p class="caption" role="heading"><span class="caption-text">Components Documentation</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="components/index.html">API Reference</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Tutorials and examples</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/index.html">Tutorials</a></li>
-</ul>
-<p class="caption" role="heading"><span class="caption-text">Some custom parts</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="custom_parts/index.html">Custom parts reference</a></li>
-</ul>
 
         
         
@@ -225,16 +213,12 @@
  <a href="#_"><strong>_</strong></a>
  | <a href="#A"><strong>A</strong></a>
  | <a href="#B"><strong>B</strong></a>
- | <a href="#D"><strong>D</strong></a>
  | <a href="#F"><strong>F</strong></a>
- | <a href="#I"><strong>I</strong></a>
  | <a href="#L"><strong>L</strong></a>
  | <a href="#M"><strong>M</strong></a>
  | <a href="#N"><strong>N</strong></a>
  | <a href="#P"><strong>P</strong></a>
- | <a href="#R"><strong>R</strong></a>
  | <a href="#S"><strong>S</strong></a>
- | <a href="#T"><strong>T</strong></a>
  | <a href="#X"><strong>X</strong></a>
  
 </div>
@@ -251,13 +235,9 @@
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.add_bias">add_bias() (xformers.ops.fmha.attn_bias.LowerTriangularMask method)</a>
 </li>
-      <li><a href="components/attentions.html#xformers.components.attention.Attention">Attention (class in xformers.components.attention)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias">AttentionBias (class in xformers.ops.fmha.attn_bias)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask">AttentionMask (class in xformers.components.attention)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.AttentionOpBase">AttentionOpBase (class in xformers.ops)</a>
 </li>
@@ -279,17 +259,15 @@
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetGappyKeysMask">BlockDiagonalCausalWithOffsetGappyKeysMask (class in xformers.ops.fmha.attn_bias)</a>
 </li>
-      <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask">BlockDiagonalCausalWithOffsetPaddedKeysMask (class in xformers.ops.fmha.attn_bias)</a>
-</li>
   </ul></td>
   <td style="width: 33%; vertical-align: top;"><ul>
+      <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask">BlockDiagonalCausalWithOffsetPaddedKeysMask (class in xformers.ops.fmha.attn_bias)</a>
+</li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask">BlockDiagonalGappyKeysMask (class in xformers.ops.fmha.attn_bias)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask">BlockDiagonalMask (class in xformers.ops.fmha.attn_bias)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalPaddedKeysMask">BlockDiagonalPaddedKeysMask (class in xformers.ops.fmha.attn_bias)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.build_attention">build_attention() (in module xformers.components.attention)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.ck.BwOp">BwOp (class in xformers.ops.fmha.ck)</a>
 
@@ -302,33 +280,9 @@
   </ul></td>
 </tr></table>
 
-<h2 id="D">D</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.device">device (xformers.components.attention.AttentionMask property)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.dtype">dtype (xformers.components.attention.AttentionMask property)</a>
-</li>
-  </ul></td>
-</tr></table>
-
 <h2 id="F">F</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.Attention.forward">forward() (xformers.components.attention.Attention method)</a>
-
-      <ul>
-        <li><a href="components/attentions.html#xformers.components.attention.ScaledDotProduct.forward">(xformers.components.attention.ScaledDotProduct method)</a>
-</li>
-      </ul></li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.from_bool">from_bool() (xformers.components.attention.AttentionMask class method)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.Attention.from_config">from_config() (xformers.components.attention.Attention class method)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.from_multiplicative">from_multiplicative() (xformers.components.attention.AttentionMask class method)</a>
-</li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens">from_seqlens() (xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask class method)</a>
 
       <ul>
@@ -360,14 +314,6 @@
   </ul></td>
 </tr></table>
 
-<h2 id="I">I</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.is_sparse">is_sparse (xformers.components.attention.AttentionMask property)</a>
-</li>
-  </ul></td>
-</tr></table>
-
 <h2 id="L">L</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
@@ -389,15 +335,9 @@
 <h2 id="M">M</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.make_causal">make_causal() (xformers.components.attention.AttentionMask class method)</a>
-
-      <ul>
-        <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal">(xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
+      <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal">make_causal() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
 </li>
-      </ul></li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_causal_from_bottomright">make_causal_from_bottomright() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.make_crop">make_crop() (xformers.components.attention.AttentionMask method)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention">make_local_attention() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
 
@@ -408,8 +348,6 @@
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.make_local_attention_from_bottomright">make_local_attention_from_bottomright() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask.make_paged">make_paged() (xformers.ops.fmha.attn_bias.BlockDiagonalGappyKeysMask method)</a>
-</li>
-      <li><a href="components/attentions.html#xformers.components.attention.ScaledDotProduct.mask">mask (xformers.components.attention.ScaledDotProduct attribute)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias.materialize">materialize() (xformers.ops.fmha.attn_bias.AttentionBias method)</a>
 
@@ -427,10 +365,10 @@
         <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.materialize">(xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask method)</a>
 </li>
       </ul></li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.memory_efficient_attention">memory_efficient_attention() (in module xformers.ops)</a>
 </li>
+  </ul></td>
+  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_backward">memory_efficient_attention_backward() (in module xformers.ops.fmha)</a>
 </li>
       <li><a href="components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward">memory_efficient_attention_forward() (in module xformers.ops.fmha)</a>
@@ -445,8 +383,6 @@
     module
 
       <ul>
-        <li><a href="components/attentions.html#module-xformers.components.attention">xformers.components.attention</a>
-</li>
         <li><a href="components/ops.html#module-xformers.ops">xformers.ops</a>
 </li>
         <li><a href="components/ops.html#module-0">xformers.ops.fmha</a>, <a href="components/ops.html#module-xformers.ops.fmha">[1]</a>
@@ -470,10 +406,6 @@
 <h2 id="N">N</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.ndim">ndim (xformers.components.attention.AttentionMask property)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
       <li><a href="components/ops.html#xformers.ops.AttentionOpBase.not_supported_reasons">not_supported_reasons() (xformers.ops.AttentionOpBase class method)</a>
 </li>
   </ul></td>
@@ -495,36 +427,10 @@
   </ul></td>
 </tr></table>
 
-<h2 id="R">R</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.register_attention">register_attention() (in module xformers.components.attention)</a>
-</li>
-  </ul></td>
-</tr></table>
-
 <h2 id="S">S</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.ScaledDotProduct">ScaledDotProduct (class in xformers.components.attention)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.shape">shape (xformers.components.attention.AttentionMask property)</a>
-</li>
       <li><a href="components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalMask.split">split() (xformers.ops.fmha.attn_bias.BlockDiagonalMask method)</a>
-</li>
-  </ul></td>
-</tr></table>
-
-<h2 id="T">T</h2>
-<table style="width: 100%" class="indextable genindextable"><tr>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.to">to() (xformers.components.attention.AttentionMask method)</a>
-</li>
-  </ul></td>
-  <td style="width: 33%; vertical-align: top;"><ul>
-      <li><a href="components/attentions.html#xformers.components.attention.AttentionMask.to_bool">to_bool() (xformers.components.attention.AttentionMask method)</a>
 </li>
   </ul></td>
 </tr></table>
@@ -532,13 +438,6 @@
 <h2 id="X">X</h2>
 <table style="width: 100%" class="indextable genindextable"><tr>
   <td style="width: 33%; vertical-align: top;"><ul>
-      <li>
-    xformers.components.attention
-
-      <ul>
-        <li><a href="components/attentions.html#module-xformers.components.attention">module</a>
-</li>
-      </ul></li>
       <li>
     xformers.ops
 
