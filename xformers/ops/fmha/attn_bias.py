@@ -36,6 +36,22 @@ from typing import (
 import torch
 
 
+def _to_device(t: torch.Tensor, device: torch.device):
+    if t.device == device:
+        return t
+    if device == torch.device("cpu"):
+        return t.to(device)
+
+    return t.to(device, non_blocking=True)
+
+
+def _to_device_tensor(seq: Sequence[int], dtype: torch.dtype, device: torch.device):
+    if device == torch.device("cpu"):
+        return torch.tensor(seq, dtype=dtype)
+
+    return torch.tensor(seq, dtype=dtype, pin_memory=True).to(device, non_blocking=True)
+
+
 class AttentionBias:
     """Base class for a custom bias that can be applied \
         as the attn_bias argument in
@@ -332,7 +348,7 @@ class _SeqLenInfo:
         if self.seqstart.device == device:
             return self
         return _SeqLenInfo(
-            seqstart=self.seqstart.to(device),
+            seqstart=_to_device(self.seqstart, device),
             max_seqlen=self.max_seqlen,
             min_seqlen=self.min_seqlen,
             seqstart_py=self.seqstart_py,
@@ -358,7 +374,7 @@ class _SeqLenInfo:
             min_seqlen = min(min_seqlen, seqlen) if min_seqlen != -1 else seqlen
             max_seqlen = max(max_seqlen, seqlen)
             seqstart_py.append(seqstart_py[len(seqstart_py) - 1] + seqlen)
-        seqstart = torch.tensor(seqstart_py, dtype=torch.int32, device=device)
+        seqstart = _to_device_tensor(seqstart_py, dtype=torch.int32, device=device)
 
         return (min_seqlen, max_seqlen, seqstart_py, seqstart)
 
@@ -457,12 +473,12 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             return self
         return _PaddedSeqLenInfo(
             # _SeqLenInfo
-            seqstart=self.seqstart.to(device),
+            seqstart=_to_device(self.seqstart, device),
             max_seqlen=self.max_seqlen,
             min_seqlen=self.min_seqlen,
             seqstart_py=self.seqstart_py,
             # _PaddedSeqLenInfo
-            seqlen=self.seqlen.to(device),
+            seqlen=_to_device(self.seqlen, device),
             seqlen_py=self.seqlen_py,
             padding=self.padding,
         )
@@ -497,13 +513,13 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
         ), f"Seqlens {seqlens} Padding {padding}"
         device = _get_default_bias_device(device)
         seqstart_py = list(range(0, len(seqlens) * padding + 1, padding))
-        seqlen = torch.tensor(seqlens, dtype=torch.int32, device=device)
+        seqlen = _to_device_tensor(seqlens, dtype=torch.int32, device=device)
         return cls(
             seqlen=seqlen,
-            seqlen_py=seqlens,
+            seqlen_py=seqlens if isinstance(seqlens, list) else list(seqlens),
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),
-            seqstart=torch.tensor(seqstart_py, dtype=torch.int32, device=device),
+            seqstart=_to_device_tensor(seqstart_py, dtype=torch.int32, device=device),
             seqstart_py=seqstart_py,
             padding=padding,
         )
@@ -573,12 +589,12 @@ class _GappySeqInfo(_SeqLenInfo):
             return self
         return _GappySeqInfo(
             # _SeqLenInfo
-            seqstart=self.seqstart.to(device),
+            seqstart=_to_device(self.seqstart, device),
             max_seqlen=self.max_seqlen,
             min_seqlen=self.min_seqlen,
             seqstart_py=self.seqstart_py,
             # _GappySeqInfo
-            seqlen=self.seqlen.to(device),
+            seqlen=_to_device(self.seqlen, device),
             seqlen_py=self.seqlen_py,
         )
 
@@ -610,13 +626,13 @@ class _GappySeqInfo(_SeqLenInfo):
             raise ValueError(
                 f"len(seqstarts)={seqstarts} should be {extra}len(seqlens)={seqlens}"
             )
-        seqlen = torch.tensor(seqlens, dtype=torch.int32, device=device)
+        seqlen = _to_device_tensor(seqlens, dtype=torch.int32, device=device)
         return cls(
             seqlen=seqlen,
             seqlen_py=seqlens,
             max_seqlen=max(seqlens),
             min_seqlen=min(seqlens),
-            seqstart=torch.tensor(seqstart_py, dtype=torch.int32, device=device),
+            seqstart=_to_device_tensor(seqstart_py, dtype=torch.int32, device=device),
             seqstart_py=seqstart_py,
         )
 
@@ -1215,7 +1231,7 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
         return PagedBlockDiagonalPaddedKeysMask(
             q_seqinfo=self.q_seqinfo.to(device),
             k_seqinfo=self.k_seqinfo.to(device),
-            block_tables=self.block_tables.to(device),
+            block_tables=_to_device(self.block_tables, device),
             page_size=self.page_size,
         )
 
@@ -1318,7 +1334,7 @@ class PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(
         return PagedBlockDiagonalCausalWithOffsetPaddedKeysMask(
             q_seqinfo=self.q_seqinfo.to(device),
             k_seqinfo=self.k_seqinfo.to(device),
-            block_tables=self.block_tables.to(device),
+            block_tables=_to_device(self.block_tables, device),
             page_size=self.page_size,
         )
 
@@ -1492,7 +1508,7 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
         return PagedBlockDiagonalGappyKeysMask(
             q_seqinfo=self.q_seqinfo.to(device),
             k_seqinfo=self.k_seqinfo.to(device),
-            block_tables=self.block_tables.to(device),
+            block_tables=_to_device(self.block_tables, device),
             page_size=self.page_size,
         )
 
@@ -1603,7 +1619,7 @@ class PagedBlockDiagonalCausalWithOffsetGappyKeysMask(PagedBlockDiagonalGappyKey
         return PagedBlockDiagonalCausalWithOffsetGappyKeysMask(
             q_seqinfo=self.q_seqinfo.to(device),
             k_seqinfo=self.k_seqinfo.to(device),
-            block_tables=self.block_tables.to(device),
+            block_tables=_to_device(self.block_tables, device),
             page_size=self.page_size,
         )
 
