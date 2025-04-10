@@ -247,6 +247,22 @@
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
 
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_device</span><span class="p">(</span><span class="n">t</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">t</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_to_device_tensor</span><span class="p">(</span><span class="n">seq</span><span class="p">:</span> <span class="n">Sequence</span><span class="p">[</span><span class="nb">int</span><span class="p">],</span> <span class="n">dtype</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">device</span> <span class="o">==</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seq</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">dtype</span><span class="p">,</span> <span class="n">pin_memory</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">non_blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+
 <div class="viewcode-block" id="AttentionBias"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.AttentionBias">[docs]</a><span class="k">class</span><span class="w"> </span><span class="nc">AttentionBias</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Base class for a custom bias that can be applied \</span>
 <span class="sd">        as the attn_bias argument in</span>
@@ -543,7 +559,7 @@
         <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">device</span> <span class="o">==</span> <span class="n">device</span><span class="p">:</span>
             <span class="k">return</span> <span class="bp">self</span>
         <span class="k">return</span> <span class="n">_SeqLenInfo</span><span class="p">(</span>
-            <span class="n">seqstart</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">max_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_seqlen</span><span class="p">,</span>
             <span class="n">min_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">min_seqlen</span><span class="p">,</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span>
@@ -569,7 +585,7 @@
             <span class="n">min_seqlen</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="n">min_seqlen</span><span class="p">,</span> <span class="n">seqlen</span><span class="p">)</span> <span class="k">if</span> <span class="n">min_seqlen</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span> <span class="k">else</span> <span class="n">seqlen</span>
             <span class="n">max_seqlen</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">max_seqlen</span><span class="p">,</span> <span class="n">seqlen</span><span class="p">)</span>
             <span class="n">seqstart_py</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="n">seqlen</span><span class="p">)</span>
-        <span class="n">seqstart</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">seqstart</span> <span class="o">=</span> <span class="n">_to_device_tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
 
         <span class="k">return</span> <span class="p">(</span><span class="n">min_seqlen</span><span class="p">,</span> <span class="n">max_seqlen</span><span class="p">,</span> <span class="n">seqstart_py</span><span class="p">,</span> <span class="n">seqstart</span><span class="p">)</span>
 
@@ -668,12 +684,12 @@
             <span class="k">return</span> <span class="bp">self</span>
         <span class="k">return</span> <span class="n">_PaddedSeqLenInfo</span><span class="p">(</span>
             <span class="c1"># _SeqLenInfo</span>
-            <span class="n">seqstart</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">max_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_seqlen</span><span class="p">,</span>
             <span class="n">min_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">min_seqlen</span><span class="p">,</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span>
             <span class="c1"># _PaddedSeqLenInfo</span>
-            <span class="n">seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqlen</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">seqlen_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">,</span>
             <span class="n">padding</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">padding</span><span class="p">,</span>
         <span class="p">)</span>
@@ -708,13 +724,13 @@
         <span class="p">),</span> <span class="sa">f</span><span class="s2">&quot;Seqlens </span><span class="si">{</span><span class="n">seqlens</span><span class="si">}</span><span class="s2"> Padding </span><span class="si">{</span><span class="n">padding</span><span class="si">}</span><span class="s2">&quot;</span>
         <span class="n">device</span> <span class="o">=</span> <span class="n">_get_default_bias_device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
         <span class="n">seqstart_py</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">seqlens</span><span class="p">)</span> <span class="o">*</span> <span class="n">padding</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">padding</span><span class="p">))</span>
-        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">_to_device_tensor</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
             <span class="n">seqlen</span><span class="o">=</span><span class="n">seqlen</span><span class="p">,</span>
-            <span class="n">seqlen_py</span><span class="o">=</span><span class="n">seqlens</span><span class="p">,</span>
+            <span class="n">seqlen_py</span><span class="o">=</span><span class="n">seqlens</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="nb">list</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
             <span class="n">max_seqlen</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
             <span class="n">min_seqlen</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
-            <span class="n">seqstart</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">_to_device_tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
             <span class="n">padding</span><span class="o">=</span><span class="n">padding</span><span class="p">,</span>
         <span class="p">)</span>
@@ -784,12 +800,12 @@
             <span class="k">return</span> <span class="bp">self</span>
         <span class="k">return</span> <span class="n">_GappySeqInfo</span><span class="p">(</span>
             <span class="c1"># _SeqLenInfo</span>
-            <span class="n">seqstart</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">max_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_seqlen</span><span class="p">,</span>
             <span class="n">min_seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">min_seqlen</span><span class="p">,</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">,</span>
             <span class="c1"># _GappySeqInfo</span>
-            <span class="n">seqlen</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqlen</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">seqlen_py</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">seqlen_py</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -821,13 +837,13 @@
             <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
                 <span class="sa">f</span><span class="s2">&quot;len(seqstarts)=</span><span class="si">{</span><span class="n">seqstarts</span><span class="si">}</span><span class="s2"> should be </span><span class="si">{</span><span class="n">extra</span><span class="si">}</span><span class="s2">len(seqlens)=</span><span class="si">{</span><span class="n">seqlens</span><span class="si">}</span><span class="s2">&quot;</span>
             <span class="p">)</span>
-        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
+        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">_to_device_tensor</span><span class="p">(</span><span class="n">seqlens</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">)</span>
         <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
             <span class="n">seqlen</span><span class="o">=</span><span class="n">seqlen</span><span class="p">,</span>
             <span class="n">seqlen_py</span><span class="o">=</span><span class="n">seqlens</span><span class="p">,</span>
             <span class="n">max_seqlen</span><span class="o">=</span><span class="nb">max</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
             <span class="n">min_seqlen</span><span class="o">=</span><span class="nb">min</span><span class="p">(</span><span class="n">seqlens</span><span class="p">),</span>
-            <span class="n">seqstart</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">seqstart</span><span class="o">=</span><span class="n">_to_device_tensor</span><span class="p">(</span><span class="n">seqstart_py</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">int32</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">),</span>
             <span class="n">seqstart_py</span><span class="o">=</span><span class="n">seqstart_py</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -1426,7 +1442,7 @@
         <span class="k">return</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
-            <span class="n">block_tables</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">block_tables</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -1529,7 +1545,7 @@
         <span class="k">return</span> <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
-            <span class="n">block_tables</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">block_tables</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span></div>
 
@@ -1703,7 +1719,7 @@
         <span class="k">return</span> <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
-            <span class="n">block_tables</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">block_tables</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span>
 
@@ -1814,7 +1830,7 @@
         <span class="k">return</span> <span class="n">PagedBlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">(</span>
             <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
             <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
-            <span class="n">block_tables</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="n">device</span><span class="p">),</span>
+            <span class="n">block_tables</span><span class="o">=</span><span class="n">_to_device</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">block_tables</span><span class="p">,</span> <span class="n">device</span><span class="p">),</span>
             <span class="n">page_size</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span></div>
 
