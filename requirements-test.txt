@@ -16,7 +16,6 @@ protobuf==3.20.2
 # Tools for unit tests & coverage.
 pytest == 7.2.0
 pytest-cov == 2.10.0
-pytest-mpi == 0.4
 pytest-timeout == 1.4.2
 pytest-random-order == 1.1.1
 
