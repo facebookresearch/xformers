@@ -10,9 +10,7 @@ from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
 
 import torch
 from torch.utils.flop_counter import (
-    _flash_attention_backward_flop,
     _unpack_flash_attention_nested_shapes,
-    bmm_flop,
     register_flop_formula,
 )
 
@@ -20,12 +18,17 @@ from ..common import get_operator, register_operator
 from .attn_bias import (
     VARLEN_BIASES,
     BlockDiagonalCausalFromBottomRightMask,
+    BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+    BlockDiagonalCausalLocalAttentionMask,
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
     BlockDiagonalPaddedKeysMask,
+    LocalAttentionFromBottomRightMask,
+    LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -45,6 +48,7 @@ from .flash import (
     _convert_input_format,
     _is_causal,
     _post_process_lse,
+    _window_size,
 )
 
 FLASH_VERSION = "0.0.0"
@@ -89,10 +93,51 @@ def _paged_attention_filter(attn_bias_types: Iterable[Any]) -> Iterable[Any]:
     ]
 
 
-# Copied from PyTorch, modified to support MQA/GQA.
+def mask_non_zeros(s_q: int, s_k: int, window_left: int, window_right: int) -> int:
+    # Exact formula for easy cases
+    if window_left < 0 and window_right < 0:  # full
+        return s_q * s_k
+    if window_left < 0 and window_right == 0:  # causal
+        # (from bottom right)
+        return (s_q * (s_q + 1)) // 2 + s_q * max(0, s_k - s_q)
+
+    # NOTE: Flops calculations here assume `s_q == s_k`
+    # otherwise the local attention computations are too involved
+    # See also https://docs.google.com/spreadsheets/d/1u1ItCZcHLArcqXLj7mwR4H1pI3lMKU1zlxCYi8JCYgk/edit?usp=sharing
+    if window_left < 0:
+        window_left = s_k
+    if window_right < 0:
+        window_right = s_k
+
+    # below the diagonal
+    # ┌───────┐
+    # │ ╲     │
+    # │  ╲    │ <- Upper triangle ("ut")
+    # │┄┄┄╲   │ <--- `lastq_ut`
+    # │╲   ╲  │
+    # │ ╲   ╲ │ <- Lower part
+    # │  ╲   ╲│
+    # └───────┘
+    mask_nz = min(s_q, s_k)  # diagonal
+    # Below diagonal (with `window_left`)
+    lastq_ut = min(window_left, s_q)
+    mask_nz += ((lastq_ut - 1) * lastq_ut) // 2  # upper triangle
+    mask_nz += (s_q - lastq_ut) * window_left  # lower part
+    # Above diagonal (with `window_right`)
+    # (counting rows from the bottom for symmetry)
+    firstq_bt = min(window_right + 1, s_q)
+    mask_nz += ((firstq_bt - 1) * firstq_bt) // 2  # bottom triangle
+    mask_nz += (s_q - firstq_bt) * window_right
+
+    return mask_nz
+
+
+# Copied from PyTorch, modified to support MQA/GQA and local attention
 # No need to take care of this for the bwd because we don't "unexpand" the keys
 # and values (in the fwd we expand to help with the seqlen/headdim swap trick).
-def sdpa_flop_count(query_shape, key_shape, value_shape):
+def sdpa_flop_count(
+    query_shape, key_shape, value_shape, window_left: int, window_right: int
+):
     """
     Count flops for self-attention.
 
@@ -107,11 +152,13 @@ def sdpa_flop_count(query_shape, key_shape, value_shape):
     assert s_k == _s3
     assert d_q == _d2
     assert h_q % h_kv == 0
-    total_flops = 0
-    # q: [b, h, s_q, d_q] @ k: [b, h, d_q, s_k] -> scores: [b, h, s_q, s_k]
-    total_flops += bmm_flop((b * h_q, s_q, d_q), (b * h_q, d_q, s_k))
-    # scores: [b, h, s_q, s_k] @ v: [b, h, s_k, d_v] -> out: [b, h, s_q, d_v]
-    total_flops += bmm_flop((b * h_q, s_q, s_k), (b * h_q, s_k, d_v))
+    # How many values are computed in the attention?
+    mask_nz = mask_non_zeros(s_q, s_k, window_left, window_right)
+
+    # q@k.T
+    total_flops = 2 * b * h_q * d_q * mask_nz
+    # attn@v
+    total_flops += 2 * b * h_q * d_v * mask_nz
     return total_flops
 
 
@@ -161,13 +208,14 @@ if _C_flashattention3 is not None:
         p: float,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
         descale_q: Optional[torch.Tensor] = None,
         descale_k: Optional[torch.Tensor] = None,
         descale_v: Optional[torch.Tensor] = None,
         block_table: Optional[torch.Tensor] = None,
         use_kvsplit: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        win_left = win_right = -1
         query, key = [maybe_contiguous(x) for x in (query, key)]
         if value.stride(-3) != 1:
             # For FP8 it is ok to have stride(-3)==1 instead of stride(-1)
@@ -184,7 +232,6 @@ if _C_flashattention3 is not None:
             assert (
                 block_table is None
             ), "Block table is not supported for fixed-length query yet"
-
             out, softmax_lse, *rest = _C_flashattention3.fwd(
                 query,
                 key,
@@ -209,8 +256,8 @@ if _C_flashattention3 is not None:
                 descale_v,
                 softmax_scale,
                 is_causal,
-                win_left,
-                win_right,
+                window_left,
+                window_right,
                 0,  # sink_token_length
                 0.0,  # softcap
                 False,  # rotary_interleaved
@@ -256,8 +303,8 @@ if _C_flashattention3 is not None:
                     descale_v,
                     softmax_scale,
                     is_causal,
-                    -1,
-                    -1,  # window_size_left/right
+                    window_left,
+                    window_right,
                     0,  # sink_token_length
                     0.0,  # softcap
                     False,  # rotary_interleaved
@@ -302,8 +349,8 @@ if _C_flashattention3 is not None:
                     descale_v,
                     softmax_scale,
                     is_causal,
-                    -1,
-                    -1,  # window_size_left/right
+                    window_left,
+                    window_right,
                     0,  # sink_token_length
                     0.0,  # softcap
                     True,  # rotary_interleaved
@@ -327,6 +374,8 @@ if _C_flashattention3 is not None:
         p: float,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
         descale_q: Optional[torch.Tensor] = None,
         descale_k: Optional[torch.Tensor] = None,
         descale_v: Optional[torch.Tensor] = None,
@@ -348,14 +397,16 @@ if _C_flashattention3 is not None:
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
-        cu_seqlens_q: torch.Tensor,
-        cu_seqlens_k: torch.Tensor,
-        seqused_k: torch.Tensor,
+        cu_seqlens_q: Optional[torch.Tensor],
+        cu_seqlens_k: Optional[torch.Tensor],
+        seqused_k: Optional[torch.Tensor],
         max_seqlen_q: int,
         max_seqlen_k: int,
         p: float,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
         # The FLOPs counter might pass more args (out_val, out_shape, ...)
         *args,
         **kwargs,
@@ -387,12 +438,18 @@ if _C_flashattention3 is not None:
             max_q=max_seqlen_q,
             max_k=max_seqlen_k,
         )
+        if is_causal:
+            window_right = 0
         res = sum(
-            sdpa_flop_count(query_shape, key_shape, value_shape)
+            sdpa_flop_count(
+                query_shape,
+                key_shape,
+                value_shape,
+                window_left=window_left,
+                window_right=window_right,
+            )
             for query_shape, key_shape, value_shape, _ in sizes
         )
-        if is_causal:
-            res //= 2
         return res
 
     def _create_dq_dk_dv(
@@ -427,8 +484,9 @@ if _C_flashattention3 is not None:
         max_seqlen_k: int,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        win_left = win_right = -1
         seqused_q = seqused_k = None
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         is_deterministic = False
@@ -452,8 +510,8 @@ if _C_flashattention3 is not None:
                 None,  # max_seqlen_k
                 softmax_scale,
                 is_causal,
-                win_left,
-                win_right,
+                window_left,
+                window_right,
                 0,  # not used, sink_token_length
                 0.0,  # not used, softcap
                 is_deterministic,
@@ -478,8 +536,8 @@ if _C_flashattention3 is not None:
                 max_seqlen_k,
                 softmax_scale,
                 is_causal,
-                win_left,
-                win_right,
+                window_left,
+                window_right,
                 0,  # not used, sink_token_length
                 0.0,  # not used, softcap
                 is_deterministic,
@@ -502,6 +560,8 @@ if _C_flashattention3 is not None:
         max_seqlen_k: int,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         dq = torch.empty_like(query)
         dk = torch.empty_like(key)
@@ -523,36 +583,31 @@ if _C_flashattention3 is not None:
         max_seqlen_k: int,
         softmax_scale: float,
         is_causal: bool,
+        window_left: int,
+        window_right: int,
         # The FLOPs counter might pass more args (out_val, out_shape, ...)
         *args,
         **kwargs,
     ):
-        assert 3 <= dout.ndim <= 4
-        assert 3 <= query.ndim <= 4
-        assert 3 <= key.ndim <= 4
-        assert 3 <= value.ndim <= 4
-        # See the fwd FLOP formula above for reasoning behind this.
-        if os.environ.get("XFORMERS_FLOP_FORMULA_WORST_CASE", "0") == "1":
-            cu_seqlens_q = cu_seqlens_k = max_seqlen_q = max_seqlen_k = None  # type: ignore[assignment]
-            dout = dout.unsqueeze(0) if dout.ndim == 3 else dout
-            query = query.unsqueeze(0) if query.ndim == 3 else query
-            key = key.unsqueeze(0) if key.ndim == 3 else key
-            value = value.unsqueeze(0) if value.ndim == 3 else value
-        res = _flash_attention_backward_flop(
-            dout.transpose(-2, -3) if dout.ndim == 4 else dout,
-            query.transpose(-2, -3) if query.ndim == 4 else query,
-            key.transpose(-2, -3) if key.ndim == 4 else key,
-            value.transpose(-2, -3) if value.ndim == 4 else value,
-            out,
-            softmax_lse,
-            cu_seqlens_q,
-            cu_seqlens_k,
-            max_seqlen_q,
-            max_seqlen_k,
+        return (
+            5
+            * mha_fwd_flops(
+                query,
+                key,
+                value,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                seqused_k=None,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_k=max_seqlen_k,
+                p=0.0,
+                softmax_scale=1.0,
+                is_causal=is_causal,
+                window_left=window_left,
+                window_right=window_right,
+            )
+            // 2
         )
-        if is_causal:
-            res //= 2
-        return res
 
 
 @register_operator
@@ -572,13 +627,18 @@ class FwOp(AttentionFwOpBase):
         type(None),
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         BlockDiagonalCausalFromBottomRightMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
+        LocalAttentionFromBottomRightMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         PagedBlockDiagonalPaddedKeysMask,
     )
@@ -635,6 +695,7 @@ class FwOp(AttentionFwOpBase):
         v, descale_v = unpack_func(inp.value)
 
         if inp.query.numel() > 0 and inp.key.numel() > 0:
+            win_left, win_right = _window_size(inp.attn_bias)
             block_tables = (
                 inp.attn_bias.block_tables
                 if isinstance(inp.attn_bias, PagedBlockDiagonalPaddedKeysMask)
@@ -644,18 +705,20 @@ class FwOp(AttentionFwOpBase):
                 q,
                 k,
                 v,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                seqused_k,
-                max_seqlen_q,
-                max_seqlen_k,
-                inp.p,
-                inp.scale_float,
-                _is_causal(inp.attn_bias),
-                descale_q,
-                descale_k,
-                descale_v,
-                block_tables,
+                cu_seqlens_q=cu_seqlens_q,
+                cu_seqlens_k=cu_seqlens_k,
+                seqused_k=seqused_k,
+                max_seqlen_q=max_seqlen_q,
+                max_seqlen_k=max_seqlen_k,
+                p=inp.p,
+                softmax_scale=inp.scale_float,
+                is_causal=_is_causal(inp.attn_bias),
+                window_left=win_left,
+                window_right=win_right,
+                descale_q=descale_q,
+                descale_k=descale_k,
+                descale_v=descale_v,
+                block_table=block_tables,
                 use_kvsplit=use_kvsplit,
             )
             out = out.reshape(out_shape)
@@ -699,9 +762,13 @@ class BwOp(AttentionBwOpBase):
         type(None),
         LowerTriangularMask,
         LowerTriangularFromBottomRightMask,
+        LowerTriangularFromBottomRightLocalAttentionMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         BlockDiagonalCausalFromBottomRightMask,
+        LocalAttentionFromBottomRightMask,
     )
 
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
@@ -753,6 +820,7 @@ class BwOp(AttentionBwOpBase):
         assert grad.dtype in cls.SUPPORTED_DTYPES
 
         if inp.query.numel() and inp.key.numel():
+            win_left, win_right = _window_size(inp.attn_bias)
             dq, dk, dv = cls.OPERATOR(
                 ctx.qkv_share_storage,
                 grad.reshape(kernel_out_shape).contiguous(),
@@ -765,6 +833,8 @@ class BwOp(AttentionBwOpBase):
                 cu_seqlens_k,
                 max_seqlen_q,
                 max_seqlen_k,
+                window_left=win_left,
+                window_right=win_right,
                 softmax_scale=inp.scale_float,
                 is_causal=_is_causal(inp.attn_bias),
             )

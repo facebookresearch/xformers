@@ -97,27 +97,37 @@ def test_flop_formula(
         k = k.unflatten(2, (Hkv, -1)).expand(-1, -1, -1, G, -1)
         v = v.unflatten(2, (Hkv, -1)).expand(-1, -1, -1, G, -1)
 
-    flops_mul = 1
-    flops_div = 1
     if varseq:
         seqlens = ([5, Mq - 5], [5, Mkv - 5])
-        if not worst_case:
-            flops_mul *= sum(a * b for a, b in zip(*seqlens))
-            flops_div *= Mq * Mkv
-    if causal:
-        flops_div *= 2
-    ref_fwd_flops = ref_fwd_flops * flops_mul // flops_div
-    ref_bwd_flops = ref_bwd_flops * flops_mul // flops_div
 
     bias: Optional[fmha.attn_bias.AttentionBias]
     if varseq and causal:
-        bias = fmha.attn_bias.BlockDiagonalCausalMask.from_seqlens(*seqlens)
+        bias = fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask.from_seqlens(
+            *seqlens
+        )
     elif varseq:
         bias = fmha.attn_bias.BlockDiagonalMask.from_seqlens(*seqlens)
     elif causal:
         bias = fmha.attn_bias.LowerTriangularMask()
     else:
         bias = None
+
+    bias_for_flops: Optional[fmha.attn_bias.AttentionBias] = None
+    if worst_case:
+        if causal:
+            bias_for_flops = fmha.attn_bias.LowerTriangularMask()
+    else:
+        bias_for_flops = bias
+    if bias_for_flops is not None:
+        flops_div = Mkv * Mq
+        flops_mul = (
+            (bias_for_flops.materialize((Mq, Mkv), device="cpu") == 0)
+            .int()
+            .sum()
+            .item()
+        )
+        ref_fwd_flops = ref_fwd_flops * flops_mul // flops_div
+        ref_bwd_flops = ref_bwd_flops * flops_mul // flops_div
 
     if worst_case:
         monkeypatch.setenv("XFORMERS_FLOP_FORMULA_WORST_CASE", "1")
@@ -133,3 +143,13 @@ def test_flop_formula(
         out.backward(torch.randn_like(out))
     # Flash's backward recomputes the first matmul of the fwd.
     assert fc.get_total_flops() == ref_bwd_flops + ref_fwd_flops / 2
+
+
+def test_mask_nonzeros() -> None:
+    assert fmha.flash3.mask_non_zeros(13, 17, -1, 0) == 143
+    assert fmha.flash3.mask_non_zeros(13, 17, -1, -1) == 221
+
+    assert fmha.flash3.mask_non_zeros(8, 8, 32, 32) == 64
+    assert fmha.flash3.mask_non_zeros(8, 8, 4, 3) == 48
+    assert fmha.flash3.mask_non_zeros(8, 8, 4, 0) == 30
+    assert fmha.flash3.mask_non_zeros(8, 8, -1, -1) == 64
