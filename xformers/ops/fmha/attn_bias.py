@@ -1064,7 +1064,7 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         block_tables: torch.Tensor,
         page_size: int,
         paged_type: Type["PagedBlockDiagonalPaddedKeysMask"],
-    ) -> AttentionBias:
+    ) -> "PagedBlockDiagonalPaddedKeysMask":
         paged_bias = paged_type(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=self.k_seqinfo,
