@@ -24,10 +24,10 @@ runs:
         print(sys.version)
         cushort = "${{ inputs.toolkit_short_version }}"
         # Version uploaded to pypi (rather than PyTorch s3)
-        TORCH_CUDA_DEFAULT = "124"  # since pytorch 2.6.0
+        TORCH_CUDA_DEFAULT = "126"  # since pytorch 2.7.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
-          "128": ("12.8.0", "https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run"),
+          "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
           "126": ("12.6.3", "https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_560.35.05_linux.run"),
           "124": ("12.4.1", "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_550.54.15_linux.run"),
           "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
@@ -51,7 +51,7 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      uses: Jimver/cuda-toolkit@v0.2.21
+      uses: Jimver/cuda-toolkit@v0.2.23
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
