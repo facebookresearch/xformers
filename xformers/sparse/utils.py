@@ -9,7 +9,7 @@ import torch
 
 def _coo_to_csr(m, n, row_indices, column_indices):
     # assumes coalesced coo
-    row_offsets = row_indices.bincount(minlength=n).cumsum(0, dtype=row_indices.dtype)
+    row_offsets = row_indices.bincount(minlength=m).cumsum(0, dtype=row_indices.dtype)
     row_offsets = torch.nn.functional.pad(row_offsets, (1, 0))
     return row_offsets, column_indices
 
@@ -39,7 +39,7 @@ def _get_transpose_info(m, n, row_indices, row_offsets, column_indices):
     row_offsets_t, perm = column_indices.sort(dim=0, stable=True)
     column_indices_t = row_coo[perm]
 
-    row_offsets_t, _ = _coo_to_csr(m, n, row_offsets_t, column_indices)
+    row_offsets_t, _ = _coo_to_csr(n, m, row_offsets_t, column_indices)
     row_indices_t = _diffsort(row_offsets_t).int()
 
     return row_indices_t, row_offsets_t, column_indices_t, perm

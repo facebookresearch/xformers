@@ -209,15 +209,20 @@ def create_attn_bias(
             kv_seqstarts=starts,
             kv_seqlen=k,
         )
-    if bias_type in [
-        fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
-    ]:
+    if issubclass(bias_type, fmha.attn_bias.PagedBlockDiagonalGappyKeysMask):
         assert fmt in ["BMHK", "BMGHK"]
         assert page_size is not None
         pages_per_row = (kv_len + page_size - 1) // page_size
         total_queries = q_len * batch_size
-        q = _rand_maxed_partition(r, total_queries, batch_size, total_queries, False)
-        k = [r.randint(1, kv_len) for _ in range(batch_size)]
+        if issubclass(
+            bias_type, fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetGappyKeysMask
+        ):
+            q, k = _rand_seqlens_padded_k(r, batch_size, q_len, kv_len)
+        else:
+            q = _rand_maxed_partition(
+                r, total_queries, batch_size, total_queries, False
+            )
+            k = [r.randint(1, kv_len) for _ in range(batch_size)]
         row_size = pages_per_row * page_size
         starts = [row_size * i + r.randint(0, row_size - ki) for i, ki in enumerate(k)]
         starts.append(pages_per_row * batch_size * page_size)
@@ -348,7 +353,7 @@ def _rand_seqlens_padded_k(
     # will attend to nothing and have undefined result.
     # In addition every element of k_seqlens must be <= kv_len
     if q_len > kv_len:
-        raise ValueError("need more keys than values")
+        raise ValueError("need more queries than keys")
     if q_len == kv_len:
         # all key slots are needed so we cannot have padding
         q_seqlens = k_seqlens = [kv_len] * bs

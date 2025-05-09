@@ -158,17 +158,18 @@ at::Tensor sparse_softmax_sputnik(
 
   at::Tensor output = at::empty({batch, nonzeros}, values.options());
 
-  AT_CUDA_CHECK(sputnik::SparseSoftmax(
-      m,
-      n,
-      nonzeros,
-      values.data_ptr<float>(),
-      row_indices.data_ptr<int>(),
-      row_offsets.data_ptr<int>(),
-      column_indices.data_ptr<int>(),
-      output.data_ptr<float>(),
-      stream,
-      batch));
+  AT_CUDA_CHECK(
+      sputnik::SparseSoftmax(
+          m,
+          n,
+          nonzeros,
+          values.data_ptr<float>(),
+          row_indices.data_ptr<int>(),
+          row_offsets.data_ptr<int>(),
+          column_indices.data_ptr<int>(),
+          output.data_ptr<float>(),
+          stream,
+          batch));
 
   return output;
 }

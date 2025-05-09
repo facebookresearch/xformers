@@ -34,14 +34,15 @@ runs:
         for file in sorted(glob.glob("requirement*.txt")):
           conda_env_key += f"\n########## {file}\n"
           conda_env_key += Path(file).read_text()
+        env_name_key = hashlib.sha224(conda_env_key.encode("ascii")).hexdigest()[:8]
+        env_name_key += "-${{ inputs.arch }}"
         # Nightly or Test, update every week
-        conda_env_key += datetime.date.today().strftime("%Y-week%W") + "\n"
-        conda_env_hash = hashlib.sha224(conda_env_key.encode("ascii")).hexdigest()[:8]
+        env_name_key += "-"+datetime.date.today().strftime("%Y-week%W")
         shared_dir = os.environ.get("GHRUNNER_SHARED_DIR", os.getcwd())
-        env_path = os.path.join(shared_dir, "tmp", os.environ["GITHUB_RUN_ID"])
-        final_env = Path(shared_dir) / f"env_{conda_env_hash}.txt"
-        pkg_dir = Path(shared_dir) / "pkgs"
-        (Path(shared_dir) / f"env_{conda_env_hash}_content.txt").write_text(conda_env_key)
+        env_path = os.path.join(shared_dir, "tmp", "${{ inputs.arch }}", os.environ["GITHUB_RUN_ID"])
+        final_env = Path(shared_dir) / f"env_{env_name_key}.txt"
+        pkg_dir = Path(shared_dir) / "pkgs-sm${{ inputs.arch }}"
+        (Path(shared_dir) / f"env_{env_name_key}_content.txt").write_text(conda_env_key)
         CONDA_INSTALL_CMD += " -p " + env_path
         env_already_built = False
         # If environment is already built
@@ -59,7 +60,7 @@ runs:
             fp.write("CONDA_PREFIX=" + env_path + "\n")
             fp.write("CONDA_PKGS_DIRS=" + str(pkg_dir) + "\n")
             fp.write("CONDA_INSTALL_CMD=" + CONDA_INSTALL_CMD + "\n")
-            fp.write("CONDA_ENV_HASH=" + conda_env_hash + "\n")
+            fp.write("CONDA_ENV_HASH=" + env_name_key + "\n")
             fp.write("PY=" + os.path.join(env_path, "bin", "python") + "\n")
             fp.write("PIP=" + os.path.join(env_path, "bin", "pip") + "\n")
         with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
@@ -75,7 +76,8 @@ runs:
       shell: bash -l {0}
       run: |
         set -ex
-        curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xvj bin/micromamba
+        curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest -o micromamba.tar.bz2
+        tar --extract --verbose --bzip2 --file=micromamba.tar.bz2 bin/micromamba
         echo "eval \"\$($(pwd)/bin/micromamba shell hook --shell bash)\"" >> ~/.profile
     - name: Conda/pip setup
       shell: bash -l {0}

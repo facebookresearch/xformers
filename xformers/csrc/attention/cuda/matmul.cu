@@ -82,9 +82,10 @@ at::Tensor matmul_with_sparse_mask(
 
   at::Tensor res = at::empty({nnz}, a.options());
 
-  dim3 grid(std::min(
-      ceil_div(static_cast<int64_t>(nnz), static_cast<int64_t>(512)),
-      static_cast<int64_t>(4096)));
+  dim3 grid(
+      std::min(
+          ceil_div(static_cast<int64_t>(nnz), static_cast<int64_t>(512)),
+          static_cast<int64_t>(4096)));
   dim3 block(512);
 
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();

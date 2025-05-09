@@ -1,4 +1,4 @@
 # Example requirement, can be anything that pip knows
 # install with `pip install -r requirements.txt`, and make sure that CI does the same
-torch >= 2.4
+torch >= 2.7
 numpy

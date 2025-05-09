@@ -22,7 +22,7 @@ jobs:
       matrix:
         os: ['ubuntu-alola']
         python: ['3.11']
-        torch_version: ['2.5.1']
+        torch_version: ['2.7.0']
         toolkit_type: ['rocm']
         toolkit_short_version: ['6.1', '6.2', '6.3']
 

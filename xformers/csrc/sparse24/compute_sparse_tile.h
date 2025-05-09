@@ -10,22 +10,30 @@
 // sparsification, as a bitmask.
 // NOTE: Algorithms might select LESS than 8 values in total in some cases.
 
-namespace platform {
-template <>
-struct numeric_limits<cutlass::bfloat16_t> {
-  CUTLASS_HOST_DEVICE
-  static cutlass::bfloat16_t infinity() {
-    return cutlass::bfloat16_t::bitcast(0x7f80);
-  }
-};
-} // namespace platform
 namespace xformers {
 namespace sp24 {
 
+// Operations that we can apply to rank the values
+struct IdentityOp {
+  template <typename T>
+  static T CUTLASS_HOST_DEVICE to_ordered(T const& x) {
+    return x;
+  }
+};
+// Can be applied to rank based on absolute value
+struct AbsOp {
+  template <typename T>
+  static uint16_t CUTLASS_HOST_DEVICE to_ordered(T const& x) {
+    return cutlass::abs(x).storage;
+  }
+};
+
 template <typename Element, typename Pointwise>
 struct TileValueOrderedT {
+  using ElementCmp = decltype(Pointwise::to_ordered(Element(0)));
   union {
     struct {
+      ElementCmp cmp;
       Element value;
       uint2b_t col;
       uint2b_t row;
@@ -34,23 +42,14 @@ struct TileValueOrderedT {
   };
   CUTLASS_DEVICE bool operator<(
       TileValueOrderedT<Element, Pointwise> const& other) const {
-    return Pointwise::apply(parts.value) < Pointwise::apply(other.parts.value);
+    return parts.cmp < other.parts.cmp;
   }
   CUTLASS_DEVICE TileValueOrderedT() {}
-};
-
-// Operations that we can apply to rank the values
-struct IdentityOp {
-  template <typename T>
-  static T CUTLASS_HOST_DEVICE apply(T const& x) {
-    return x;
-  }
-};
-// Can be applied to rank based on absolute value
-struct AbsOp {
-  template <typename T>
-  static T CUTLASS_HOST_DEVICE apply(T const& x) {
-    return cutlass::abs(x);
+  CUTLASS_DEVICE TileValueOrderedT(Element value, int col, int row = 0) {
+    parts.value = value;
+    parts.row = uint2b_t{row};
+    parts.col = uint2b_t{col};
+    parts.cmp = Pointwise::to_ordered(value);
   }
 };
 
@@ -69,7 +68,7 @@ template <typename Op = IdentityOp>
 struct LargestValuesGreedy {
   template <typename T>
   static CUTLASS_DEVICE T outOfBoundsFillValue() {
-    return -platform::numeric_limits<T>::infinity();
+    return -cutlass::platform::numeric_limits<T>::infinity();
   }
 
   template <typename Tile4x4Accessor>
@@ -83,10 +82,8 @@ struct LargestValuesGreedy {
     for (int i = 0; i < 4; ++i) {
       CUTLASS_PRAGMA_UNROLL
       for (int j = 0; j < 4; ++j) {
-        TileValueOrdered& v = values_ordered[i * 4 + j];
-        v.parts.value = values.at(i, j).get();
-        v.parts.col = uint2b_t{j};
-        v.parts.row = uint2b_t{i};
+        values_ordered[i * 4 + j] =
+            TileValueOrdered(values.at(i, j).get(), j, i);
       }
     }
     // Use a sorting network (aka without branches) to avoid
@@ -125,16 +122,16 @@ struct LargestValuesGreedy {
 // This is to ensure that a row's sparsity pattern is only determined
 // by its values and the rows before (but never the rows after)
 // This enforces causality strictly
-template <typename Op = IdentityOp>
-struct Causal1122 {
+template <typename Op, int k1, int k2, int k3, int k4, bool kBothWays>
+struct LineByLine {
   template <typename T>
   static CUTLASS_DEVICE T outOfBoundsFillValue() {
-    return -platform::numeric_limits<T>::infinity();
+    return -cutlass::platform::numeric_limits<T>::infinity();
   }
 
   template <typename Tile4x4Accessor>
   CUTLASS_DEVICE Indices4x4 operator()(Tile4x4Accessor values) {
-    static constexpr int kMaxValuesPerRow[] = {1, 1, 2, 2};
+    static constexpr int kMaxValuesPerRow[4] = {k1, k2, k3, k4};
     using TileValueOrdered =
         TileValueOrderedT<typename Tile4x4Accessor::Element, Op>;
     using TileValuesFragment = cutlass::Array<TileValueOrdered, 4>;
@@ -148,9 +145,7 @@ struct Causal1122 {
       TileValuesFragment values_ordered;
       CUTLASS_PRAGMA_UNROLL
       for (int col = 0; col < 4; ++col) {
-        TileValueOrdered& v = values_ordered[col];
-        v.parts.value = values.at(row, col).get();
-        v.parts.col = uint2b_t{col};
+        values_ordered[col] = TileValueOrdered(values.at(row, col).get(), col);
       }
       // Use a sorting network (aka without branches) to avoid
       // warp divergence
@@ -163,6 +158,9 @@ struct Causal1122 {
         auto& e = values_ordered[i];
 
         uint32_t ccount = uint2b_t(numPerCol >> 2 * e.parts.col);
+        if (!kBothWays) {
+          ccount = 0;
+        }
         bool selected = ccount != 3 && (row_count < kMaxValuesPerRow[row]);
         indices |= selected << (e.parts.col + 4 * row);
         numPerCol |= (ccount + selected) << 2 * e.parts.col;
@@ -176,7 +174,9 @@ struct Causal1122 {
 template <typename T>
 void named_algorithms(T callback) {
   callback(LargestValuesGreedy<IdentityOp>(), "largest_values_greedy");
-  callback(Causal1122<IdentityOp>(), "causal1122");
+  callback(LineByLine<IdentityOp, 1, 1, 2, 2, true>(), "causal1122");
+  callback(LineByLine<IdentityOp, 2, 2, 2, 2, false>(), "largest_notranspose");
+  callback(LineByLine<AbsOp, 2, 2, 2, 2, false>(), "largest_abs_notranspose");
   callback(LargestValuesGreedy<AbsOp>(), "largest_abs_values_greedy");
 
   // default one

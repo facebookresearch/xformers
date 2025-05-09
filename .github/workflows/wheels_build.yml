@@ -65,6 +65,13 @@ jobs:
           submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
+
+      - name: HACKFIX for cutlass compiler bug
+        if: runner.os == 'Windows'
+        run: |
+          # See https://github.com/NVIDIA/cutlass/issues/1732
+          rm -f third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
+          touch third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
       - name: Setup Runner
         uses: ./.github/actions/setup-build-cuda
         with:
@@ -98,6 +105,7 @@ jobs:
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
           echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}
           which ninja
+          ninja --version
           cat ${GITHUB_ENV}
       - run: echo "xformers-${BUILD_VERSION}"
       - run: echo "release version (will upload to PyTorch)"

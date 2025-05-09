@@ -827,19 +827,20 @@ at::Tensor spmm_sputnik(
   at::Tensor output = at::empty({batch, m, n}, b.options());
 
   // TODO investigate misaligned address errors in values ptr
-  AT_CUDA_CHECK(sputnik::CudaSpmm2(
-      m,
-      k,
-      n,
-      nonzeros,
-      row_indices.data_ptr<int>(),
-      values.data_ptr<float>(),
-      row_offsets.data_ptr<int>(),
-      column_indices.data_ptr<int>(),
-      b.data_ptr<float>(),
-      output.data_ptr<float>(),
-      stream,
-      batch));
+  AT_CUDA_CHECK(
+      sputnik::CudaSpmm2(
+          m,
+          k,
+          n,
+          nonzeros,
+          row_indices.data_ptr<int>(),
+          values.data_ptr<float>(),
+          row_offsets.data_ptr<int>(),
+          column_indices.data_ptr<int>(),
+          b.data_ptr<float>(),
+          output.data_ptr<float>(),
+          stream,
+          batch));
 
   return output;
 }

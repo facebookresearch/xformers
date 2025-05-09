@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import torch.cuda.memory
 import torch.cuda.nvtx
+import torch.distributed as dist
 import torch.nn as nn
 import torch.profiler
 
@@ -78,6 +79,10 @@ class PyTorchProfiler:
         worker_name = self.main_profiler.worker_name
         if worker_name == "":
             worker_name = f"{socket.gethostname()}_{os.getpid()}"
+            if dist.is_available() and dist.is_initialized():
+                # Left-pad rank with zeros to make them all of the same length
+                rank = f"{dist.get_rank()}".zfill(len(f"{dist.get_world_size() - 1}"))
+                worker_name = f"rank{rank}_{worker_name}"
         os.makedirs(dir_name, exist_ok=True)
         file_name = f"{worker_name}.{time.time_ns()}.pt.trace.json.gz"
         prof.export_chrome_trace(os.path.join(dir_name, file_name))
@@ -212,8 +217,10 @@ class _Profiler:
         self.output_dir = Path(output_dir).absolute()
         self.output_dir.mkdir(exist_ok=True, parents=True)
         self.worker_name = ""
-        if torch.distributed.is_initialized():
-            self.worker_name = "{}_{}".format(socket.gethostname(), str(os.getpid()))
+        if dist.is_available() and dist.is_initialized():
+            # Left-pad rank with zeros to make them all of the same length
+            rank = f"{dist.get_rank()}".zfill(len(f"{dist.get_world_size() - 1}"))
+            self.worker_name = f"rank{rank}_{socket.gethostname()}_{os.getpid()}"
 
         self.module = weakref.ref(module if module is not None else nn.Module())
         self.init_schedule()

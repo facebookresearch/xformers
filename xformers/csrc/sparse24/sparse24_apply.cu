@@ -113,13 +113,13 @@ std::
   auto runTyped = [&](auto type) {
     using ElementT = decltype(type);
     if (backend == "cusparselt") {
-      return sparse24_apply_typed<ElementT, MetadataCuSparseLt, kIsMeta>(
+      return sparse24_apply_typed<ElementT, MetadataCuSparseLtSm80, kIsMeta>(
           input, threads_masks);
     } else {
       TORCH_CHECK(
           backend == "cutlass",
           "backend argument only supports `cutlass` or `cusparselt`");
-      return sparse24_apply_typed<ElementT, MetadataCutlass, kIsMeta>(
+      return sparse24_apply_typed<ElementT, MetadataCutlassSm80, kIsMeta>(
           input, threads_masks);
     }
   };

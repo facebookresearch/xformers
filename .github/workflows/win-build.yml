@@ -15,6 +15,7 @@ env:
   MAX_JOBS: 6
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
+  TMPDIR: "./x"
 
 jobs:
   win_build:
@@ -35,19 +36,33 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Support longpaths
-        run: git config --system core.longpaths true
+      - name: Workarounds for longpaths - git-config
+        run: |
+          git config --system core.longpaths true
       - name: Recursive checkout
         uses: actions/checkout@v3
         with:
           submodules: recursive
           path: "."
 
+      - name: Workarounds for longpaths - TMPDIR
+        run: |
+          mkdir x
+          python -c "import tempfile; print(tempfile.gettempdir())"
+          python -c "import tempfile; assert(len(tempfile.gettempdir()) < 30)"
+
+      - name: HACKFIX for cutlass compiler bug
+        if: runner.os == 'Windows'
+        run: |
+          # See https://github.com/NVIDIA/cutlass/issues/1732
+          rm -f third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
+          touch third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
+
       - name: Setup Runner
         uses: ./.github/actions/setup-build-cuda
         with:
           toolkit_type: "cuda"
-          toolkit_short_version: "124"
+          toolkit_short_version: "126"
           python: "3.9"
 
       - name: Remove internal code
@@ -59,18 +74,26 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.5.1 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+          $PY -m pip install wheel setuptools ninja torch==2.7.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"
+          ninja --version
 
       - name: Create sdist
         run: $PY setup.py sdist
 
       - name: Build from sdist
-        run: $PY -m pip install -v dist/*
+        shell: bash -l {0}
+        run: |
+          $PY -m pip install -v dist/*
 
       - name: Info
         run: |
           cd ../../  # So we don't have a folder named `xformers`
           XFORMERS_MORE_DETAILS=1 $PY -m xformers.info
+
+      # Open an SSH session on failure to debug
+      # - name: Setup tmate session
+      #   if: ${{ failure() }}
+      #   uses: mxschmitt/action-tmate@v3

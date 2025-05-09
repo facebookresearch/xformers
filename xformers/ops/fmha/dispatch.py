@@ -29,6 +29,13 @@ def _get_use_fa3() -> bool:
     return _USE_FLASH_ATTENTION_3
 
 
+def fa3_available() -> bool:
+    has_cuda = torch.version.cuda is not None
+    is_90a = has_cuda and torch.cuda.get_device_capability() >= (9, 0)
+    has_valid_flash3 = flash3._C_flashattention3 is not None  # pyre-ignore[16]
+    return is_90a and has_valid_flash3
+
+
 def _format_inputs_description(inp: Inputs) -> str:
     return f"""query       : shape={tuple(inp.query.shape)} ({inp.query.dtype})
 key         : shape={tuple(inp.key.shape)} ({inp.key.dtype})

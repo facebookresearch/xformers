@@ -164,6 +164,7 @@ _FILENAME_TO_SRC: Dict[str, List[str]] = {}
 # Materializing the codegen to disk can be useful for external tools, e.g. ncu
 # Disabled by default because writing to disk at module import time is unexpected and error-prone.
 _should_materialize_codegen = os.environ.get("XFORMERS_MATERIALIZE_CODEGEN") == "1"
+_should_keep_materialized_source = os.environ.get("XFORMERS_KEEP_CODEGEN") == "1"
 _tmp_dir = None
 
 
@@ -222,6 +223,11 @@ def unroll_varargs(kernel, N: int, mode: VarargMode = VarargMode.UNROLL):
         if not _tmp_dir:
             _tmp_dir = tempfile.TemporaryDirectory()
         fn_filename = os.path.join(_tmp_dir.name, f"{fn_basename}.py")
+        if _should_keep_materialized_source:
+            # destroy the TemporaryDirectory object
+            _tmp_dir = None
+            # create path if not exists
+            os.makedirs(os.path.dirname(fn_filename), exist_ok=True)
         with open(fn_filename, "w") as f:
             f.write(new_src)
     else:
@@ -241,7 +247,11 @@ def unroll_varargs(kernel, N: int, mode: VarargMode = VarargMode.UNROLL):
     fn = next(iter(_locals.values()))
 
     jitted_fn = triton.jit(fn)
-    jitted_fn.src = new_src
+    if hasattr(jitted_fn, "_unsafe_update_src"):
+        jitted_fn._unsafe_update_src(new_src)
+        jitted_fn.hash = None
+    else:
+        jitted_fn.src = new_src
     return jitted_fn
 
 

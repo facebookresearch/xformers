@@ -18,7 +18,11 @@ import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias, pack_kv_cache
 from xformers.ops import fmha
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
-from xformers.ops.fmha.common import AttentionFwOpBase, AttentionOpBase
+from xformers.ops.fmha.common import (
+    AttentionFwOpBase,
+    AttentionOpBase,
+    pack_fp8_tensorwise_per_head,
+)
 from xformers.ops.fmha.dispatch import _dispatch_fw_priority_list
 
 from .utils import (
@@ -112,7 +116,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
         for M in [2, 3, 15, 31, 32, 34, 68, 72, 90, 132, 136]:
             shapes.append((B, M, Mkv, H, K, K))
             shapes.append((B, Mq, M, H, K, K))
-        for _K in [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 256 + 2, 256 + 8, 512]:
+        Ks = [1, 2, 3, 31, 34, 36, 38, 40, 64, 80, 160, 192, 256 + 2, 256 + 8, 512]
+        for _K in Ks:
             if op.SUPPORTED_MIN_K <= _K <= op.SUPPORTED_MAX_K:
                 shapes.append((B, Mq, Mkv, H, _K, _K))
         # Different value for K / Kv
@@ -181,20 +186,24 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
     for op in ops_list:
         op_count = 0
         # Sort list of masks, so it's deterministic across runs
-        LIST_MASKS = list(sorted(op.SUPPORTED_ATTN_BIAS_TYPES, key=lambda x: str(x)))
+        LIST_MASKS = sorted(op.SUPPORTED_ATTN_BIAS_TYPES, key=str)
         for shape in generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
             has_one = False
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
-                for dtype in op.SUPPORTED_DTYPES:
+                # Sort set of dtypes to make it deterministic across runs
+                for dtype in sorted(op.SUPPORTED_DTYPES, key=str):
+                    # "normal_kernel_cuda" not implemented for 'Float8_e4m3fn'
+                    if dtype in [torch.float8_e4m3fn]:
+                        continue
                     bias_type = r.choice(LIST_MASKS)
                     # Avoid using too much memory
+                    B, Mq, Mkv, H, K, Kv = shape
                     if bias_type not in [
                         type(None),
                         fmha.attn_bias.LowerTriangularMask,
                     ]:
-                        B, Mq, Mkv, H, K, Kv = shape
                         B = min(B, 12)
 
                         if bias_type in {
@@ -209,10 +218,12 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
                             fmha.attn_bias.BlockDiagonalPaddedKeysMask,
                             fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
                             fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
+                            fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+                            fmha.attn_bias.PagedBlockDiagonalGappyKeysMask,
                         }:
                             Mq, Mkv = min(Mkv, Mq), max(Mkv, Mq)
-                        shape = (B, Mq, Mkv, H, K, Kv)
-                    combination.append((op, device, dtype, bias_type, *shape))
+                    new_shape = (B, Mq, Mkv, H, K, Kv)
+                    combination.append((op, device, dtype, bias_type, *new_shape))
                     ids.append(
                         f"{op.NAME}-{device}-{str(dtype)}-{bias_type.__name__}"
                         f"-{'-'.join([str(s) for s in shape])}"
@@ -237,7 +248,11 @@ def _generate_op_device_dtype_biasT_B_Mq_Mkv_H_K_Kv(
             for device in _devices:
                 if device not in op.SUPPORTED_DEVICES:
                     continue
-                for dtype in op.SUPPORTED_DTYPES:
+                # Sort set of dtypes to make it deterministic across runs
+                for dtype in sorted(op.SUPPORTED_DTYPES, key=str):
+                    # "normal_kernel_cuda" not implemented for 'Float8_e4m3fn'
+                    if dtype in [torch.float8_e4m3fn]:
+                        continue
                     combination.append((op, device, dtype, bias_type, *shape))
     return {
         "argvalues": combination,
@@ -2321,6 +2336,24 @@ def test_paged_attention_flash(B, MAX_T: int, page_size: int):
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
 
+@sm90_or_better_only
+@disable_on_rocm
+@pytest.mark.parametrize("B", [1, 5, 128])
+@pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
+@pytest.mark.parametrize("page_size", [256])
+def test_paged_attention_flash3(B, MAX_T: int, page_size: int):
+    op = fmha.flash3.FwOp
+    if (
+        fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask
+        not in op.SUPPORTED_ATTN_BIAS_TYPES
+    ):
+        pytest.skip("Not supported bias")
+    if not op.is_available():
+        pytest.skip("Not available")
+    num_quant_groups = 0
+    paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
+
+
 def paged_attention_run_inner(
     B: int,
     MAX_T: int,
@@ -2601,6 +2634,8 @@ def test_merge_attentions_nobias(
         dtype = torch.bfloat16
     else:
         dtype = next(iter(op.SUPPORTED_DTYPES))
+    if dtype == torch.float8_e4m3fn:
+        pytest.skip("float8 not supported")
     if G is None:
         q = 3 * torch.rand(B, Mq, H, K, dtype=dtype, device="cuda")
         k = (3 * torch.rand(B, M, 1, K, dtype=dtype, device="cuda")).expand(B, M, H, K)
@@ -3293,6 +3328,224 @@ def test_triton_splitk_rowwise_fp8(
     torch.testing.assert_close(
         context_fp8.lse, context_fp8_paged.lse, atol=1e-4, rtol=1e-4
     )
+
+
+def fp8_per_head_quantize(
+    x: torch.Tensor,
+    dtype_fp8: torch.dtype,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    MAX_FP8 = torch.finfo(dtype_fp8).max
+    EPS = 1e-12
+    SCALE_UP = 1200.0
+    tensor_max = torch.amax(torch.abs(x), dim=(1, 3), keepdim=False).to(torch.float32)
+    clamp_max = torch.clamp(tensor_max, min=EPS, max=SCALE_UP)
+    scale = MAX_FP8 / clamp_max  # Shape: [batch, num_heads]
+    x_quantized = (x * scale[:, None, :, None]).to(
+        dtype_fp8
+    )  # Shape: [B, seq_len, num_heads, head_dim]
+
+    return x_quantized, 1 / scale  # Shape: [batch, num_heads]
+
+
+@disable_on_rocm
+@sm90_or_better_only
+@pytest.mark.parametrize("dtype_init", [torch.bfloat16])
+@pytest.mark.parametrize("deterministic", [True])
+@pytest.mark.parametrize("causal", [False, True])
+@pytest.mark.parametrize("B", [4, 8, 16])
+@pytest.mark.parametrize("nheads", [6, 16])
+@pytest.mark.parametrize("seq_len", [256, 512, 1024])
+@pytest.mark.parametrize("head_dim", [64, 128, 256])
+def test_fp8_attention(dtype_init, deterministic, causal, B, nheads, seq_len, head_dim):
+    op = fmha.flash3.FwOp
+    if not op.is_available():
+        pytest.skip("FAv3 is not available")
+    dtype_fp8 = torch.float8_e4m3fn
+    if dtype_fp8 not in op.SUPPORTED_DTYPES:
+        pytest.skip("FP8 is not supported")
+
+    q = torch.randn(B, seq_len, nheads, head_dim, device="cuda", dtype=dtype_init)
+    k = torch.randn(B, seq_len, nheads, head_dim, device="cuda", dtype=dtype_init)
+    v = torch.randn(B, seq_len, nheads, head_dim, device="cuda", dtype=dtype_init)
+
+    q_fp8, descale_q = fp8_per_head_quantize(q, dtype_fp8)
+    k_fp8, descale_k = fp8_per_head_quantize(k, dtype_fp8)
+    v_fp8, descale_v = fp8_per_head_quantize(v, dtype_fp8)
+
+    q_fp8_packed = pack_fp8_tensorwise_per_head(q_fp8, descale_q, dtype_init)
+    k_fp8_packed = pack_fp8_tensorwise_per_head(k_fp8, descale_k, dtype_init)
+    v_fp8_packed = pack_fp8_tensorwise_per_head(v_fp8, descale_v, dtype_init)
+
+    q_fp8_fake = q_fp8_packed.dequantize()
+    k_fp8_fake = k_fp8_packed.dequantize()
+    v_fp8_fake = v_fp8_packed.dequantize()
+
+    out_ref = fmha.memory_efficient_attention_forward(
+        q_fp8_fake, k_fp8_fake, v_fp8_fake, None, op=op
+    )
+
+    out = fmha.memory_efficient_attention_forward(
+        q_fp8_packed,
+        k_fp8_packed,
+        v_fp8_packed,
+        None,
+        op=op,
+    )
+
+    # NOTE: output dtype of FP8 attention is hard-code to BF16 for now: https://fburl.com/jcfiqmg0
+    assert out.dtype == torch.bfloat16, "FP8 output is not BF16"
+    torch.testing.assert_close(out, out_ref, atol=3e-2, rtol=1e-4)
+
+
+def _pack_xformer_input(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    cache_seqlens: List[int],
+    bias_type,
+) -> Tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+]:
+    batch, seq_len_q, head_q, head_d = q.shape
+    _, max_len_kv, head_kv, _ = k.shape
+
+    attn_bias = bias_type.from_seqlens(
+        q_seqlen=[seq_len_q] * batch,
+        kv_seqlen=cache_seqlens,
+        kv_padding=max_len_kv,
+    )
+
+    q = q.view(1, -1, head_q, head_d)
+    k = k.expand(-1, -1, head_q, -1).view(1, -1, head_q, k.shape[-1])
+    v = v.expand(-1, -1, head_q, -1).view(1, -1, head_q, v.shape[-1])
+    return q, k, v, attn_bias
+
+
+@disable_on_rocm
+@sm90_or_better_only
+@pytest.mark.parametrize("dtype_init", [torch.bfloat16])
+@pytest.mark.parametrize("deterministic", [True])
+@pytest.mark.parametrize("causal", [False, True])
+@pytest.mark.parametrize("B", [4, 8, 16])
+@pytest.mark.parametrize("nheads_q", [8, 16])
+@pytest.mark.parametrize("seq_len_q", [1, 2, 4, 8])
+@pytest.mark.parametrize("seq_len_kv", [256, 512, 1024, 2048])
+@pytest.mark.parametrize("max_len_kv", [4096, 8192])
+@pytest.mark.parametrize("head_dim", [128])
+@pytest.mark.parametrize(
+    "bias",
+    [
+        fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+        fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    ],
+)
+def test_fav3_kvsplit_attn(
+    dtype_init,
+    deterministic,
+    causal,
+    B,
+    nheads_q,
+    seq_len_q,
+    seq_len_kv,
+    max_len_kv,
+    head_dim,
+    bias,
+):
+    op = fmha.flash3.FwOp_KVSplit
+    if not op.is_available():
+        pytest.skip("FAv3 KVSplit is not available")
+    nheads_kv = 1
+
+    q = torch.randn(B, seq_len_q, nheads_q, head_dim, device="cuda", dtype=dtype_init)
+    k = torch.randn(B, seq_len_kv, nheads_kv, head_dim, device="cuda", dtype=dtype_init)
+    v = torch.randn(B, seq_len_kv, nheads_kv, head_dim, device="cuda", dtype=dtype_init)
+
+    xq, xk, xv, attn_bias = _pack_xformer_input(q, k, v, [seq_len_kv] * B, bias)
+
+    out_ref, lse_ref = fmha.memory_efficient_attention_forward_requires_grad(
+        xq, xk, xv, attn_bias, op=fmha.flash3.FwOp
+    )
+
+    out, lse = fmha.memory_efficient_attention_forward_requires_grad(
+        xq,
+        xk,
+        xv,
+        attn_bias,
+        op=op,
+    )
+
+    torch.testing.assert_close(out, out_ref, atol=4e-3, rtol=1e-4)
+
+    torch.testing.assert_close(lse, lse_ref, atol=4e-3, rtol=1e-4)
+
+
+# TODO: add fmha.flash3.FwOp and fmha.flash3.FwOp_KVSplit once this is fixed in FA3.
+@sm80_or_better_only
+@pytest.mark.parametrize(
+    "op",
+    ([fmha.flash.FwOp, fmha.cutlass.FwOp] if not torch.version.hip else [fmha.ck.FwOp])
+    + [fmha.triton_splitk.FwOp],
+)
+def test_nans_in_padding(op):
+    """
+    Create a batch of sequences with variable lengths, stored in padded format,
+    and fill the unused positions in K/V with NaNs.
+    This shouldn't affect the result, but currently FA3 produces NaNs in the output.
+    The reason is probably that some sequences end in the middle of a K/V block,
+    and NaNs leak into quantities like per-block maximum of Q@K used in FA algorithm.
+    """
+
+    if "cuda" not in _devices:
+        pytest.skip("CUDA device is not available")
+
+    nheads_kv = 1
+    nheads_q = 8
+    B = 64
+    seq_len_q = 15
+    max_len_kv = 256
+    head_dim = 128
+    dtype = torch.bfloat16
+
+    q = torch.randn(B, seq_len_q, nheads_q, head_dim, device="cuda", dtype=dtype)
+    k = torch.randn(B, max_len_kv, nheads_kv, head_dim, device="cuda", dtype=dtype)
+    v = torch.randn(B, max_len_kv, nheads_kv, head_dim, device="cuda", dtype=dtype)
+
+    xq = q.view(1, -1, nheads_q, head_dim)
+    xk = k.view(1, -1, nheads_kv, head_dim).expand(1, -1, nheads_q, -1)
+    xv = v.view(1, -1, nheads_kv, head_dim).expand(1, -1, nheads_q, -1)
+
+    seqlens = torch.randint(max_len_kv, size=(B,), device="cuda")
+    attn_bias = fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+        q_seqlen=[seq_len_q] * B, kv_seqlen=seqlens.tolist(), kv_padding=max_len_kv
+    )
+
+    out_ref, lse_ref = fmha.memory_efficient_attention_forward_requires_grad(
+        xq, xk, xv, attn_bias, op=op
+    )
+
+    # Fill K/V with NaNs at padding positions.
+    mask_uninitialized = (
+        torch.arange(max_len_kv, device="cuda")[None, :].expand(B, max_len_kv)
+        >= seqlens[:, None]
+    )
+    mask_uninitialized = mask_uninitialized[:, :, None, None]
+    k.masked_fill_(mask_uninitialized, float("nan"))
+    v.masked_fill_(mask_uninitialized, float("nan"))
+
+    out, lse = fmha.memory_efficient_attention_forward_requires_grad(
+        xq,
+        xk,
+        xv,
+        attn_bias,
+        op=op,
+    )
+
+    torch.testing.assert_close(out, out_ref, atol=4e-3, rtol=1e-4)
+
+    torch.testing.assert_close(lse, lse_ref, atol=4e-3, rtol=1e-4)
 
 
 # end of file

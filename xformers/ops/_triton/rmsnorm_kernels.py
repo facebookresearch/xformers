@@ -6,13 +6,9 @@ import torch
 import triton
 import triton.language as tl
 
-try:
-    from triton.language.extra.cuda.libdevice import rsqrt
-except ImportError:
-    try:
-        from triton.language.math import rsqrt
-    except ImportError:
-        from triton.language.libdevice import rsqrt
+from xformers.triton.importing import libdevice_find
+
+rsqrt = libdevice_find("rsqrt")
 
 
 @triton.jit
