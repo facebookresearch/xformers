@@ -499,7 +499,7 @@
 <span class="sd">    whose distance to the final key is either of:</span>
 
 <span class="sd">    * less than X (i.e. &quot;causal attention&quot;, same as :attr:`LowerTriangularFromBottomRightMask`)</span>
-<span class="sd">    * greater than X + window_size (i.e. &quot;local attention&quot;)</span>
+<span class="sd">    * greater than or equal to X + window_size (i.e. &quot;local attention&quot;)</span>
 
 
 <span class="sd">    .. figure:: /_static/causal_bottom_right_local.png</span>
@@ -1373,7 +1373,7 @@
 <span class="sd">    A query Q in block i cannot attend to a key which is not in block i,</span>
 <span class="sd">    nor one which is not in use (i.e. in the padded area),</span>
 <span class="sd">    nor one which is nearer to the final key in block i</span>
-<span class="sd">    than Q is to the final query in block i, nor one that is more than</span>
+<span class="sd">    than Q is to the final query in block i, nor one that is at least</span>
 <span class="sd">    window_size further from the final key in block i than Q is</span>
 <span class="sd">    to the final query in block i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
@@ -1846,8 +1846,8 @@
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.</span>
 <span class="sd">    This makes the mask &quot;local&quot; and the attention pattern banded.</span>
 
-<span class="sd">    Query i only attends to keys in its block and cannot attend keys further than &quot;window_size&quot;</span>
-<span class="sd">    from it.</span>
+<span class="sd">    The ith query in a block only attends to keys in its block with index</span>
+<span class="sd">    greater than i - window_size and less than or equal to i.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>
@@ -1911,8 +1911,9 @@
 <span class="sd">    Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.</span>
 <span class="sd">    This makes the mask &quot;local&quot; and the attention pattern banded.</span>
 
-<span class="sd">    Query i only attends to keys in its block and cannot attend keys further than &quot;window_size&quot;</span>
-<span class="sd">    from it.</span>
+<span class="sd">    A query with distance j from the last query in its block only attends to</span>
+<span class="sd">    keys in the same block, and only those whose distance to the last key</span>
+<span class="sd">    in the block is greater than or equal to j and less than window_size + j.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">_window_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>  <span class="c1"># forced due to inheritance and default arguments</span>

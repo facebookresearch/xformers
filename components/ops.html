@@ -535,7 +535,7 @@ local attention.</p>
 whose distance to the final key is either of:</p>
 <ul class="simple">
 <li><p>less than X (i.e. “causal attention”, same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask" title="xformers.ops.fmha.attn_bias.LowerTriangularFromBottomRightMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">LowerTriangularFromBottomRightMask</span></code></a>)</p></li>
-<li><p>greater than X + window_size (i.e. “local attention”)</p></li>
+<li><p>greater than or equal to X + window_size (i.e. “local attention”)</p></li>
 </ul>
 <figure class="align-default" id="id4">
 <img alt="../_images/causal_bottom_right_local.png" src="../_images/causal_bottom_right_local.png" />
@@ -791,7 +791,7 @@ except with a window size.</p>
 <p>A query Q in block i cannot attend to a key which is not in block i,
 nor one which is not in use (i.e. in the padded area),
 nor one which is nearer to the final key in block i
-than Q is to the final query in block i, nor one that is more than
+than Q is to the final query in block i, nor one that is at least
 window_size further from the final key in block i than Q is
 to the final query in block i.</p>
 </dd></dl>
@@ -936,8 +936,8 @@ block_tables has shape [batch_size, max_num_pages] and K/V have shape
 <p>(Experimental feature)
 Same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask</span></code></a>.
 This makes the mask “local” and the attention pattern banded.</p>
-<p>Query i only attends to keys in its block and cannot attend keys further than “window_size”
-from it.</p>
+<p>The ith query in a block only attends to keys in its block with index
+greater than i - window_size and less than or equal to i.</p>
 </dd></dl>
 
 <dl class="py class">
@@ -947,8 +947,9 @@ from it.</p>
 <p>(Experimental feature)
 Same as <a class="reference internal" href="#xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask" title="xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask"><code class="xref py py-attr docutils literal notranslate"><span class="pre">xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask</span></code></a>.
 This makes the mask “local” and the attention pattern banded.</p>
-<p>Query i only attends to keys in its block and cannot attend keys further than “window_size”
-from it.</p>
+<p>A query with distance j from the last query in its block only attends to
+keys in the same block, and only those whose distance to the last key
+in the block is greater than or equal to j and less than window_size + j.</p>
 </dd></dl>
 
 <dl class="py class">
