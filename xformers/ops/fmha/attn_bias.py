@@ -284,7 +284,7 @@ class LowerTriangularFromBottomRightLocalAttentionMask(
     whose distance to the final key is either of:
 
     * less than X (i.e. "causal attention", same as :attr:`LowerTriangularFromBottomRightMask`)
-    * greater than X + window_size (i.e. "local attention")
+    * greater than or equal to X + window_size (i.e. "local attention")
 
 
     .. figure:: /_static/causal_bottom_right_local.png
@@ -1158,7 +1158,7 @@ class BlockDiagonalCausalLocalAttentionPaddedKeysMask(BlockDiagonalPaddedKeysMas
     A query Q in block i cannot attend to a key which is not in block i,
     nor one which is not in use (i.e. in the padded area),
     nor one which is nearer to the final key in block i
-    than Q is to the final query in block i, nor one that is more than
+    than Q is to the final query in block i, nor one that is at least
     window_size further from the final key in block i than Q is
     to the final query in block i.
     """
@@ -1631,8 +1631,8 @@ class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
-    Query i only attends to keys in its block and cannot attend keys further than "window_size"
-    from it.
+    The ith query in a block only attends to keys in its block with index
+    greater than i - window_size and less than or equal to i.
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
@@ -1696,8 +1696,9 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
-    Query i only attends to keys in its block and cannot attend keys further than "window_size"
-    from it.
+    A query with distance j from the last query in its block only attends to
+    keys in the same block, and only those whose distance to the last key
+    in the block is greater than or equal to j and less than window_size + j.
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
