@@ -20,6 +20,7 @@ from .attn_bias import (
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
     BlockDiagonalPaddedKeysMask,
@@ -140,6 +141,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
             LowerTriangularFromBottomRightLocalAttentionMask,
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
@@ -168,6 +170,7 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         attn_bias.BlockDiagonalCausalFromBottomRightMask,
@@ -302,6 +305,7 @@ class FwOp(AttentionFwOpBase):
                         BlockDiagonalCausalLocalAttentionMask,
                         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
                         LowerTriangularFromBottomRightLocalAttentionMask,
+                        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
                     ),
                 )
                 else None
