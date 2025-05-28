@@ -144,7 +144,7 @@ runs:
     - name: Build
       shell: bash -l {0}
       run: |
-        PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ inputs.arch }} python -m pip install -v -e .
+        PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ inputs.arch }} python -m pip install -v --no-build-isolation -e .
     - name: Build info
       run: |
         printenv
