@@ -31,8 +31,8 @@ jobs:
         PY_VERSIONS = ['3.9', '3.10', '3.11', '3.12']
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['118', '121', '124']
-        ROCM_VERSIONS = ['6.1', '6.2', '6.3'] # <- 6.0 broken in `manylinux_2_28`
+        CU_VERSIONS = ['118', '126', '128']
+        ROCM_VERSIONS = ["6.2.4", "6.3"]
         PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
         PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
         print("Full matrix PY_CU", PY_CU)
@@ -110,10 +110,9 @@ jobs:
       matrix:
         suffix:
           - cu118
-          - cu121
-          - cu124
-          - rocm6.1
-          - rocm6.2
+          - cu126
+          - cu128
+          - rocm6.2.4
           - rocm6.3
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
