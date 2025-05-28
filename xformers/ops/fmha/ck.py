@@ -18,6 +18,7 @@ from .attn_bias import (
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalCausalLocalAttentionPaddedKeysMask,
@@ -76,7 +77,7 @@ def _get_seqlen_info(
 
 
 def _get_tensor_bias(
-    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
     if isinstance(attn_bias, AttentionBiasSubTensor):
         if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
@@ -173,8 +174,8 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
-        attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalFromBottomRightMask,
+        BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         PagedBlockDiagonalPaddedKeysMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
