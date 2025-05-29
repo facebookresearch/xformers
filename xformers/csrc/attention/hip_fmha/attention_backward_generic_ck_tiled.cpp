@@ -11,8 +11,9 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/TensorOperators.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <c10/hip/HIPStream.h>
 #include <torch/library.h>
+#include <ATen/cuda/PhiloxUtils.cuh>
 
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_params.h"
@@ -111,7 +112,7 @@ efficient_attention_backward_ck(
     TORCH_CHECK(max_seqlen_k_.has_value());
   }
 
-  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
+  hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
