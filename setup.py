@@ -546,8 +546,10 @@ def get_extensions():
             "--ptxas-options=-O2",
             "--ptxas-options=-allow-expensive-optimizations=true",
         ]
-    elif torch.version.hip and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1" and (
-        torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
+    elif (
+        torch.version.hip
+        and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1"
+        and (torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != "")
     ):
         rename_cpp_cu(source_hip)
         hip_version = get_hip_version(ROCM_HOME)
