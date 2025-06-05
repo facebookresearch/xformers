@@ -236,10 +236,6 @@ class AttentionDecodingCK(AttentionDecodingBase):
                 raise NotSupportedInputError(not_supported_reasons)
 
 
-class AttentionDecodingCKDecoder(AttentionDecodingBase):
-    OP = xops.fmha.ck_decoder.FwOp
-
-
 class AttentionDecodingSplitKV(AttentionDecodingBase):
     OP = xops.fmha.triton_splitk.FwOp
 
@@ -358,7 +354,6 @@ if torch.version.hip:
     BENCHMARKS.update(
         {
             "ck": AttentionDecodingCK,
-            "ck-decoder": AttentionDecodingCKDecoder,
             "ck_splitK": AttentionDecodingCKSplitKV,
         }
     )
@@ -436,7 +431,7 @@ def test_flash_attention_decoder(name, case):
     inputs = baseline.get_inputs()
     decoder = BENCHMARKS[name]
 
-    assert name in ["ck-decoder", "ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
+    assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
     q, k, v = inputs.get_qkv_in_bmghk()

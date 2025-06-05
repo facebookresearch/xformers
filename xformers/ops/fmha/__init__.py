@@ -7,16 +7,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
 
 import torch
 
-from . import (
-    attn_bias,
-    ck,
-    ck_decoder,
-    ck_splitk,
-    cutlass,
-    flash,
-    flash3,
-    triton_splitk,
-)
+from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
 from .attn_bias import (
     VARLEN_BIASES,
     AttentionBias,
@@ -45,7 +36,6 @@ MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
-MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
 
 
@@ -883,7 +873,7 @@ __all__ = [
     "MemoryEfficientAttentionFlashAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
-    "MemoryEfficientAttentionCkDecoderOp",
+    "MemoryEfficientAttentionSplitKCkOp",
     "ALL_FW_OPS",
     "ALL_BW_OPS",
     "attn_bias",
