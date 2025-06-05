@@ -43,7 +43,6 @@ from .swiglu_op import (
     swiglu,
 )
 from .tiled_matmul import tiled_matmul
-from .tree_attention import TreeAttnMetadata, tree_attention
 from .unbind import get_stack_strides, stack_or_none, unbind
 
 # BW compatibility
@@ -116,9 +115,6 @@ __all__ = [
     "swiglu",
     # tiled_matmul
     "tiled_matmul",
-    # tree_attention
-    "TreeAttnMetadata",
-    "tree_attention",
     # unbind
     "get_stack_strides",
     "stack_or_none",

@@ -24,6 +24,9 @@
 
 // CUTLASS does not mix well with Windows
 #ifndef _WIN32
+#if __CUDACC_VER_MAJOR__ > 12 || \
+    (__CUDACC_VER_MAJOR__ == 12 && __CUDACC_VER_MINOR__ > 0)
+
 #ifdef CUTLASS_SM90_COLLECTIVE_BUILDER_SUPPORTED
 namespace {
 #define CUTLASS_STATUS_CHECK(status)              \
@@ -445,5 +448,6 @@ TORCH_LIBRARY_IMPL(xformers, Meta, m) {
       TORCH_SELECTIVE_NAME("xformers::_sparse24_sm90_cutlass_compress"),
       TORCH_FN(_sparse24_sm90_cutlass_compress<true>));
 }
+#endif
 #endif
 #endif
