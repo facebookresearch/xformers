@@ -540,12 +540,15 @@ def get_extensions():
 
         # NOTE: This should not be applied to Flash-Attention
         # see https://github.com/Dao-AILab/flash-attention/issues/359
-        extra_compile_args["nvcc"] += [
-            # Workaround for a regression with nvcc > 11.6
-            # See https://github.com/facebookresearch/xformers/issues/712
-            "--ptxas-options=-O2",
-            "--ptxas-options=-allow-expensive-optimizations=true",
-        ]
+        if (
+            "--device-debug" not in nvcc_flags and "-G" not in nvcc_flags
+        ):  # (incompatible with -G)
+            extra_compile_args["nvcc"] += [
+                # Workaround for a regression with nvcc > 11.6
+                # See https://github.com/facebookresearch/xformers/issues/712
+                "--ptxas-options=-O2",
+                "--ptxas-options=-allow-expensive-optimizations=true",
+            ]
     elif (
         torch.version.hip
         and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1"
