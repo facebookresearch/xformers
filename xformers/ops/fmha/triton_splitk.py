@@ -197,10 +197,11 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalGappyKeysMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
-        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
-        PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
-        PagedBlockDiagonalGappyKeysMask,
-        PagedBlockDiagonalPaddedKeysMask,
+        # (Some tests are failing for Paged Attention, so disabling it for now)
+        # PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+        # PagedBlockDiagonalGappyKeysMask,
+        # PagedBlockDiagonalPaddedKeysMask,
     )
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True

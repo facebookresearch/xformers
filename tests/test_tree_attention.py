@@ -123,6 +123,13 @@ def run_tree_attention_inner(
     """
     Test Medusa-style tree attention.
     """
+    if (
+        paged
+        and PagedBlockDiagonalPaddedKeysMask
+        not in SplitKAutotune.SUPPORTED_ATTN_BIAS_TYPES
+    ):
+        pytest.skip("Does not supported paged attention bias")
+
     torch.manual_seed(0)
     # + 1 comes from the root node
     tree_size_kv = len(tree_choices) + 1

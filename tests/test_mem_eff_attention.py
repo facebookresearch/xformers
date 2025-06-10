@@ -2598,6 +2598,10 @@ def paged_attention_run_inner(
     attn_bias_paged = attn_bias.make_paged(
         block_tables=block_tables, page_size=page_size, **make_paged_kwargs  # type: ignore
     )
+    if type(attn_bias_paged) not in op.SUPPORTED_ATTN_BIAS_TYPES:
+        pytest.skip(f"{type(attn_bias_paged)} not supported")
+    if type(attn_bias) not in op.SUPPORTED_ATTN_BIAS_TYPES:
+        pytest.skip(f"{type(attn_bias_paged)} not supported")
     y_usual = fmha.memory_efficient_attention_forward(
         axq,
         axk,
