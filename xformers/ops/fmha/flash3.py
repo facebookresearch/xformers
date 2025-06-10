@@ -436,55 +436,31 @@ if _C_flashattention3 is not None:
         is_deterministic = False
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
-            dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                None,  # cu_seqlens_q
-                None,  # cu_seqlens_k
-                None,  # seqused_q
-                None,  # seqused_k,
-                None,  # max_seqlen_q
-                None,  # max_seqlen_k
-                softmax_scale,
-                is_causal,
-                window_left,
-                window_right,
-                0.0,  # not used, softcap
-                is_deterministic,
-                0,  # not used, sm_margin
-            )
-        else:
-            dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                None,  # not used, seqused_q
-                None,  # not used, seqused_k
-                max_seqlen_q,
-                max_seqlen_k,
-                softmax_scale,
-                is_causal,
-                window_left,
-                window_right,
-                0.0,  # not used, softcap
-                is_deterministic,
-                0,  # not used, sm_margin
-            )
+
+        dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
+            dout,
+            query,
+            key,
+            value,
+            out,
+            softmax_lse,
+            dq,
+            dk,
+            dv,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            None,  # seqused_q
+            None,  # seqused_k
+            max_seqlen_q,
+            max_seqlen_k,
+            softmax_scale,
+            is_causal,
+            window_left,
+            window_right,
+            0.0,  # not used, softcap
+            is_deterministic,
+            0,  # not used, sm_margin
+        )
         return dq, dk, dv
 
     @torch.library.register_fake("xformers_flash3::flash_bwd")
