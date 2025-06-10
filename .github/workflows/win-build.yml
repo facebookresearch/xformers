@@ -24,7 +24,6 @@ jobs:
       matrix:
         arch:
           - "8.0"
-          - "7.0"
     name: win-build-${{ matrix.arch }}
     runs-on: windows-8-core
     env:

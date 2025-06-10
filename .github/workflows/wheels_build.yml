@@ -30,7 +30,7 @@ on:
 
 env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
-  TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && '6.0+PTX 7.0 7.5 8.0+PTX' || '' }}
+  TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && '7.5 8.0+PTX' || '' }}
   HIP_ARCHITECTURES: ${{ contains(inputs.toolkit_type, 'rocm') && 'gfx90a gfx942' || '' }}
   MAX_JOBS: 3
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
