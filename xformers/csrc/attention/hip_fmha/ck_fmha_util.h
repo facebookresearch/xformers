@@ -11,7 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 
-#include <torch/torch.h>
+#include <torch/all.h>
 
 #define XFORMERS_CHECK(COND, ERR)          \
   if (!(COND)) {                           \
