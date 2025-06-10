@@ -550,6 +550,31 @@ if _C_flashattention3 is not None:
         )
 
 
+def _check_different_value_headdim_ampere(d: Inputs, reasons: List[str]) -> None:
+    if (
+        d.query.device.type == "cuda"
+        and (torch.version.hip is None)
+        and d.query.shape[-1] != d.value.shape[-1]
+    ):
+        device_capability = torch.cuda.get_device_capability(d.device)
+        if device_capability < (9, 0):
+            reasons.append(
+                f"Q/K head-dim ({d.query.shape[-1]}) must be equal "
+                f"to V head-dim ({d.value.shape[-1]}) for Ampere GPUs"
+            )
+
+
+def _get_blocktables(inp_attn_bias) -> Optional[torch.Tensor]:
+    return (
+        inp_attn_bias.block_tables
+        if isinstance(
+            inp_attn_bias,
+            (PagedBlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask),
+        )
+        else None
+    )
+
+
 @register_operator
 class FwOp(AttentionFwOpBase):
     """Operator that computes memory-efficient attention using \
@@ -565,7 +590,7 @@ class FwOp(AttentionFwOpBase):
         torch.bfloat16,
     } | ({torch.float8_e4m3fn} if FLASH3_HAS_FLOAT8 else set())
     SUPPORTED_MAX_K = 256
-    SUPPORTED_MIN_K = 64
+    SUPPORTED_MIN_K = 32
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         LowerTriangularMask,
@@ -596,7 +621,7 @@ class FwOp(AttentionFwOpBase):
 
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
-    SUPPORTS_DIFFERENT_VALUE_EMBED = True
+    SUPPORTS_DIFFERENT_VALUE_EMBED = True  # Only hopper
     SUPPORTS_BMGHK = True
     SUPPORTS_PARTIAL = True
     UNPADDED_LSE = True
@@ -607,11 +632,18 @@ class FwOp(AttentionFwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
-        if d.query.shape[-1] not in [64, 128, 192, 256]:
-            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
-
+        check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
         _check_needs_no_topleft(d, reasons)
-
+        _check_different_value_headdim_ampere(d, reasons)
+        if (
+            _get_blocktables(d.attn_bias) is not None
+            and d.query.shape[-1] != d.value.shape[-1]
+        ):
+            reasons.append(
+                f"Q/K head-dim ({d.query.shape[-1]}) must be equal "
+                f"to V head-dim ({d.value.shape[-1]}) for paged attention"
+            )
         return reasons
 
     @classmethod
@@ -648,14 +680,7 @@ class FwOp(AttentionFwOpBase):
 
         if inp.query.numel() > 0 and inp.key.numel() > 0:
             win_left, win_right = _window_size(inp.attn_bias)
-            block_tables = (
-                inp.attn_bias.block_tables
-                if isinstance(
-                    inp.attn_bias,
-                    (PagedBlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask),
-                )
-                else None
-            )
+            block_tables = _get_blocktables(inp.attn_bias)
             leftpad_k = None
             if isinstance(inp.attn_bias, PagedBlockDiagonalGappyKeysMask):
                 assert cu_seqlens_q is not None
@@ -725,7 +750,7 @@ class BwOp(AttentionBwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_MIN_K = FwOp.SUPPORTED_MIN_K
+    SUPPORTED_MIN_K = 64
     SUPPORTED_ATTN_BIAS_TYPES = (
         # Exclude padded or gappy masks, since seqused_k is not supported by the kernel.
         type(None),
@@ -753,11 +778,10 @@ class BwOp(AttentionBwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
         _check_needs_no_topleft(d, reasons)
-        if d.query.shape[-1] not in [64, 128, 192, 256]:
-            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
-
-        _check_needs_no_topleft(d, reasons)
+        _check_different_value_headdim_ampere(d, reasons)
         return reasons
 
     @classmethod
