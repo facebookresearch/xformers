@@ -23,13 +23,16 @@ from .attn_bias import (
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
+    BlockDiagonalLocalAttentionPaddedKeysMask,
     BlockDiagonalMask,
     BlockDiagonalPaddedKeysMask,
     LocalAttentionFromBottomRightMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
+    PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
 )
 from .common import (
@@ -388,6 +391,7 @@ def _convert_input_format(
         (
             BlockDiagonalGappyKeysMask,
             BlockDiagonalPaddedKeysMask,
+            PagedBlockDiagonalGappyKeysMask,
             PagedBlockDiagonalPaddedKeysMask,
         ),
     ):
@@ -435,18 +439,13 @@ def _convert_input_format(
         query = query.reshape([batch * seqlen_q, -1, head_dim_q])
         key = key.reshape([batch * seqlen_kv, -1, head_dim_q])
         value = value.reshape([batch * seqlen_kv, -1, head_dim_v])
-        if isinstance(attn_bias, PagedBlockDiagonalPaddedKeysMask):
+        if isinstance(
+            attn_bias,
+            (PagedBlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask),
+        ):
             num_pages = value.shape[0] // attn_bias.page_size
             key = key.view(num_pages, attn_bias.page_size, *key.shape[1:])
             value = value.view(num_pages, attn_bias.page_size, *value.shape[1:])
-
-    if use_kvsplit:
-        # For kvsplit case, we want
-        # q: [batch, seqlen, num_heads, head_dim]
-        # k,v are already [batch x max_kv_len, num_heads, head_dim]
-        assert query.ndim == 3 and key.ndim == 3 and value.ndim == 3
-        batch = len(attn_bias.q_seqinfo.seqstart_py) - 1  # type: ignore
-        query = query.view([batch, -1, query.shape[1], query.shape[2]])
 
     new_inp = Inputs(
         query=query,
@@ -475,6 +474,7 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
             BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             BlockDiagonalCausalWithOffsetGappyKeysMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     )
@@ -483,6 +483,11 @@ def _is_causal(attn_bias: Optional[Union[torch.Tensor, AttentionBias]]) -> bool:
 def _is_paged_attention_supported(attn_bias_type) -> bool:
     if issubclass(attn_bias_type, PagedBlockDiagonalPaddedKeysMask):
         return not _USE_PT_FLASH_ATTN
+    if issubclass(
+        attn_bias_type,
+        (PagedBlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask),
+    ):
+        return not torch.mtia.is_available()
 
     return True
 
@@ -502,7 +507,13 @@ def _window_size(
         ),
     ):
         win_left = attn_bias._window_size - 1
-    if isinstance(attn_bias, LocalAttentionFromBottomRightMask):
+    if isinstance(
+        attn_bias,
+        (
+            BlockDiagonalLocalAttentionPaddedKeysMask,
+            LocalAttentionFromBottomRightMask,
+        ),
+    ):
         win_left = attn_bias.window_left
         win_right = attn_bias.window_right
     return (win_left, win_right)

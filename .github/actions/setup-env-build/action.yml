@@ -7,10 +7,6 @@ inputs:
     description: 'Python version'
     required: false
     default: "3.11"
-  cuda:
-    description: 'CUDA version'
-    required: false
-    default: "11.8"
 
 runs:
   using: composite
@@ -30,7 +26,7 @@ runs:
 
         CONDA_INSTALL_CMD = "micromamba create python=${{ inputs.python }} zlib pip ninja ccache=4.8 -c conda-forge -q -y"
 
-        conda_env_key = CONDA_INSTALL_CMD
+        conda_env_key = CONDA_INSTALL_CMD + "[cu129]"
         for file in sorted(glob.glob("requirement*.txt")):
           conda_env_key += f"\n########## {file}\n"
           conda_env_key += Path(file).read_text()
@@ -88,7 +84,7 @@ runs:
         # Retry if failed after removing downloaded packages cache
         $CONDA_INSTALL_CMD || (rm -rf $CONDA_PKGS_DIRS && rm -rf $CONDA_PREFIX && $CONDA_INSTALL_CMD)
         $PY -m pip install cmake
-        $PY -m pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
+        $PY -m pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
         $PY -m pip install -r requirements-benchmark.txt --progress-bar off
     - name: Activate environment
       shell: bash -l {0}

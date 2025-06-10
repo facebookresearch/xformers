@@ -4,7 +4,7 @@ exclude =
     ,.github/run-clang-format.py
     ,third_party
     ,xformers/_flash_attn
-max-line-length = 120
+max-line-length = 140
 copyright-check = True
 select = E,F,W,C
 copyright-regexp=Copyright \(c\) Facebook, Inc. and its affiliates. All Rights Reserved

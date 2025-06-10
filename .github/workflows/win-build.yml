@@ -62,7 +62,7 @@ jobs:
         uses: ./.github/actions/setup-build-cuda
         with:
           toolkit_type: "cuda"
-          toolkit_short_version: "126"
+          toolkit_short_version: "128"
           python: "3.9"
 
       - name: Remove internal code

@@ -327,16 +327,25 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
 
     # We don't care/expose softcap and fp8 and paged attention,
     # hence we disable them for faster builds.
+    DISABLED_CAPABILITIES = (
+        # (filename_pattern, compilation_flag)
+        # Not exposed in xFormers
+        ("softcap", "-DFLASHATTENTION_DISABLE_SOFTCAP"),
+        # Not exposed in xFormers
+        ("e4m3", "-DFLASHATTENTION_DISABLE_FP8"),
+        # Enabling paged attention causes segfault with some
+        # versions of nvcc :(
+        # https://github.com/Dao-AILab/flash-attention/issues/1453
+        ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
+        # We have `CUDA_MINIMUM_COMPUTE_CAPABILITY` set to 9.0
+        ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
+    )
     sources = [
         s
         for s in sources
-        if all(substr not in s for substr in ("softcap", "e4m3", "paged"))
+        if all(disabled_cap[0] not in s for disabled_cap in DISABLED_CAPABILITIES)
     ]
-    common_extra_compile_args = [
-        "-DFLASHATTENTION_DISABLE_SOFTCAP",
-        "-DFLASHATTENTION_DISABLE_FP8",
-        "-DFLASHATTENTION_DISABLE_PAGEDKV",
-    ]
+    common_extra_compile_args = [x[1] for x in DISABLED_CAPABILITIES]
 
     return [
         CUDAExtension(
@@ -358,15 +367,11 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
-                    # "--ptxas-options=-v",  # printing out number of registers
-                    "--ptxas-options=--verbose,--register-usage-level=10,--warn-on-local-memory-usage",
                     # "-lineinfo", # xformers: save binary size
                     "-DCUTLASS_DEBUG_TRACE_LEVEL=0",  # Can toggle for debugging
                     "-DNDEBUG",  # Important, otherwise performance is severely impacted
-                    "-DQBLKSIZE=128",
-                    "-DKBLKSIZE=128",
-                    "-DCTA256",
-                    "-DDQINRMEM",
+                    "-DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED",
+                    "-DCUTLASS_ENABLE_GDC_FOR_SM90",
                 ]
                 + nvcc_archs_flags
                 + common_extra_compile_args

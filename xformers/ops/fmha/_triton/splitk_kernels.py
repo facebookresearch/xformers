@@ -173,6 +173,10 @@ def _fwd_kernel_splitK(
         start_kv_idx = 0
     else:
         start_kv_idx = tl.load(Seq_starts_k + off_z)
+        if USE_SEQ_LEN and PAGE_SIZE > 0:
+            # gappy with paged attention stores each "end" instead of each "length"
+            # because that's what FA3 needs.
+            kv_len -= start_kv_idx
 
     if Seq_starts_q is None:
         q_len = N_CTX_Q
