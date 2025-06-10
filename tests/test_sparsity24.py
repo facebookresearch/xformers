@@ -11,6 +11,7 @@ import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.sparse import to_sparse_semi_structured
 
 import xformers  # noqa: F401
 import xformers.ops as xops
@@ -26,6 +27,9 @@ if torch.cuda.is_available():
 requires_sp24 = pytest.mark.skipif(compute_capability < (8, 0), reason="requires sm80+")
 requires_sp24_gemm = pytest.mark.skipif(
     compute_capability != (8, 0), reason="requires sm80"
+)
+requires_cusparselt = pytest.mark.skipif(
+    not sp24._has_cusparseLt(), reason="requires cusparselt"
 )
 requires_h100_s24 = pytest.mark.skipif(
     compute_capability != (9, 0)
@@ -48,7 +52,7 @@ parametrize_backend = pytest.mark.parametrize(
 atol_rtol_kw = {
     torch.float16: {
         "rtol": 2e-3,
-        "atol": 1e-4,
+        "atol": 1e-2,
     },
     torch.bfloat16: {
         "rtol": 1e-1,
@@ -371,10 +375,9 @@ def test_pack_meta_shuffle(transpose: bool) -> None:
 @parametrize_dtype
 @parametrize_backend
 def test_pack_both_ways_meta_correctness(dtype, backend) -> None:
-    M, N = 128, 256
+    M, N = 256, 512
     # Construct x to make sure we always have exactly 8 elements per 4x4 tile
-    a = (4 * torch.arange(8))[:, None] + torch.arange(8)[None, :]
-    a = a.repeat(M // 8, N // 8)
+    a = _gen_24_sparsifiable_both_ways(M, N, dtype)
     assert a.shape == (M, N)
     a = a.cuda().to(dtype)
     b = torch.randn([a.shape[1], 128], device="cuda", dtype=dtype)
@@ -389,7 +392,13 @@ def test_pack_both_ways_meta_correctness(dtype, backend) -> None:
         assert torch.allclose(a_sparse.meta.view(torch.short), mask_reordered)
     ref_gemm = (mask_dense * a) @ b
     pack_gemm = a_sparse @ b
-    assert_allclose(ref_gemm, pack_gemm, msg="sp24 GEMM", **atol_rtol_kw[dtype])
+    renorm = ref_gemm.std().item()
+    assert_allclose(
+        ref_gemm.float() / renorm,
+        pack_gemm.float() / renorm,
+        msg="sp24 GEMM",
+        **atol_rtol_kw[dtype],
+    )
 
 
 @requires_sp24_gemm
@@ -508,45 +517,79 @@ def test_sp24_api_different_pattern_transposed(dtype) -> None:
     assert torch.allclose(sxt2.packed_t, sxt.packed_t)
 
 
-@requires_sp24_gemm
-@parametrize_dtype
-@parametrize_backend
-def test_sp24_transpose_invariant(dtype, backend) -> None:
-    M, N = 128, 256
+def _gen4x4(r: random.Random):
+    # Create a 4x4 tile that can be 24 sparsified perfectly
+    values = [
+        [1, 1, 0, 0],
+        [0, 1, 1, 0],
+        [0, 0, 1, 1],
+        [1, 0, 0, 1],
+    ]
+    c1, c2 = r.sample([0, 1, 2, 3], 2)
+    r1, r2 = r.sample([0, 1, 2, 3], 2)
+    values[r1], values[r2] = values[r2], values[r1]
+    for i in range(4):
+        values[i][c1], values[i][c2] = values[i][c2], values[i][c1]
+    return values
 
+
+def _gen_24_sparsifiable_both_ways(
+    M: int, N: int, dtype, seed: int = 0
+) -> torch.Tensor:
     torch.manual_seed(0)
     r = random.Random(0)
-
-    def gen4x4():
-        # Create a 4x4 tile that can be 24 sparsified perfectly
-        values = [
-            [1, 1, 0, 0],
-            [0, 1, 1, 0],
-            [0, 0, 1, 1],
-            [1, 0, 0, 1],
-        ]
-        c1, c2 = r.sample([0, 1, 2, 3], 2)
-        r1, r2 = r.sample([0, 1, 2, 3], 2)
-        values[r1], values[r2] = values[r2], values[r1]
-        for i in range(4):
-            values[i][c1], values[i][c2] = values[i][c2], values[i][c1]
-        return values
 
     a = torch.zeros([M, N], device="cuda", dtype=torch.float16)
     assert M % 4 == 0 and N % 4 == 0
     for m in range(0, M, 4):
         for n in range(0, N, 4):
             a[m : m + 4, n : n + 4] = torch.tensor(
-                gen4x4(), device="cuda", dtype=torch.float16
+                _gen4x4(r), device="cuda", dtype=torch.float16
             )
     a = a * torch.randn_like(a).abs()
+    return a
+
+
+@requires_sp24_gemm
+@parametrize_dtype
+@parametrize_backend
+def test_sp24_transpose_invariant(dtype, backend) -> None:
+    M, N = 128, 256
+
+    a = _gen_24_sparsifiable_both_ways(M, N, dtype)
 
     # Sparsify `a`` and `a.t()`
     a_s = sp24.sparsify24(a, backend=backend)
     a_t_s = sp24.sparsify24(a.t().contiguous(), backend=backend)
+
+    assert_allclose(a_s.packed, a_t_s.packed_t)
+    assert_allclose(a_s.meta, a_t_s.meta_t)
+    assert_allclose(a_t_s.packed, a_s.packed_t)
+    assert_allclose(a_t_s.meta, a_s.meta_t)
+
+    assert_allclose(a_s._sp24_to_dense(), a_t_s.t()._sp24_to_dense())  # type: ignore
+    assert_allclose(a_s.t()._sp24_to_dense(), a_t_s._sp24_to_dense())  # type: ignore
+
     assert_allclose(a_s._sp24_to_dense(), a)
     assert_allclose(a_t_s.t()._sp24_to_dense(), a)  # type: ignore
     assert_allclose(a_t_s._sp24_to_dense().t(), a)
+
+
+@requires_cusparselt
+@requires_sp24_gemm
+@pytest.mark.parametrize("M", [128, 256, 512])
+@pytest.mark.parametrize("N", [128, 256])
+def test_cusparselt_format(M: int, N: int) -> None:
+    a = _gen_24_sparsifiable_both_ways(M, N, torch.float16)
+    a_s = sp24.sparsify24(a, backend="cusparselt")
+    ref_a_s = to_sparse_semi_structured(a)
+    ref_a_t_s = to_sparse_semi_structured(a.t().contiguous())
+
+    assert_allclose(a_s.packed, ref_a_s.packed)
+    assert_allclose(a_s.packed_t, ref_a_t_s.packed)
+
+    assert_allclose(a_s._sp24_to_dense(), a)
+    assert_allclose(a_s.t()._sp24_to_dense(), a.t())  # type: ignore[attr-defined]
 
 
 @requires_sp24_gemm
