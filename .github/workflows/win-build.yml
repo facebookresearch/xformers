@@ -92,7 +92,6 @@ jobs:
           cd ../../  # So we don't have a folder named `xformers`
           XFORMERS_MORE_DETAILS=1 $PY -m xformers.info
 
-      # Open an SSH session on failure to debug
-      # - name: Setup tmate session
+      # - name: Open an SSH session on failure to debug
       #   if: ${{ failure() }}
       #   uses: mxschmitt/action-tmate@v3

@@ -185,7 +185,7 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
     else:
         return []
 
-    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
+    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "1") != "0":
         return []
 
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
@@ -277,19 +277,19 @@ def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
 def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
     if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
-    if platform.system() != "Linux" or cuda_version < 1203:
+    if cuda_version < 1203:
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
         if torch.cuda.get_device_capability("cuda") != (9, 0):
             return []
-        archs_list = "9.0a"
+        archs_list = "8.0 9.0a"
     nvcc_archs_flags = []
     for arch in archs_list.replace(" ", ";").split(";"):
         match = PARSE_CUDA_ARCH_RE.match(arch)
         assert match is not None, f"Invalid sm version: {arch}"
         num = 10 * int(match.group("major")) + int(match.group("minor"))
-        if num != 90:  # only support Sm90
+        if num not in [80, 90]:  # only support Sm80/Sm90
             continue
         suffix = match.group("suffix")
         nvcc_archs_flags.append(
@@ -339,7 +339,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
         # https://github.com/Dao-AILab/flash-attention/issues/1453
         ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
         # We have `CUDA_MINIMUM_COMPUTE_CAPABILITY` set to 9.0
-        ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
+        # ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
     )
     sources = [
         s
@@ -373,6 +373,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     "-DNDEBUG",  # Important, otherwise performance is severely impacted
                     "-DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED",
                     "-DCUTLASS_ENABLE_GDC_FOR_SM90",
+                    "-D_USE_MATH_DEFINES",  # required for M_LOG2E on windows
                 ]
                 + nvcc_archs_flags
                 + common_extra_compile_args
