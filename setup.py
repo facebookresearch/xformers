@@ -266,6 +266,7 @@ def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "csrc" / "cutlass" / "include",
                 ]
             ],
+            py_limited_api=True,
         )
     ]
 
@@ -349,7 +350,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
 
     return [
         CUDAExtension(
-            name="xformers._C_flashattention3",
+            name="xformers.flash_attn_3._C",
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
                 "cxx": extra_compile_args.get("cxx", []) + common_extra_compile_args,
@@ -384,6 +385,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "hopper",
                 ]
             ],
+            py_limited_api=True,
         )
     ]
 
@@ -454,7 +456,7 @@ def get_extensions():
 
     define_macros = []
 
-    extra_compile_args = {"cxx": ["-O3", "-std=c++17"]}
+    extra_compile_args = {"cxx": ["-O3", "-std=c++17", "-DPy_LIMITED_API=0x03090000"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(
@@ -575,8 +577,6 @@ def get_extensions():
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
-        generator_flag = []
-
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
         if use_rtn_bf16_convert == "1":
@@ -588,32 +588,27 @@ def get_extensions():
         if hip_version >= "6.2.":
             offload_compress_flag = ["--offload-compress"]
 
-        extra_compile_args = {
-            "cxx": ["-O3", "-std=c++17"] + generator_flag,
-            "nvcc": [
-                "-O3",
-                "-std=c++17",
-                *[f"--offload-arch={arch}" for arch in arch_list],
-                *offload_compress_flag,
-                "-U__CUDA_NO_HALF_OPERATORS__",
-                "-U__CUDA_NO_HALF_CONVERSIONS__",
-                "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
-                "-fgpu-flush-denormals-to-zero",
-                "-Werror",
-                "-Wc++11-narrowing",
-                "-Woverloaded-virtual",
-                "-mllvm",
-                "-enable-post-misched=0",
-                "-mllvm",
-                "-amdgpu-early-inline-all=true",
-                "-mllvm",
-                "-amdgpu-function-calls=false",
-                "-mllvm",
-                "-greedy-reverse-local-assignment=1",
-            ]
-            + generator_flag
-            + cc_flag,
-        }
+        extra_compile_args["nvcc"] = [
+            "-O3",
+            "-std=c++17",
+            *[f"--offload-arch={arch}" for arch in arch_list],
+            *offload_compress_flag,
+            "-U__CUDA_NO_HALF_OPERATORS__",
+            "-U__CUDA_NO_HALF_CONVERSIONS__",
+            "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
+            "-fgpu-flush-denormals-to-zero",
+            "-Werror",
+            "-Wc++11-narrowing",
+            "-Woverloaded-virtual",
+            "-mllvm",
+            "-enable-post-misched=0",
+            "-mllvm",
+            "-amdgpu-early-inline-all=true",
+            "-mllvm",
+            "-amdgpu-function-calls=false",
+            "-mllvm",
+            "-greedy-reverse-local-assignment=1",
+        ] + cc_flag
 
     ext_modules.append(
         extension(
@@ -622,6 +617,7 @@ def get_extensions():
             include_dirs=[os.path.abspath(p) for p in include_dirs],
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
+            py_limited_api=True,
         )
     )
 
@@ -749,4 +745,5 @@ if __name__ == "__main__":
             "Operating System :: OS Independent",
         ],
         zip_safe=False,
+        options={"bdist_wheel": {"py_limited_api": "cp39"}},
     )

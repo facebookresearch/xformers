@@ -26,7 +26,7 @@ runs:
 
         CONDA_INSTALL_CMD = "micromamba create python=${{ inputs.python }} zlib pip ninja ccache=4.8 -c conda-forge -q -y"
 
-        conda_env_key = CONDA_INSTALL_CMD + "[cu129]"
+        conda_env_key = CONDA_INSTALL_CMD + "[cu129][v2]"
         for file in sorted(glob.glob("requirement*.txt")):
           conda_env_key += f"\n########## {file}\n"
           conda_env_key += Path(file).read_text()

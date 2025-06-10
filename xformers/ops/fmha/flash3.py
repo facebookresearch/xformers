@@ -5,10 +5,12 @@
 
 
 import importlib.util
+import logging
 import os
-from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple, TypeVar
 
 import torch
+from torch._C import parse_schema
 from torch.utils.flop_counter import (
     _unpack_flash_attention_nested_shapes,
     register_flop_formula,
@@ -55,29 +57,74 @@ from .flash import (
 )
 
 FLASH_VERSION = "0.0.0"
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
-def maybe_contiguous(x):
-    return x.contiguous() if x is not None and x.stride(-1) != 1 else x
+def maybe_contiguous(x: T) -> T:
+    return x.contiguous() if x is not None and x.stride(-1) != 1 else x  # type: ignore[attr-defined]
+
+
+def _flash_attention3_incompatible_reason() -> Optional[str]:
+    if not hasattr(torch.ops.flash_attn_3, "fwd") or not hasattr(
+        torch.ops.flash_attn_3, "bwd"
+    ):
+        return "PyTorch has no `flash_attn_3` - is your Flash-Attention version recent enough?"
+    if not torch.ops.flash_attn_3.fwd.default._schema.is_backward_compatible_with(
+        parse_schema(
+            "flash_attn_3::fwd(Tensor q, Tensor k, Tensor v, Tensor(k_new!)? k_new=None, "
+            "Tensor(v_new!)? v_new=None, Tensor? q_v=None, Tensor(out!)? out=None, "
+            "Tensor? cu_seqlens_q=None, Tensor? cu_seqlens_k=None, "
+            "Tensor? cu_seqlens_k_new=None, Tensor? seqused_q=None, Tensor? seqused_k=None, "
+            "int? max_seqlen_q=None, int? max_seqlen_k=None, Tensor? page_table=None, "
+            "Tensor? kv_batch_idx=None, Tensor? leftpad_k=None, Tensor? rotary_cos=None, Tensor? rotary_sin=None, "
+            "Tensor? seqlens_rotary=None, Tensor? q_descale=None, Tensor? k_descale=None, Tensor? v_descale=None, "
+            "float? softmax_scale=None, bool is_causal=False, int window_size_left=-1, int window_size_right=-1, "
+            "int attention_chunk=0, float softcap=0., bool is_rotary_interleaved=False, "
+            "Tensor? scheduler_metadata=None, int num_splits=0, bool? pack_gqa=None, int sm_margin=0) "
+            "-> (Tensor(out!), Tensor, Tensor, Tensor)"
+        )
+    ):
+        return "flash_attn_3::fwd operator is not compatible"
+    if not torch.ops.flash_attn_3.bwd.default._schema.is_backward_compatible_with(
+        parse_schema(
+            "flash_attn_3::bwd(Tensor dout, Tensor q, Tensor k, Tensor v, Tensor out, Tensor softmax_lse, "
+            "Tensor(dq!)? dq=None, Tensor(dk!)? dk=None, Tensor(dv!)? dv=None, Tensor? cu_seqlens_q=None, "
+            "Tensor? cu_seqlens_k=None, Tensor? seqused_q=None, Tensor? seqused_k=None, int? max_seqlen_q=None, "
+            "int? max_seqlen_k=None, float? softmax_scale=None, bool is_causal=False, int window_size_left=-1, "
+            "int window_size_right=-1, float softcap=0., bool deterministic=False, int sm_margin=0) "
+            "-> (Tensor(dq!), Tensor(dk!), Tensor(dv!), Tensor, Tensor, Tensor, Tensor, Tensor)"
+        )
+    ):
+        return "flash_attn_3::bwd operator is not compatible"
+    return None
 
 
 FLASH3_HAS_PAGED_ATTENTION = False
 FLASH3_HAS_FLOAT8 = False
-if importlib.util.find_spec("..._C_flashattention3", package=__package__):
-    from ... import _C_flashattention3  # type: ignore[attr-defined]
+_C_flashattention3 = None
+if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
     from ..._cpp_lib import _build_metadata
+    from ...flash_attn_3 import _C  # type: ignore[attr-defined] # noqa: F401
 
     if _build_metadata is not None:
         FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+    _C_flashattention3 = torch.ops.flash_attn_3
 
-elif importlib.util.find_spec("flash_attn_interface"):
-    from flash_attn_interface import flashattn_hopper_cuda as _C_flashattention3
+elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
+    "flash_attn_3._C"
+):
+    import flash_attn_3._C  # type: ignore[attr-defined] # noqa: F401
 
-    FLASH3_HAS_PAGED_ATTENTION = True
-    FLASH3_HAS_FLOAT8 = True
-else:
-    # We end up here is arch is not 90a
-    _C_flashattention3 = None
+    incompat_reason = _flash_attention3_incompatible_reason()
+    if incompat_reason is None:
+        _C_flashattention3 = torch.ops.flash_attn_3
+        FLASH_VERSION = "pip_pkg"
+        FLASH3_HAS_PAGED_ATTENTION = True
+        FLASH3_HAS_FLOAT8 = True
+    else:
+        logger.warning(f"Flash-Attention 3 package can't be used: {incompat_reason}")
 
 
 def _heuristic_kvsplit(
@@ -169,34 +216,6 @@ def sdpa_flop_count(
 
 
 if _C_flashattention3 is not None:
-    # Compatibility check for FAv3 APIs
-    EXPECTED_NUM_OF_ARGS = [
-        ("fwd", 34),
-        ("bwd", 22),
-    ]
-
-    import re
-
-    def count_args_from_doc(docstring) -> int:
-        # Use a regular expression to find the argument list inside parentheses
-        match = re.search(r"\((.*?)\)", docstring)
-        if match:
-            # Extract the argument list and split by commas
-            args_list = match.group(1).split(",")
-            # Count the number of arguments
-            return len(args_list)
-        else:
-            raise ValueError("No valid argument list found in the docstring.")
-
-    for name, num_of_args in EXPECTED_NUM_OF_ARGS:
-        num_of_args_from_doc = count_args_from_doc(
-            getattr(_C_flashattention3, name).__doc__
-        )
-        assert num_of_args_from_doc == num_of_args, (
-            f"Found func signature mismatch for {name}. Expected {num_of_args},"
-            f"actual: {num_of_args_from_doc} Please update the version of Flash Attention3."
-        )
-
     # returns: out, q_padded, k_padded, v_padded, out_padded, softmax_lse, p
     @torch.library.custom_op(
         "xformers_flash3::flash_fwd", mutates_args=(), device_types=["cuda"]
@@ -253,6 +272,7 @@ if _C_flashattention3 is not None:
             if query.shape[1] <= 64 and query.shape[2] != key.shape[2]:
                 pack_gqa = True
 
+        assert _C_flashattention3 is not None
         out, softmax_lse, *rest = _C_flashattention3.fwd(
             query,
             key,
@@ -437,6 +457,7 @@ if _C_flashattention3 is not None:
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
 
+        assert _C_flashattention3 is not None
         dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
             dout,
             query,
@@ -575,7 +596,7 @@ class FwOp(AttentionFwOpBase):
 
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
-    SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_DIFFERENT_VALUE_EMBED = True
     SUPPORTS_BMGHK = True
     SUPPORTS_PARTIAL = True
     UNPADDED_LSE = True
