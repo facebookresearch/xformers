@@ -238,13 +238,16 @@
     <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
     <span class="n">LocalAttentionFromBottomRightMask</span><span class="p">,</span>
     <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
     <span class="n">LowerTriangularFromBottomRightMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
+    <span class="n">PagedBlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
     <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+    <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span>
     <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -603,6 +606,7 @@
         <span class="p">(</span>
             <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
+            <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span>
             <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">):</span>
@@ -650,18 +654,13 @@
         <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_q</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
         <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_q</span><span class="p">])</span>
         <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="n">batch</span> <span class="o">*</span> <span class="n">seqlen_kv</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">head_dim_v</span><span class="p">])</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">):</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+            <span class="n">attn_bias</span><span class="p">,</span>
+            <span class="p">(</span><span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">),</span>
+        <span class="p">):</span>
             <span class="n">num_pages</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">//</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">page_size</span>
             <span class="n">key</span> <span class="o">=</span> <span class="n">key</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">num_pages</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="o">*</span><span class="n">key</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
             <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">view</span><span class="p">(</span><span class="n">num_pages</span><span class="p">,</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">page_size</span><span class="p">,</span> <span class="o">*</span><span class="n">value</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">:])</span>
-
-    <span class="k">if</span> <span class="n">use_kvsplit</span><span class="p">:</span>
-        <span class="c1"># For kvsplit case, we want</span>
-        <span class="c1"># q: [batch, seqlen, num_heads, head_dim]</span>
-        <span class="c1"># k,v are already [batch x max_kv_len, num_heads, head_dim]</span>
-        <span class="k">assert</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">key</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span> <span class="ow">and</span> <span class="n">value</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">3</span>
-        <span class="n">batch</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">attn_bias</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="o">.</span><span class="n">seqstart_py</span><span class="p">)</span> <span class="o">-</span> <span class="mi">1</span>  <span class="c1"># type: ignore</span>
-        <span class="n">query</span> <span class="o">=</span> <span class="n">query</span><span class="o">.</span><span class="n">view</span><span class="p">([</span><span class="n">batch</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">query</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">]])</span>
 
     <span class="n">new_inp</span> <span class="o">=</span> <span class="n">Inputs</span><span class="p">(</span>
         <span class="n">query</span><span class="o">=</span><span class="n">query</span><span class="p">,</span>
@@ -690,6 +689,7 @@
             <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+            <span class="n">PagedBlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
             <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
         <span class="p">),</span>
     <span class="p">)</span>
@@ -698,6 +698,11 @@
 <span class="k">def</span><span class="w"> </span><span class="nf">_is_paged_attention_supported</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
     <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span><span class="n">attn_bias_type</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">):</span>
         <span class="k">return</span> <span class="ow">not</span> <span class="n">_USE_PT_FLASH_ATTN</span>
+    <span class="k">if</span> <span class="nb">issubclass</span><span class="p">(</span>
+        <span class="n">attn_bias_type</span><span class="p">,</span>
+        <span class="p">(</span><span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">,</span> <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">mtia</span><span class="o">.</span><span class="n">is_available</span><span class="p">()</span>
 
     <span class="k">return</span> <span class="kc">True</span>
 
@@ -717,7 +722,13 @@
         <span class="p">),</span>
     <span class="p">):</span>
         <span class="n">win_left</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">_window_size</span> <span class="o">-</span> <span class="mi">1</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">LocalAttentionFromBottomRightMask</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span>
+        <span class="n">attn_bias</span><span class="p">,</span>
+        <span class="p">(</span>
+            <span class="n">BlockDiagonalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
+            <span class="n">LocalAttentionFromBottomRightMask</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">):</span>
         <span class="n">win_left</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">window_left</span>
         <span class="n">win_right</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">window_right</span>
     <span class="k">return</span> <span class="p">(</span><span class="n">win_left</span><span class="p">,</span> <span class="n">win_right</span><span class="p">)</span>
