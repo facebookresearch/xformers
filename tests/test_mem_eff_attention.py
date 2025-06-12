@@ -3458,6 +3458,10 @@ def test_triton_splitk_rowwise_fp8(
 
     # Paged K/V cache
 
+    paged_bias = fmha.attn_bias.PagedBlockDiagonalCausalWithOffsetPaddedKeysMask
+    if paged_bias not in fmha.triton_splitk.FwOp.SUPPORTED_ATTN_BIAS_TYPES:
+        return
+
     (
         attn_output_fp8_paged,
         context_fp8_paged,
