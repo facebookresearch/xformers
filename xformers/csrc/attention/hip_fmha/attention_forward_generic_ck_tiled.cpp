@@ -48,7 +48,7 @@ namespace {
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
@@ -473,7 +473,7 @@ efficient_attention_forward_ck(
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck_meta(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
