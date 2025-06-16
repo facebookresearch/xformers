@@ -24,6 +24,9 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MaxSeqlenQ>
 struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
+template<typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP, CK_TILE_FMHA_FWD_FAST_EXP2>;
+
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -42,6 +45,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
           ODataType,
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
           true, // kIsGroupMode
+          AttentionVariant<FmhaFwdSplitKVTraits>,
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
@@ -91,6 +95,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   kPadSeqLenK,
                   kPadHeadDimQ,
                   kPadHeadDimV,
+                  false, // kLogitsSoftCap 
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   true, // kStoreLSE
@@ -127,6 +132,7 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
                   kPadSeqLenK,
                   kPadHeadDimQ,
                   kPadHeadDimV,
+                  false, // kLogitsSoftCap
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   false, // kStoreLSE

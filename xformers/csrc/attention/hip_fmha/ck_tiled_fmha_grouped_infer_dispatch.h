@@ -34,6 +34,9 @@ struct grouped_infer_mask_bias_dropout_dispatch {
       (kUseWholeKPrefetchPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
                                                  : FmhaShape::kSubQKHeaddim;
 
+template<typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP, CK_TILE_FMHA_FWD_FAST_EXP2>;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -49,6 +52,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
       FmhaShape,
       true, // kIsGroupMode
+      AttentionVariant<FmhaTraits>,
       FmhaMask,
       FmhaTraits>;
 
@@ -82,6 +86,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
                 kPadSeqLenK,
                 kPadHeadDimQ,
                 kPadHeadDimV,
+                false, // kHasLogitsSoftCap
                 kBiasEnum,
                 false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
