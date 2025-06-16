@@ -130,6 +130,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
             kPadSeqLenK,
             true, // kPadHeadDimQ,
             true, // kPadHeadDimV,
+            false, // kHasLogitsSoftCap 
             kBiasEnum,
             false, // kHasBiasGrad place-holder
             false, // kStoreLSE

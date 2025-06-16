@@ -79,6 +79,7 @@ struct batched_forward_mask_bias_dropout_dispatch {
               kPadSeqLenK,
               kPadHeadDim, // kPadHeadDimQ
               kPadHeadDim, // kPadHeadDimV
+              false, // kHasLogitsSoftCap 
               kBiasEnum,
               false, // kHasBiasGrad place-holder
               true, // kStoreLSE
