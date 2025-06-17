@@ -235,6 +235,7 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
             nullptr, // cache_batch_idx, not used
             param.scale,
             1.0f, // scale_p
+            0.0f, // logits_soft_cap, not used
             param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[1],
@@ -284,6 +285,7 @@ struct batched_forward_splitkv_mask_bias_dropout_dispatch {
             nullptr, // cache_batch_idx, not used
             param.scale,
             1.0f, // scale_p
+            0.0f, // logits_soft_cap
             param.q_strides[1], // q, k, v, bias, out tensor seq-dim stride
             param.k_strides[1],
             param.v_strides[1],

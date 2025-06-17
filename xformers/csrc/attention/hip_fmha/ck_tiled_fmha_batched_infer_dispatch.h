@@ -193,6 +193,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
           param.scale,
           1.0f, // scale_p
           1.0f, // scale_o
+          0.0f, // logits_soft_cap
           param.q_strides[1], // q, k, v, bias, randval, out tensor seq-dim
                               // stride
           param.k_strides[1],

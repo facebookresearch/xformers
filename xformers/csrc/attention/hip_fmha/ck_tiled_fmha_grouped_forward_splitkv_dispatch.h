@@ -221,6 +221,7 @@ struct grouped_forward_splitkv_mask_bias_dropout_dispatch {
             false, // is_gappy
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[0],
@@ -265,6 +266,7 @@ struct grouped_forward_splitkv_mask_bias_dropout_dispatch {
             false, // is_gappy
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim stride
             param.k_strides[0],
             param.v_strides[0],

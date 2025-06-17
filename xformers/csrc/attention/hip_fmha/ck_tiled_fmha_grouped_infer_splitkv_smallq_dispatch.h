@@ -337,6 +337,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[0],
@@ -383,6 +384,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim
                                 // stride
             param.k_strides[0],

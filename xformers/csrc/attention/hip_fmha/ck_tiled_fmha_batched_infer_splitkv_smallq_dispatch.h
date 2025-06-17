@@ -339,6 +339,7 @@ template<typename FmhaTraits>
             nullptr, // cache_batch_idx, not used
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[1],
