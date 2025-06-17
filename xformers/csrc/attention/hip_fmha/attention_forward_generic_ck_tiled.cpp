@@ -128,7 +128,7 @@ efficient_attention_forward_ck(
 
   auto opts = query.options();
 
-  at::Tensor logsumexp;
+  std::optional<at::Tensor> logsumexp = std::nullopt;
 
   at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
 
@@ -503,7 +503,7 @@ efficient_attention_forward_ck_meta(
   int64_t K = query.size(-1);
   int64_t Kv = value.size(-1);
   auto opts = query.options();
-  at::Tensor logsumexp;
+  std::optional<at::Tensor> logsumexp = std::nullopt;
   at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
   int64_t philox_seed = 0;
   int64_t philox_offset = 0;
