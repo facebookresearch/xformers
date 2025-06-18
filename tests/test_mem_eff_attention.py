@@ -21,10 +21,9 @@ except ImportError:
     # Failed to load MTIA libraries, so just keep going without MTIA devices
     pass
 
+import xformers.ops
 from scipy.stats import binomtest
 from torch.utils.checkpoint import checkpoint
-
-import xformers.ops
 from xformers.attn_bias_utils import create_attn_bias, pack_kv_cache
 from xformers.ops import fmha
 from xformers.ops.fmha import ALL_BW_OPS, ALL_FW_OPS
@@ -2828,7 +2827,7 @@ def test_merge_attentions_nobias(
     ],
 )
 def test_merge_attentions_nobias_bwd(
-    op: Union[Type[AttentionFwOpBase], fmha.AttentionOp]
+    op: Union[Type[AttentionFwOpBase], fmha.AttentionOp],
 ):
     B, M, Mq, H, K = 13, 5, 5, 4, 128
     dtype = torch.bfloat16

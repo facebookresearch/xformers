@@ -51,11 +51,10 @@ In your editor, install the [editorconfig](https://editorconfig.org/) extension
 which should ensure that you are following the same standards as us.
 
 Two options to make sure that the code is formatted and linted properly:
-* either you run black, mypy and isort before opening up your PR.
+* either you run mypy and ufmt before opening up your PR.
 
 ```bash
-black .
-isort . --profile black
+ufmt format
 flake8 --config .flake8
 mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude build/ --exclude stubs/ .
 ```

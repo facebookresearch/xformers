@@ -11,9 +11,9 @@ from xformers.ops.common import get_operator, register_operator
 from xformers.ops.fmha.attn_bias import BlockDiagonalCausalWithOffsetPaddedKeysMask
 from xformers.ops.fmha.common import (
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Inputs,
-    check_lastdim_alignment_stride1,
 )
 
 

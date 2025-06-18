@@ -9,6 +9,7 @@ from typing import (
     Generic,
     Iterable,
     Optional,
+    overload,
     Sized,
     SupportsAbs,
     SupportsBytes,
@@ -19,7 +20,6 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    overload,
 )
 
 from pyre_extensions import TypeVarTuple, Unpack

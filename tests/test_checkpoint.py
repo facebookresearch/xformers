@@ -9,9 +9,9 @@ from copy import deepcopy
 
 import pytest
 import torch
-from torch import nn
 
 import xformers.ops
+from torch import nn
 from xformers.checkpoint import (
     _optimize_runtime_with_given_memory,
     checkpoint,

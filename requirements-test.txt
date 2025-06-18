@@ -3,10 +3,12 @@
 
 
 # Tools for static checking.
-black == 22.3.0
+black==24.4.2
+stdlibs==2024.1.28
+ufmt==2.8.0
+usort==1.0.8.post1
 flake8 == 6.1.0
 flake8-copyright
-isort == 5.7.0
 mypy == 1.10.0
 pyre-check == 0.9.16
 pyre-extensions == 0.0.29

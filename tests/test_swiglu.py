@@ -7,7 +7,7 @@ import copy
 import functools
 import random
 from contextlib import nullcontext
-from typing import ContextManager, Optional, Sequence, Union, cast
+from typing import cast, ContextManager, Optional, Sequence, Union
 
 import pytest
 import torch

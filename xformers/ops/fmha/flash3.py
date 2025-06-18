@@ -18,7 +18,6 @@ from torch.utils.flop_counter import (
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
-    VARLEN_BIASES,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
@@ -38,15 +37,16 @@ from .attn_bias import (
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
     ScaledTensor,
-    check_lastdim_alignment_stride1,
 )
 from .flash import (
     _check_needs_no_topleft,
@@ -106,7 +106,7 @@ FLASH3_HAS_FLOAT8 = False
 _C_flashattention3 = None
 if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
     from ..._cpp_lib import _build_metadata
-    from ...flash_attn_3 import _C  # type: ignore[attr-defined] # noqa: F401
+    from ...flash_attn_3 import _C  # type: ignore[attr-defined]  # noqa: F401
 
     if _build_metadata is not None:
         FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
@@ -115,7 +115,7 @@ if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
 elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
     "flash_attn_3._C"
 ):
-    import flash_attn_3._C  # type: ignore[attr-defined] # noqa: F401
+    import flash_attn_3._C  # type: ignore[attr-defined]  # noqa: F401
 
     incompat_reason = _flash_attention3_incompatible_reason()
     if incompat_reason is None:

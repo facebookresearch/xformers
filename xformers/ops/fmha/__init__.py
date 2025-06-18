@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
+from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
@@ -18,20 +18,20 @@ from . import (
     triton_splitk,
 )
 from .attn_bias import (
-    VARLEN_BIASES,
     AttentionBias,
     BlockDiagonalMask,
     LowerTriangularMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
     AttentionOp,
     AttentionOpBase,
+    bmk2bmhk,
     Context,
     Gradients,
     Inputs,
-    bmk2bmhk,
 )
 from .dispatch import (
     _dispatch_bw,

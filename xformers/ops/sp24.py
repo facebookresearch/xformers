@@ -7,7 +7,7 @@ import contextlib
 import os
 import time
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, cast
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, TypeVar
 
 import torch
 

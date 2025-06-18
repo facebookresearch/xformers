@@ -186,7 +186,10 @@ def sequence_parallel_leading_matmul_setup_context(ctx, inputs, output):
 
 def sequence_parallel_leading_matmul_bwd_bridge(ctx, grad_gathered_outputs):
     scattered_input, *weights = ctx.saved_tensors
-    (grad_scattered_input, grad_weights,) = sequence_parallel_leading_matmul_bwd(
+    (
+        grad_scattered_input,
+        grad_weights,
+    ) = sequence_parallel_leading_matmul_bwd(
         scattered_input,
         list(weights),
         list(grad_gathered_outputs),
@@ -329,7 +332,10 @@ def sequence_parallel_trailing_matmul_setup_context(ctx, inputs, output):
 
 def sequence_parallel_trailing_matmul_bwd_bridge(ctx, grad_scattered_output):
     gathered_input, weight = ctx.saved_tensors
-    (grad_gathered_input, grad_weight,) = sequence_parallel_trailing_matmul_bwd(
+    (
+        grad_gathered_input,
+        grad_weight,
+    ) = sequence_parallel_trailing_matmul_bwd(
         gathered_input,
         weight,
         grad_scattered_output,

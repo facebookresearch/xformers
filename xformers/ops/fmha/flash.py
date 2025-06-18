@@ -13,7 +13,6 @@ import torch
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
-    VARLEN_BIASES,
     AttentionBias,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
@@ -34,14 +33,15 @@ from .attn_bias import (
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
-    check_lastdim_alignment_stride1,
 )
 from .torch_attention_compat import is_pt_flash_old
 
@@ -493,7 +493,7 @@ def _is_paged_attention_supported(attn_bias_type) -> bool:
 
 
 def _window_size(
-    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Tuple[int, int]:
     win_left = -1
     win_right = -1

@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.append("./datasets/long-range-arena")
 sys.path.append("./datasets/long-range-arena/lra_benchmarks/text_classification/")
-import input_pipeline  # type: ignore # noqa
+import input_pipeline  # type: ignore  # noqa
 
 logging.getLogger().setLevel(logging.INFO)
 

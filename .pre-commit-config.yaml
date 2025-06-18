@@ -16,24 +16,19 @@ repos:
         args: ['--maxkb=500']
     -   id: end-of-file-fixer
 
--   repo: https://github.com/ambv/black
-    rev: 22.3.0
-    hooks:
-    - id: black
-      language_version: python3.11
+- repo: https://github.com/omnilib/ufmt
+  rev: v2.8.0
+  hooks:
+    - id: ufmt
+      additional_dependencies:
+        - black == 24.4.2
+        - usort == 1.0.8.post1
 
 -   repo: https://github.com/pycqa/flake8
     rev: 6.1.0
     hooks:
     -   id: flake8
-
--   repo: https://github.com/pycqa/isort
-    rev: 5.12.0
-    hooks:
-    -   id: isort
-        exclude: README.md
-        additional_dependencies: [toml]
-        args: ["--profile", "black"]
+        additional_dependencies: [flake8-copyright]
 
 -   repo: https://github.com/pre-commit/mirrors-mypy
     rev: 'v1.10.0'

@@ -9,11 +9,11 @@ import torch
 from torch.utils import benchmark
 
 from xformers.components.attention.core import (
-    SparseCS,
     _create_random_sparsity,
     _matmul_with_mask,
     _softmax,
     bmm,
+    SparseCS,
 )
 
 MIN_RUN_TIME = 1

@@ -11,7 +11,7 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.vararg_kernel import VAR_ARGS_ARRAY, unroll_varargs
+from xformers.triton.vararg_kernel import unroll_varargs, VAR_ARGS_ARRAY
 
 AUTOTUNER_KEY = [
     "Z",

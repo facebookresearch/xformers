@@ -13,12 +13,12 @@ from typing import (
     List,
     NamedTuple,
     Optional,
+    overload,
     Sequence,
     Tuple,
     Type,
     TypeVar,
     Union,
-    overload,
 )
 
 from numpy import ndarray
@@ -33,8 +33,7 @@ from pyre_extensions import (
 )
 from typing_extensions import Literal as L
 
-from . import nn as nn
-from . import sparse as sparse
+from . import nn as nn, sparse as sparse
 from .autograd import *
 from .random import initial_seed, set_rng_state
 
@@ -526,9 +525,7 @@ class Tensor(Generic[DType, Unpack[Ts]]):
     # Pyre in other method signatures that use `torch.bool`. Not sure why.
     bool: Callable[[], Tensor[bool, Unpack[Ts]]] = ...
     @overload
-    def chunk(
-        self: Tensor[DType, Unpack[Rs], N], chunks: L[2], dim: L[-1]
-    ) -> Tuple[
+    def chunk(self: Tensor[DType, Unpack[Rs], N], chunks: L[2], dim: L[-1]) -> Tuple[
         Tensor[DType, Unpack[Rs], Divide[N, L[2]]],
         Tensor[DType, Unpack[Rs], Divide[N, L[2]]],
     ]: ...
@@ -749,7 +746,7 @@ class Tensor(Generic[DType, Unpack[Ts]]):
         self: Tensor[DType, B, N, M], mat2: Tensor[DType, B, M, P]
     ) -> Tensor[DType, B, N, P]: ...
     def diag_embed(
-        self: Tensor[DType, Unpack[Rs], N]
+        self: Tensor[DType, Unpack[Rs], N],
     ) -> Tensor[DType, Unpack[Rs], N, N]: ...
     @overload
     def matmul(
@@ -1457,16 +1454,12 @@ def bmm(
     input: Tensor[DType, B, N, M], mat2: Tensor[DType, B, M, P]
 ) -> Tensor[DType, B, N, P]: ...
 @overload
-def chunk(
-    input: Tensor[DType, Unpack[Ts], N], chunks: L[2], dim: L[-1]
-) -> Tuple[
+def chunk(input: Tensor[DType, Unpack[Ts], N], chunks: L[2], dim: L[-1]) -> Tuple[
     Tensor[DType, Unpack[Ts], Divide[N, L[2]]],
     Tensor[DType, Unpack[Ts], Divide[N, L[2]]],
 ]: ...
 @overload
-def chunk(
-    input: Tensor[DType, N, Unpack[Ts]], chunks: L[2], dim: L[0] = ...
-) -> Tuple[
+def chunk(input: Tensor[DType, N, Unpack[Ts]], chunks: L[2], dim: L[0] = ...) -> Tuple[
     Tensor[DType, Divide[N, L[2]], Unpack[Ts]],
     Tensor[DType, Divide[N, L[2]], Unpack[Ts]],
 ]: ...

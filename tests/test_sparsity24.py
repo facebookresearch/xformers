@@ -5,17 +5,17 @@
 
 import functools
 import random
-from typing import Tuple, cast
+from typing import cast, Tuple
 
 import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.sparse import to_sparse_semi_structured
 
 import xformers  # noqa: F401
 import xformers.ops as xops
 import xformers.ops.sp24 as sp24
+from torch.sparse import to_sparse_semi_structured
 
 from .utils import assert_allclose
 
@@ -803,7 +803,11 @@ class LinearW24(torch.nn.Linear):
             gradient="24dense",
             backend="cusparselt",
         )
-        return F.linear(input, w_sparse, self.bias,)[
+        return F.linear(
+            input,
+            w_sparse,
+            self.bias,
+        )[
             :dim0
         ].unflatten(dim=0, sizes=input_shape[:-1])
 

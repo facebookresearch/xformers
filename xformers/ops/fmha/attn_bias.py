@@ -22,6 +22,7 @@ import math
 from dataclasses import dataclass
 from typing import (
     Any,
+    cast,
     ClassVar,
     Iterable,
     List,
@@ -30,7 +31,6 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast,
 )
 
 import torch
@@ -874,9 +874,11 @@ class BlockDiagonalMask(AttentionBias):
             block_diag,
             torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_q], dim=1),
             torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_k], dim=1),
-            torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_v], dim=1)
-            if tensors_v is not None
-            else None,
+            (
+                torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_v], dim=1)
+                if tensors_v is not None
+                else None
+            ),
         )
 
     def split_queries(self, tensor: torch.Tensor) -> Sequence[torch.Tensor]:
@@ -1348,9 +1350,9 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
     block_tables: torch.Tensor
     page_size: int
 
-    _UNPAGED_TYPE: ClassVar[
-        Type[BlockDiagonalPaddedKeysMask]
-    ] = BlockDiagonalPaddedKeysMask
+    _UNPAGED_TYPE: ClassVar[Type[BlockDiagonalPaddedKeysMask]] = (
+        BlockDiagonalPaddedKeysMask
+    )
 
     def to(self, device: torch.device) -> "PagedBlockDiagonalPaddedKeysMask":
         assert (
@@ -1397,9 +1399,9 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
                 k_logical_end = k_logical_start + self.page_size
                 k_physical_start = physical_page_idx * self.page_size
                 k_physical_end = k_physical_start + self.page_size
-                mask_paged[
-                    ..., q_start:q_end, k_physical_start:k_physical_end
-                ] = mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                mask_paged[..., q_start:q_end, k_physical_start:k_physical_end] = (
+                    mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                )
         return mask_paged
 
     @classmethod
@@ -1654,9 +1656,9 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
     block_tables: torch.Tensor
     page_size: int
 
-    _UNPAGED_TYPE: ClassVar[
-        Type[BlockDiagonalGappyKeysMask]
-    ] = BlockDiagonalGappyKeysMask
+    _UNPAGED_TYPE: ClassVar[Type[BlockDiagonalGappyKeysMask]] = (
+        BlockDiagonalGappyKeysMask
+    )
 
     def to(self, device: torch.device) -> "PagedBlockDiagonalGappyKeysMask":
         assert (
@@ -1714,9 +1716,9 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
                 k_logical_end = k_logical_start + self.page_size
                 k_physical_start = physical_page_idx * self.page_size
                 k_physical_end = k_physical_start + self.page_size
-                mask_paged[
-                    ..., q_start:q_end, k_physical_start:k_physical_end
-                ] = mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                mask_paged[..., q_start:q_end, k_physical_start:k_physical_end] = (
+                    mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                )
         return mask_paged
 
     @classmethod

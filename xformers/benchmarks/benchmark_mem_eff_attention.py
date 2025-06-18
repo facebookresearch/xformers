@@ -9,10 +9,10 @@ import random
 from functools import partial
 
 import torch
-from torch.utils import benchmark
 
 import xformers.ops
 import xformers.ops.fmha as fmha
+from torch.utils import benchmark
 from xformers.attn_bias_utils import create_attn_bias, ref_attention
 from xformers.benchmarks.utils import benchmark_main_helper, create_argparser
 

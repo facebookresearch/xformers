@@ -17,10 +17,10 @@ from xformers.ops.fmha.attn_bias import (
 )
 from xformers.ops.fmha.common import AttentionFwOpBase
 from xformers.ops.tree_attention import (
-    TreeAttnMetadata,
     construct_full_tree_choices,
     construct_tree_choices,
     tree_attention,
+    TreeAttnMetadata,
     use_triton_splitk_for_prefix,
 )
 from xformers.utils import do_bench_cudagraph

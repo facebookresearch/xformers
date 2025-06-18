@@ -7,8 +7,8 @@ import functools
 import sys
 from dataclasses import dataclass
 from typing import (
-    TYPE_CHECKING,
     Any,
+    cast,
     Dict,
     Iterable,
     List,
@@ -16,8 +16,8 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TYPE_CHECKING,
     Union,
-    cast,
 )
 
 import torch
@@ -34,7 +34,7 @@ from .attn_bias import (
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
 )
-from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
+from .common import AttentionFwOpBase, check_lastdim_alignment_stride1, Context, Inputs
 
 
 def _strides(x: Optional[torch.Tensor], *stride_names: str):
@@ -573,17 +573,17 @@ class FwOp(AttentionFwOpBase):
                 lse_splitk = torch.full(
                     [Bqq, G, H, split_k, Mqq],
                     -float("inf"),
-                    dtype=torch.float64
-                    if IS_SPLITK or output_f64_lse
-                    else torch.float32,
+                    dtype=(
+                        torch.float64 if IS_SPLITK or output_f64_lse else torch.float32
+                    ),
                     device=q.device,
                 )
             else:
                 lse_splitk = torch.empty(
                     [Bqq, G, H, split_k, Mqq],
-                    dtype=torch.float64
-                    if IS_SPLITK or output_f64_lse
-                    else torch.float32,
+                    dtype=(
+                        torch.float64 if IS_SPLITK or output_f64_lse else torch.float32
+                    ),
                     device=q.device,
                 )
 

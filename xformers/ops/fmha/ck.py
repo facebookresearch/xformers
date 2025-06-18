@@ -34,10 +34,10 @@ from .attn_bias import (
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
-    check_lastdim_alignment_stride1,
 )
 
 
@@ -87,7 +87,7 @@ def _get_seqlen_info(
 
 
 def _get_tensor_bias(
-    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
     if isinstance(attn_bias, AttentionBiasSubTensor):
         if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
