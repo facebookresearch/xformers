@@ -1013,11 +1013,15 @@
         <span class="n">Kq</span><span class="p">,</span>
         <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
         <span class="n">dtype</span><span class="o">=</span><span class="n">output_dtype</span> <span class="ow">or</span> <span class="n">attn_dtype</span><span class="p">,</span>
-        <span class="n">requires_grad</span><span class="o">=</span><span class="n">requires_grad</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="k">if</span> <span class="n">write_lse</span><span class="p">:</span>
         <span class="n">lse_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-            <span class="n">B</span><span class="p">,</span> <span class="n">G</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">lse_dtype</span><span class="p">,</span> <span class="n">requires_grad</span><span class="o">=</span><span class="n">requires_grad</span>
+            <span class="n">B</span><span class="p">,</span>
+            <span class="n">G</span><span class="p">,</span>
+            <span class="n">H</span><span class="p">,</span>
+            <span class="n">M</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">lse_dtype</span><span class="p">,</span>
         <span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="n">lse_out</span> <span class="o">=</span> <span class="kc">None</span>
