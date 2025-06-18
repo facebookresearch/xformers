@@ -216,7 +216,7 @@
 <span class="c1"># This source code is licensed under the BSD license found in the</span>
 <span class="c1"># LICENSE file in the root directory of this source tree.</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span><span class="p">,</span> <span class="n">cast</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span><span class="p">,</span> <span class="n">cast</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">,</span> <span class="n">Tuple</span><span class="p">,</span> <span class="n">Type</span><span class="p">,</span> <span class="n">Union</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
@@ -231,20 +231,20 @@
     <span class="n">triton_splitk</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">VARLEN_BIASES</span><span class="p">,</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
     <span class="n">LowerTriangularMask</span><span class="p">,</span>
+    <span class="n">VARLEN_BIASES</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.common</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBwOpBase</span><span class="p">,</span>
     <span class="n">AttentionFwOpBase</span><span class="p">,</span>
     <span class="n">AttentionOp</span><span class="p">,</span>
     <span class="n">AttentionOpBase</span><span class="p">,</span>
+    <span class="n">bmk2bmhk</span><span class="p">,</span>
     <span class="n">Context</span><span class="p">,</span>
     <span class="n">Gradients</span><span class="p">,</span>
     <span class="n">Inputs</span><span class="p">,</span>
-    <span class="n">bmk2bmhk</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.dispatch</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">_dispatch_bw</span><span class="p">,</span>

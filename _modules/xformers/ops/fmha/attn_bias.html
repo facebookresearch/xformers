@@ -237,6 +237,7 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">Any</span><span class="p">,</span>
+    <span class="n">cast</span><span class="p">,</span>
     <span class="n">ClassVar</span><span class="p">,</span>
     <span class="n">Iterable</span><span class="p">,</span>
     <span class="n">List</span><span class="p">,</span>
@@ -245,7 +246,6 @@
     <span class="n">Tuple</span><span class="p">,</span>
     <span class="n">Type</span><span class="p">,</span>
     <span class="n">Union</span><span class="p">,</span>
-    <span class="n">cast</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
@@ -1089,9 +1089,11 @@
             <span class="n">block_diag</span><span class="p">,</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tensors_q</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
             <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tensors_k</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">),</span>
-            <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tensors_v</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-            <span class="k">if</span> <span class="n">tensors_v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+            <span class="p">(</span>
+                <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">x</span><span class="o">.</span><span class="n">reshape</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">*</span><span class="n">x</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">2</span><span class="p">:]])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tensors_v</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">tensors_v</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+                <span class="k">else</span> <span class="kc">None</span>
+            <span class="p">),</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">split_queries</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tensor</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
@@ -1563,9 +1565,9 @@
     <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span>
 
-    <span class="n">_UNPAGED_TYPE</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span>
-        <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">]</span>
-    <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalPaddedKeysMask</span>
+    <span class="n">_UNPAGED_TYPE</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">BlockDiagonalPaddedKeysMask</span>
+    <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalPaddedKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
@@ -1612,9 +1614,9 @@
                 <span class="n">k_logical_end</span> <span class="o">=</span> <span class="n">k_logical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
                 <span class="n">k_physical_start</span> <span class="o">=</span> <span class="n">physical_page_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
                 <span class="n">k_physical_end</span> <span class="o">=</span> <span class="n">k_physical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-                <span class="n">mask_paged</span><span class="p">[</span>
-                    <span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_physical_start</span><span class="p">:</span><span class="n">k_physical_end</span>
-                <span class="p">]</span> <span class="o">=</span> <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
+                <span class="n">mask_paged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_physical_start</span><span class="p">:</span><span class="n">k_physical_end</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
+                <span class="p">)</span>
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
 <div class="viewcode-block" id="PagedBlockDiagonalPaddedKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
@@ -1869,9 +1871,9 @@
     <span class="n">block_tables</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
     <span class="n">page_size</span><span class="p">:</span> <span class="nb">int</span>
 
-    <span class="n">_UNPAGED_TYPE</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span>
-        <span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">]</span>
-    <span class="p">]</span> <span class="o">=</span> <span class="n">BlockDiagonalGappyKeysMask</span>
+    <span class="n">_UNPAGED_TYPE</span><span class="p">:</span> <span class="n">ClassVar</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">BlockDiagonalGappyKeysMask</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">BlockDiagonalGappyKeysMask</span>
+    <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;PagedBlockDiagonalGappyKeysMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="p">(</span>
@@ -1929,9 +1931,9 @@
                 <span class="n">k_logical_end</span> <span class="o">=</span> <span class="n">k_logical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
                 <span class="n">k_physical_start</span> <span class="o">=</span> <span class="n">physical_page_idx</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
                 <span class="n">k_physical_end</span> <span class="o">=</span> <span class="n">k_physical_start</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">page_size</span>
-                <span class="n">mask_paged</span><span class="p">[</span>
-                    <span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_physical_start</span><span class="p">:</span><span class="n">k_physical_end</span>
-                <span class="p">]</span> <span class="o">=</span> <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
+                <span class="n">mask_paged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_physical_start</span><span class="p">:</span><span class="n">k_physical_end</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
+                    <span class="n">mask_nonpaged</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">q_start</span><span class="p">:</span><span class="n">q_end</span><span class="p">,</span> <span class="n">k_logical_start</span><span class="p">:</span><span class="n">k_logical_end</span><span class="p">]</span>
+                <span class="p">)</span>
         <span class="k">return</span> <span class="n">mask_paged</span></div>
 
 <div class="viewcode-block" id="PagedBlockDiagonalGappyKeysMask.from_seqlens"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.PagedBlockDiagonalGappyKeysMask.from_seqlens">[docs]</a>    <span class="nd">@classmethod</span>
