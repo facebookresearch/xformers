@@ -73,7 +73,7 @@ elif importlib.util.find_spec("flash_attn"):
 
     FLASH_VERSION = flash_attn.__version__
     FLASH_VER_MIN = (2, 7, 1)
-    FLASH_VER_LAST = (2, 7, 4)  # last supported, inclusive
+    FLASH_VER_LAST = (2, 8, 0)  # last supported, inclusive
     flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
     if (
         flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
