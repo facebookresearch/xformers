@@ -116,7 +116,8 @@ class _fMHA(torch.autograd.Function):
                 )
             op_bw = op_ctx.op_bw
         if (
-            op_bw is not None
+            op_fw is not None
+            and op_bw is not None
             and isinstance(inp.attn_bias, VARLEN_BIASES)
             and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
             and op_bw.VARLEN_LSE_PACKED != op_fw.VARLEN_LSE_PACKED
