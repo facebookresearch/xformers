@@ -800,11 +800,15 @@ def merge_attentions(
         Kq,
         device=device,
         dtype=output_dtype or attn_dtype,
-        requires_grad=requires_grad,
     )
     if write_lse:
         lse_out = torch.empty(
-            B, G, H, M, device=device, dtype=lse_dtype, requires_grad=requires_grad
+            B,
+            G,
+            H,
+            M,
+            device=device,
+            dtype=lse_dtype,
         )
     else:
         lse_out = None

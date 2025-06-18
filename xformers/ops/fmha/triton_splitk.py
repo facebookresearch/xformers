@@ -877,12 +877,17 @@ def merge_attentions(
     )
 
 
+@torch.library.custom_op(
+    "xformers::fmha_merge_attentions_varargs",
+    mutates_args=("attn_out", "lse_out"),
+    device_types=["cuda"],
+)
 def merge_attentions_varargs(
     attn_out: torch.Tensor,
     lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-):
+) -> None:
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
@@ -902,6 +907,21 @@ def merge_attentions_varargs(
     )
 
 
+@torch.library.register_fake("xformers::fmha_merge_attentions_varargs")
+def merge_attentions_varargs_fake(
+    attn_out: torch.Tensor,
+    lse_out: Optional[torch.Tensor],
+    attn_split: Sequence[torch.Tensor],
+    lse_split: Sequence[torch.Tensor],
+) -> None:
+    return
+
+
+@torch.library.custom_op(
+    "xformers::merge_attentions_varargs_backward",
+    mutates_args=(),
+    device_types=["cuda"],
+)
 def merge_attentions_varargs_backward(
     attn_split: List[torch.Tensor],
     lse_split: List[torch.Tensor],
@@ -937,6 +957,20 @@ def merge_attentions_varargs_backward(
         BLOCK_SIZE=attn_out.shape[-1],
     )
 
+    return dattn_splitk, dlse_splitk
+
+
+@torch.library.register_fake("xformers::merge_attentions_varargs_backward")
+def merge_attentions_varargs_backward_fake(
+    attn_split: List[torch.Tensor],
+    lse_split: List[torch.Tensor],
+    attn_out: torch.Tensor,
+    lse_out: torch.Tensor,
+    grad_attn: torch.Tensor,
+    grad_lse: torch.Tensor,
+) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    dattn_splitk = [torch.empty_like(x) for x in attn_split]
+    dlse_splitk = [torch.empty_like(x) for x in lse_split]
     return dattn_splitk, dlse_splitk
 
 
