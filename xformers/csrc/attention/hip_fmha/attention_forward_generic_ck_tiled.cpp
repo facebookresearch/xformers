@@ -230,11 +230,11 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
-      p.logsumexp_ptr = logsumexp.data_ptr();
+      p.logsumexp_ptr = logsumexp->data_ptr();
       p.lse_strides = {
-          static_cast<int>(logsumexp.stride(0)),
-          static_cast<int>(logsumexp.stride(1)),
-          static_cast<int>(logsumexp.stride(2))};
+          static_cast<int>(logsumexp->stride(0)),
+          static_cast<int>(logsumexp->stride(1)),
+          static_cast<int>(logsumexp->stride(2))};
     } else {
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0, 0};
@@ -379,10 +379,10 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
-      p.logsumexp_ptr = logsumexp.data_ptr();
+      p.logsumexp_ptr = logsumexp->data_ptr();
       p.lse_strides = {
-          static_cast<int>(logsumexp.stride(1)),
-          static_cast<int>(logsumexp.stride(2))};
+          static_cast<int>(logsumexp->stride(1)),
+          static_cast<int>(logsumexp->stride(2))};
     } else {
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0};
