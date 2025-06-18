@@ -860,6 +860,7 @@ class FwOp_KVSplit(FwOp):
         BlockDiagonalPaddedKeysMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalGappyKeysMask,
+        BlockDiagonalLocalAttentionPaddedKeysMask,
     ) + (
         (
             PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
