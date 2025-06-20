@@ -136,8 +136,8 @@ efficient_attention_forward_ck(
   at::Tensor out_acc;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  int64_t philox_seed;
-  int64_t philox_offset;
+  int64_t philox_seed = 0;
+  int64_t philox_offset = 0;
 
   if (use_dropout) {
     at::PhiloxCudaState rng_engine_inputs;
@@ -509,11 +509,11 @@ efficient_attention_forward_ck_meta(
   int64_t philox_offset = 0;
   if (!seqstart_q.has_value()) { // input is batched
     if (compute_logsumexp) {
-      logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
+      logsumexp = at::empty_symint({B, Hq, M}, opts.dtype(at::kFloat));
     }
   } else {
     if (compute_logsumexp) {
-      logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
+      logsumexp = at::empty_symint({1, Hq, M}, opts.dtype(at::kFloat));
     }
   }
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
