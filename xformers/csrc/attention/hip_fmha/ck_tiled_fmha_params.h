@@ -139,6 +139,18 @@ struct GroupedForwardParams : public GroupedInferParams {
 
   void* logsumexp_acc_ptr;
   void* out_acc_ptr;
+
+  void print()
+  {
+    std::cout << "num_batches: " << num_batches << " M: " << M << " N:" << N << " Hq: " << Hq
+              << " Hkv: " << Hkv << " K:" << K << " Kv:" << Kv << " max_seqlen_q: " << max_seqlen_q
+              << " num_kv_splits: " << num_kv_splits << " use_split_kv:" << use_split_kv
+              << " use_paged_kvcache:" << use_paged_kvcache << std::endl;
+
+    std::cout << "q_strides:{ " << q_strides[0] << ","  << q_strides[1] << "," << q_strides[2] << "}" <<std::endl;
+    std::cout << "k_strides:{ " << k_strides[0] << ","  << k_strides[1] << "," << k_strides[2] << "}" <<std::endl;
+    std::cout << "v_strides:{ " << v_strides[0] << ","  << v_strides[1] << "," << v_strides[2] << "}" <<std::endl;
+  }
 };
 
 struct BatchedBackwardParams {
