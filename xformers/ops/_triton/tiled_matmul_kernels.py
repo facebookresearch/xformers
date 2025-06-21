@@ -46,9 +46,11 @@ def gen_config(
         },
         num_stages=stages,
         num_warps=warps,
-        pre_hook=init_to_zero(*[f"C{i+1}{j+1}" for i in range(3) for j in range(3)])
-        if split_k > 1
-        else init_to_zero(),
+        pre_hook=(
+            init_to_zero(*[f"C{i+1}{j+1}" for i in range(3) for j in range(3)])
+            if split_k > 1
+            else init_to_zero()
+        ),
     )
 
 

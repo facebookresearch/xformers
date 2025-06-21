@@ -34,10 +34,10 @@ from .attn_bias import (
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
-    check_lastdim_alignment_stride1,
 )
 
 
@@ -47,7 +47,9 @@ def _minimum_gemm_alignment(inp: Inputs) -> int:
 
 def _get_seqlen_info(
     inp: Inputs,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], int, int]:
+) -> Tuple[
+    Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], int, int
+]:
     attn_bias = inp.attn_bias
     if isinstance(
         attn_bias,
@@ -65,17 +67,27 @@ def _get_seqlen_info(
         seqstart_q = attn_bias.q_seqinfo.seqstart
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        seqlen = (
+            None
+            if isinstance(attn_bias, BlockDiagonalMask)
+            else attn_bias.k_seqinfo.seqlen
+        )
     else:
         seqstart_k = None
         seqstart_q = None
         max_seqlen_q = -1
         max_seqlen_k = -1
+        seqlen = None
 
-    return seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k
+    if isinstance(attn_bias, PagedBlockDiagonalGappyKeysMask):
+        seqstart_k = attn_bias.k_seqinfo.seqstart[:-1]
+        seqlen = seqlen - seqstart_k
+
+    return seqstart_k, seqstart_q, seqlen, max_seqlen_q, max_seqlen_k
 
 
 def _get_tensor_bias(
-    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
     if isinstance(attn_bias, AttentionBiasSubTensor):
         if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
@@ -268,7 +280,7 @@ class FwOp(AttentionFwOpBase):
     ) -> Tuple[torch.Tensor, Optional[Context]]:
         if type(inp.attn_bias) not in FwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
-        seqstart_k, seqstart_q, max_seqlen_q, _ = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, seqlen_k, max_seqlen_q, _ = _get_seqlen_info(inp)
         out, lse, rng_seed, rng_offset = cls.OPERATOR(
             query=inp.query,
             key=inp.key,
@@ -281,19 +293,7 @@ class FwOp(AttentionFwOpBase):
             compute_logsumexp=needs_gradient,
             custom_mask_type=_custom_mask_type(inp.attn_bias),
             scale=inp.scale,
-            seqlen_k=(
-                inp.attn_bias.k_seqinfo.seqlen
-                if isinstance(
-                    inp.attn_bias,
-                    (
-                        BlockDiagonalGappyKeysMask,
-                        BlockDiagonalPaddedKeysMask,
-                        PagedBlockDiagonalPaddedKeysMask,
-                        PagedBlockDiagonalGappyKeysMask,
-                    ),
-                )
-                else None
-            ),
+            seqlen_k=seqlen_k,
             window_size=(
                 inp.attn_bias._window_size
                 if isinstance(
@@ -430,7 +430,9 @@ class BwOp(AttentionBwOpBase):
         if type(inp.attn_bias) not in BwOp.SUPPORTED_ATTN_BIAS_TYPES:
             raise NotImplementedError("Unsupported attn_bias type")
 
-        seqstart_k, seqstart_q, max_seqlen_q, max_seqlen_k = _get_seqlen_info(inp)
+        seqstart_k, seqstart_q, seqlen_k, max_seqlen_q, max_seqlen_k = _get_seqlen_info(
+            inp
+        )
         dtype = inp.query.dtype
 
         rng_seed = rng_offset = 0
@@ -454,17 +456,7 @@ class BwOp(AttentionBwOpBase):
             seqstart_k=seqstart_k,
             max_seqlen_q=max_seqlen_q,
             max_seqlen_k=max_seqlen_k,
-            seqlen_k=(
-                inp.attn_bias.k_seqinfo.seqlen
-                if isinstance(
-                    inp.attn_bias,
-                    (
-                        BlockDiagonalGappyKeysMask,
-                        BlockDiagonalPaddedKeysMask,
-                    ),
-                )
-                else None
-            ),
+            seqlen_k=seqlen_k,
             logsumexp=ctx.lse,
             output=ctx.out.to(dtype),
             dropout_p=inp.p,

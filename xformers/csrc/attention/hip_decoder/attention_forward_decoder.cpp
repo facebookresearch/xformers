@@ -192,7 +192,7 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
 
 #ifdef ATTN_FWD_DECODER_MAIN
 
-#include <torch/torch.h>
+#include <torch/all.h>
 
 // clang-format off
 
@@ -211,7 +211,7 @@ TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
        -DCMAKE_CXX_COMPILER=/opt/rocm/bin/hipcc \
        -D CMAKE_PREFIX_PATH=/opt/rocm \
        -D CMAKE_BUILD_TYPE=Debug \
-       -D GPU_TARGETS="native" 
+       -D GPU_TARGETS="native"
   > make
 
 (3a) run correctness check

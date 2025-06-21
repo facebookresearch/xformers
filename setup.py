@@ -23,11 +23,11 @@ from typing import List, Optional
 import setuptools
 import torch
 from torch.utils.cpp_extension import (
-    CUDA_HOME,
-    ROCM_HOME,
     BuildExtension,
     CppExtension,
+    CUDA_HOME,
     CUDAExtension,
+    ROCM_HOME,
 )
 
 this_dir = os.path.dirname(__file__)
@@ -186,7 +186,7 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
     else:
         return []
 
-    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
+    if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "1") != "0":
         return []
 
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST", DEFAULT_ARCHS_LIST)
@@ -267,6 +267,7 @@ def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "csrc" / "cutlass" / "include",
                 ]
             ],
+            py_limited_api=True,
         )
     ]
 
@@ -277,19 +278,19 @@ def get_flash_attention2_extensions(cuda_version: int, extra_compile_args):
 def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
     if os.getenv("XFORMERS_DISABLE_FLASH_ATTN", "0") != "0":
         return []
-    if platform.system() != "Linux" or cuda_version < 1203:
+    if cuda_version < 1203:
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
         if torch.cuda.get_device_capability("cuda") != (9, 0):
             return []
-        archs_list = "9.0a"
+        archs_list = "8.0 9.0a"
     nvcc_archs_flags = []
     for arch in archs_list.replace(" ", ";").split(";"):
         match = PARSE_CUDA_ARCH_RE.match(arch)
         assert match is not None, f"Invalid sm version: {arch}"
         num = 10 * int(match.group("major")) + int(match.group("minor"))
-        if num != 90:  # only support Sm90
+        if num not in [80, 90]:  # only support Sm80/Sm90
             continue
         suffix = match.group("suffix")
         nvcc_archs_flags.append(
@@ -328,20 +329,29 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
 
     # We don't care/expose softcap and fp8 and paged attention,
     # hence we disable them for faster builds.
+    DISABLED_CAPABILITIES = (
+        # (filename_pattern, compilation_flag)
+        # Not exposed in xFormers
+        ("softcap", "-DFLASHATTENTION_DISABLE_SOFTCAP"),
+        # Not exposed in xFormers
+        ("e4m3", "-DFLASHATTENTION_DISABLE_FP8"),
+        # Enabling paged attention causes segfault with some
+        # versions of nvcc :(
+        # https://github.com/Dao-AILab/flash-attention/issues/1453
+        ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
+        # We have `CUDA_MINIMUM_COMPUTE_CAPABILITY` set to 9.0
+        # ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
+    )
     sources = [
         s
         for s in sources
-        if all(substr not in s for substr in ("softcap", "e4m3", "paged"))
+        if all(disabled_cap[0] not in s for disabled_cap in DISABLED_CAPABILITIES)
     ]
-    common_extra_compile_args = [
-        "-DFLASHATTENTION_DISABLE_SOFTCAP",
-        "-DFLASHATTENTION_DISABLE_FP8",
-        "-DFLASHATTENTION_DISABLE_PAGEDKV",
-    ]
+    common_extra_compile_args = [x[1] for x in DISABLED_CAPABILITIES]
 
     return [
         CUDAExtension(
-            name="xformers._C_flashattention3",
+            name="xformers.flash_attn_3._C",
             sources=[os.path.join(flash_root, path) for path in sources],
             extra_compile_args={
                 "cxx": extra_compile_args.get("cxx", []) + common_extra_compile_args,
@@ -359,15 +369,12 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     "--expt-relaxed-constexpr",
                     "--expt-extended-lambda",
                     "--use_fast_math",
-                    # "--ptxas-options=-v",  # printing out number of registers
-                    "--ptxas-options=--verbose,--register-usage-level=10,--warn-on-local-memory-usage",
                     # "-lineinfo", # xformers: save binary size
                     "-DCUTLASS_DEBUG_TRACE_LEVEL=0",  # Can toggle for debugging
                     "-DNDEBUG",  # Important, otherwise performance is severely impacted
-                    "-DQBLKSIZE=128",
-                    "-DKBLKSIZE=128",
-                    "-DCTA256",
-                    "-DDQINRMEM",
+                    "-DCUTE_SM90_EXTENDED_MMA_SHAPES_ENABLED",
+                    "-DCUTLASS_ENABLE_GDC_FOR_SM90",
+                    "-D_USE_MATH_DEFINES",  # required for M_LOG2E on windows
                 ]
                 + nvcc_archs_flags
                 + common_extra_compile_args
@@ -380,6 +387,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
                     Path(flash_root) / "hopper",
                 ]
             ],
+            py_limited_api=True,
         )
     ]
 
@@ -450,7 +458,7 @@ def get_extensions():
 
     define_macros = []
 
-    extra_compile_args = {"cxx": ["-O3", "-std=c++17"]}
+    extra_compile_args = {"cxx": ["-O3", "-std=c++17", "-DPy_LIMITED_API=0x03090000"]}
     if sys.platform == "win32":
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(
@@ -571,8 +579,6 @@ def get_extensions():
             Path(this_dir) / "third_party" / "composable_kernel_tiled" / "include"
         ]
 
-        generator_flag = []
-
         cc_flag = ["-DBUILD_PYTHON_PACKAGE"]
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
         if use_rtn_bf16_convert == "1":
@@ -584,32 +590,27 @@ def get_extensions():
         if hip_version >= "6.2.":
             offload_compress_flag = ["--offload-compress"]
 
-        extra_compile_args = {
-            "cxx": ["-O3", "-std=c++17"] + generator_flag,
-            "nvcc": [
-                "-O3",
-                "-std=c++17",
-                *[f"--offload-arch={arch}" for arch in arch_list],
-                *offload_compress_flag,
-                "-U__CUDA_NO_HALF_OPERATORS__",
-                "-U__CUDA_NO_HALF_CONVERSIONS__",
-                "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
-                "-fgpu-flush-denormals-to-zero",
-                "-Werror",
-                "-Wc++11-narrowing",
-                "-Woverloaded-virtual",
-                "-mllvm",
-                "-enable-post-misched=0",
-                "-mllvm",
-                "-amdgpu-early-inline-all=true",
-                "-mllvm",
-                "-amdgpu-function-calls=false",
-                "-mllvm",
-                "-greedy-reverse-local-assignment=1",
-            ]
-            + generator_flag
-            + cc_flag,
-        }
+        extra_compile_args["nvcc"] = [
+            "-O3",
+            "-std=c++17",
+            *[f"--offload-arch={arch}" for arch in arch_list],
+            *offload_compress_flag,
+            "-U__CUDA_NO_HALF_OPERATORS__",
+            "-U__CUDA_NO_HALF_CONVERSIONS__",
+            "-DCK_TILE_FMHA_FWD_FAST_EXP2=1",
+            "-fgpu-flush-denormals-to-zero",
+            "-Werror",
+            "-Wc++11-narrowing",
+            "-Woverloaded-virtual",
+            "-mllvm",
+            "-enable-post-misched=0",
+            "-mllvm",
+            "-amdgpu-early-inline-all=true",
+            "-mllvm",
+            "-amdgpu-function-calls=false",
+            "-mllvm",
+            "-greedy-reverse-local-assignment=1",
+        ] + cc_flag
 
     ext_modules.append(
         extension(
@@ -618,6 +619,7 @@ def get_extensions():
             include_dirs=[os.path.abspath(p) for p in include_dirs],
             define_macros=define_macros,
             extra_compile_args=extra_compile_args,
+            py_limited_api=True,
         )
     )
 
@@ -745,4 +747,5 @@ if __name__ == "__main__":
             "Operating System :: OS Independent",
         ],
         zip_safe=False,
+        options={"bdist_wheel": {"py_limited_api": "cp39"}},
     )

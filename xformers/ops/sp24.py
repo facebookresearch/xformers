@@ -7,7 +7,7 @@ import contextlib
 import os
 import time
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar, cast
+from typing import Any, Callable, cast, Dict, List, Optional, Tuple, TypeVar
 
 import torch
 
@@ -401,7 +401,10 @@ class Sparse24TensorCutlass(Sparse24Tensor):
 
 
 _CUSPLT_ALG_CACHE: Dict[Tuple[int, int, int, str, torch.dtype, bool], int] = {}
-_CUSPLT_TUNE = os.environ.get("XFORMERS_CUSPARSELT_TUNE", "1") == "1"
+# Disabled by default, as there is a correctness issue on cusparselt
+# when using some algorithms:
+# https://github.com/pytorch/pytorch/issues/155333
+_CUSPLT_TUNE = os.environ.get("XFORMERS_CUSPARSELT_TUNE", "0") == "1"
 
 
 def _cusplt_find_alg(

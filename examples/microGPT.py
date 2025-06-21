@@ -12,7 +12,7 @@ import os
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.utilities import rank_zero_info
 from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset, RandomSampler

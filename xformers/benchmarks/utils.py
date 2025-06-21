@@ -557,9 +557,9 @@ def benchmark_run_and_compare(
                     )
                     metadata = {}
                     if is_optimized:
-                        metadata[
-                            META_ALGORITHM
-                        ] = benchmark_object._task_spec.description
+                        metadata[META_ALGORITHM] = (
+                            benchmark_object._task_spec.description
+                        )
                         benchmark_object._task_spec = replace(
                             benchmark_object._task_spec, description=optimized_label
                         )

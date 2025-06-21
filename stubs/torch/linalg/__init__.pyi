@@ -3,10 +3,10 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Tuple, TypeVar, overload
+from typing import Optional, overload, Tuple, TypeVar
 
 from pyre_extensions import TypeVarTuple, Unpack
-from torch import Tensor, complex64, complex128, float32, float64
+from torch import complex128, complex64, float32, float64, Tensor
 from typing_extensions import Literal as L
 
 DType = TypeVar("DType")

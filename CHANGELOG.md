@@ -5,7 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.31] - 2025-??-??
-
+### Removed
+- We will no longer support V100 or older GPUs, following PyTorch (pytorch/pytorch#147607)
+- Removed support for building Flash-Attention 2 as part of xFormers. For Ampere GPUs, we now use Flash-Attention 3. On Linux, Flash-Attention 2 can still be used through PyTorch.
 ## [0.0.30] - 2025-04-28
 Pre-built binary wheels are available for PyTorch 2.7.0. Following PyTorch, we build wheels for CUDA 11.8, 12.6, and 12.8 only (we no longer build for CUDA 12.4).
 xFormers now requires PyTorch >= 2.7

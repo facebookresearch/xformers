@@ -5,17 +5,17 @@
 
 import math
 from contextlib import contextmanager
-from typing import Union, cast
+from typing import cast, Union
 
 import pytest
 import torch
 import torch.nn as nn
-from torch.nn.attention import SDPBackend, sdpa_kernel
-from torch.utils._python_dispatch import _get_current_dispatch_mode
 
 import xformers.ops as xops
 import xformers.ops.fmha as fmha
 import xformers.profiler
+from torch.nn.attention import sdpa_kernel, SDPBackend
+from torch.utils._python_dispatch import _get_current_dispatch_mode
 from xformers.profiler import profile_analyzer
 
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
