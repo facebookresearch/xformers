@@ -31,7 +31,7 @@ def _get_use_fa3() -> bool:
 
 def fa3_available() -> bool:
     has_cuda = torch.version.cuda is not None
-    is_90a = has_cuda and torch.cuda.get_device_capability() >= (9, 0)
+    is_90a = has_cuda and torch.cuda.get_device_capability() == (9, 0)
     has_valid_flash3 = flash3._C_flashattention3 is not None  # pyre-ignore[16]
     return is_90a and has_valid_flash3
 
