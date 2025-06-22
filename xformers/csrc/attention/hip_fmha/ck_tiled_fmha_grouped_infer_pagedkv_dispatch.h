@@ -25,12 +25,16 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MaxSeqlenQ>
 struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
+  using fmha_variant = ck_tile::ComposedAttention<
+      true * ck_tile::LOGITS_SOFT_CAP,
+      CK_TILE_FMHA_FWD_FAST_EXP2>;
+  
   template <
-      typename FmhaFwdSplitKVTraits,
+      typename FmhaFwdPagedKVTraits,
       typename FmhaMask,
       typename ODataType>
-  using FmhaFwdSplitKVPipelineProblemTemp =
-      ck_tile::BlockFmhaFwdSplitKVPipelineProblem<
+  using FmhaFwdPagedKVPipelineProblemTemp =
+      ck_tile::BlockFmhaFwdPagedKVPipelineProblem<
           typename FmhaFwdTypeConfig<ScalarType>::QDataType,
           typename FmhaFwdTypeConfig<ScalarType>::KDataType,
           typename FmhaFwdTypeConfig<ScalarType>::VDataType,
@@ -43,26 +47,16 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
           ODataType,
           typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type,
           true, // kIsGroupMode
+          fmha_variant,
           FmhaMask,
-          FmhaFwdSplitKVTraits>;
-
-  template <ck_tile::index_t kN1, typename FmhaSplitKVCombineTraits>
-  using FmhaSplitKVCombinePipelineProblemTemp =
-      ck_tile::BlockFmhaSplitKVCombinePipelineProblem<
-          typename FmhaFwdTypeConfig<ScalarType>::LSEDataType,
-          typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-          typename FmhaFwdTypeConfig<ScalarType>::ODataType,
-          MaxK, // headdim_v
-          true, // kIsGroupMode
-          kN1,
-          FmhaSplitKVCombineTraits>;
+          FmhaFwdPagedKVTraits>;
 
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
       using FmhaTileShape =
-          typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type;
+          typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type;
 
       constexpr ck_tile::index_t occupancy = -1;
 
@@ -91,109 +85,58 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
           kPadHeadDimV,
           is_paged_kv,
           kIsPagedKV,
-          [&] { 
-            {
-              using FmhaTraits = ck_tile::TileFmhaFwdSplitKVTraits<
-                  kPadSeqLenQ,
-                  kPadSeqLenK,
-                  kPadHeadDimQ,
-                  kPadHeadDimV,
-                  kBiasEnum,
-                  false, // kHasBiasGrad place-holder
-                  false, // kStoreLSE
-                  false, // kDoFp8StaticQuant place-holder
-                  kIsPagedKV,
-                  false, // kHasUnevenSplits   when num_split==1, false
-                  false, // kMergeNumHeadGroupsSeqLenQ
-                  occupancy>;
+          [&] {
+            using FmhaTraits = ck_tile::TileFmhaFwdPagedKVTraits<
+                kPadSeqLenQ,
+                kPadSeqLenK,
+                kPadHeadDimQ,
+                kPadHeadDimV,
+                false, // kHasLogitsSoftCap_
+                kBiasEnum,
+                false, // kHasBiasGrad place-holder
+                false, // kStoreLSE
+                kIsPagedKV,
+                false, // kDoFp8StaticQuant place-holder
+                occupancy>;
 
-              using ODataType =
-                  typename FmhaFwdTypeConfig<ScalarType>::ODataType;
-              using FmhaPipelineProblem = FmhaFwdSplitKVPipelineProblemTemp<
-                  FmhaTraits,
-                  FmhaMask,
-                  ODataType>;
+            using ODataType = typename FmhaFwdTypeConfig<ScalarType>::ODataType;
+            using FmhaPipelineProblem = FmhaFwdPagedKVPipelineProblemTemp<
+                FmhaTraits,
+                FmhaMask,
+                ODataType>;
 
-              using FmhaPipeline = ck_tile::BlockFmhaFwdSplitKVPipelineQRKSVS<
-                  FmhaPipelineProblem>;
+            using FmhaPipeline =
+                ck_tile::BlockFmhaFwdPagedKVPipelineQRKSVS<FmhaPipelineProblem>;
 
-              using FmhaEpilogue =
-                  ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
-                      typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
-                      ODataType,
-                      false,
-                      false>>;
+            using FmhaEpilogue =
+                ck_tile::Default2DEpilogue<ck_tile::Default2DEpilogueProblem<
+                    typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
+                    ODataType,
+                    false,
+                    false>>;
 
-              using FmhaKernel =
-                  ck_tile::FmhaFwdSplitKVKernel<FmhaPipeline, FmhaEpilogue>;
+            using FmhaKernel =
+                ck_tile::FmhaFwdPagedKVKernel<FmhaPipeline, FmhaEpilogue>;
 
-              RunWithFwdSplitKVKernel<FmhaKernel>(param, stream);
-            }
+            RunWithFwdPagedKVKernel<FmhaKernel>(param, stream);
           });
     };
 
   };
 
-  template <typename FmhaFwdSplitKVKernel>
-  static void RunWithFwdSplitKVKernel(
+  template <typename FmhaFwdPagedKVKernel>
+  static void RunWithFwdPagedKVKernel(
       GroupedForwardParams& param,
       hipStream_t stream) {
+    static_assert(FmhaFwdPagedKVKernel::kIsGroupMode == true,"must be group");
     const auto kargs = [&] {
-      if (param.num_kv_splits > 1)
-        return FmhaFwdSplitKVKernel::MakeKargs(
-            param.q_ptr,
-            param.k_ptr,
-            param.v_ptr,
-            param.attn_bias_ptr,
-            param.logsumexp_acc_ptr,
-            param.out_acc_ptr,
-            param.num_batches,
-            param.seqstart_q_dev_ptr,
-            param.seqstart_k_dev_ptr,
-            param.seqlen_k_dev_ptr,
-            param.K, // hdim_q
-            param.Kv, // hdim_v
-            param.Hq, // nhead_q
-            param.Hq / param.Hkv, // nhead_ratio_qk
-            param.num_kv_splits, // num_splits
-            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
-            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
-            param.use_paged_kvcache ? param.page_block_size : 0,
-            param.use_paged_kvcache ? param.is_gappy : false,
-            param.scale,
-            1.0f, // scale_p
-            param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
-                                // stride
-            param.k_strides[0],
-            param.v_strides[0],
-            param.attn_bias_strides[2],
-            param.out_acc_strides[1],
-            param.q_strides[1], // q, k, v, bias, lse_acc, out_acc tensor
-                                // head-dim stride
-            param.k_strides[1],
-            param.v_strides[1],
-            param.attn_bias_strides[1],
-            param.lse_acc_strides[1],
-            param.out_acc_strides[2],
-            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_k
-            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_v
-            param.lse_acc_strides[0], // split_stride_l
-            param.out_acc_strides[0], // split_stride_out_acc
-            (param.window_size > 0) ? param.window_size - 1
-                                    : -1, // window_left_size
-            (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
-            param.custom_mask_type);
-      else
-        return FmhaFwdSplitKVKernel::MakeKargs(
+        return FmhaFwdPagedKVKernel::MakeKargs(
             param.q_ptr,
             param.k_ptr,
             param.v_ptr,
             param.attn_bias_ptr,
             nullptr, // lse_ptr,
-            param.out_ptr,
-            param.num_batches,
+            param.out_ptr,    //o_ptr
             param.seqstart_q_dev_ptr,
             param.seqstart_k_dev_ptr,
             param.seqlen_k_dev_ptr,
@@ -201,13 +144,14 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
             param.Kv, // hdim_v
             param.Hq, // nhead_q
             param.Hq / param.Hkv, // nhead_ratio_qk
-            param.num_kv_splits, // num_splits
             param.use_paged_kvcache ? param.block_table_ptr : nullptr,
             param.use_paged_kvcache ? param.batch_stride_block_table : 0,
             param.use_paged_kvcache ? param.page_block_size : 0,
             param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
+            1.0f, // scale_o
+            0,    // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim
                                 // stride
             param.k_strides[0],
@@ -225,28 +169,24 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
                                     : 0, // batch_stride_k
             param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
                                     : 0, // batch_stride_v
-            0, // split_stride_lse_acc
-            0, // split_stride_out_acc
             (param.window_size > 0) ? param.window_size - 1
                                     : -1, // window_left_size
             (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
-            param.custom_mask_type);
+            param.custom_mask_type,
+            0);                           // min_seqlen_q
     }();
 
-    dim3 kGridSize = FmhaFwdSplitKVKernel::GridSize(
+    dim3 kGridSize = FmhaFwdPagedKVKernel::GridSize(
         param.num_batches,
         param.Hq,
-        param.Hkv,
         param.max_seqlen_q,
-        param.Kv,
-        param.num_kv_splits);
-    constexpr dim3 kBlockSize = FmhaFwdSplitKVKernel::BlockSize();
-    constexpr ck_tile::index_t kBlockPerCu = FmhaFwdSplitKVKernel::kBlockPerCu;
+        param.Kv);
+    constexpr dim3 kBlockSize = FmhaFwdPagedKVKernel::BlockSize();
+    constexpr ck_tile::index_t kBlockPerCu = FmhaFwdPagedKVKernel::kBlockPerCu;
 
     (void)ck_tile::launch_kernel(
         ck_tile::stream_config{stream, false},
         ck_tile::make_kernel<kBlockSize.x, kBlockPerCu>(
-            FmhaFwdSplitKVKernel{}, kGridSize, kBlockSize, 0, kargs));
+            FmhaFwdPagedKVKernel{}, kGridSize, kBlockSize, 0, kargs));
   };
-
 };
