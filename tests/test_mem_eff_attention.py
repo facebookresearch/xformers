@@ -3331,10 +3331,12 @@ def _merge_attentions_ref(attn_split, lse_split):
 @pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
 @pytest.mark.parametrize(
     "op",
-    [None, (fmha.flash.FwOp, fmha.flash.BwOp)],
+    [None, (fmha.flash.FwOp, fmha.flash.BwOp), (fmha.flash3.FwOp, fmha.flash3.BwOp)],
 )
 def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     torch.manual_seed(0)
+    if op is not None and not op[0].is_available():
+        pytest.skip("Op is not available")
     torch._dynamo.reset_code_caches()  # avoids hitting recompilation limit
     B, M, H, K = 1, 256, 2, 64
     q, k, v, bias = create_tensors(

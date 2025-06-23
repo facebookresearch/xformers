@@ -338,6 +338,8 @@ if _C_flashattention3 is not None:
         descale_q: Optional[torch.Tensor] = None,
         descale_k: Optional[torch.Tensor] = None,
         descale_v: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        use_kvsplit: bool = False,
         window_left: int = -1,
         window_right: int = -1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -370,6 +372,11 @@ if _C_flashattention3 is not None:
         p: float,
         softmax_scale: float,
         is_causal: bool,
+        descale_q: Optional[torch.Tensor] = None,
+        descale_k: Optional[torch.Tensor] = None,
+        descale_v: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        use_kvsplit: bool = False,
         window_left: int = -1,
         window_right: int = -1,
         # The FLOPs counter might pass more args (out_val, out_shape, ...)
@@ -543,6 +550,11 @@ if _C_flashattention3 is not None:
                 p=0.0,
                 softmax_scale=1.0,
                 is_causal=is_causal,
+                descale_q=None,
+                descale_k=None,
+                descale_v=None,
+                block_table=None,
+                use_kvsplit=False,
                 window_left=window_left,
                 window_right=window_right,
             )
