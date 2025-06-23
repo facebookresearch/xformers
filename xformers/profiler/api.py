@@ -8,11 +8,11 @@ from typing import Any, Optional, Sequence, Tuple
 import torch.nn as nn
 
 from .profiler import (
+    _Profiler,
     MemSnapshotsProfiler,
     NsightProfiler,
     PyTorchProfiler,
     PyTorchProfiler_CUDAOnly,
-    _Profiler,
 )
 from .profiler_dcgm import DCGMProfiler  # noqa: F401
 

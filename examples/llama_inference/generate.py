@@ -6,7 +6,7 @@
 import argparse
 import json
 import os
-import readline  # type: ignore # noqa
+import readline  # type: ignore  # noqa
 import sys
 import time
 from dataclasses import dataclass

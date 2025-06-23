@@ -8,7 +8,7 @@ import gc
 import multiprocessing
 import os
 import signal
-from tempfile import NamedTemporaryFile, _TemporaryFileWrapper
+from tempfile import _TemporaryFileWrapper, NamedTemporaryFile
 from typing import Dict, List, Tuple
 
 import torch

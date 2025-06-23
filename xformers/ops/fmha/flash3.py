@@ -5,10 +5,12 @@
 
 
 import importlib.util
+import logging
 import os
-from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Iterable, List, Optional, Sequence, Set, Tuple, TypeVar
 
 import torch
+from torch._C import parse_schema
 from torch.utils.flop_counter import (
     _unpack_flash_attention_nested_shapes,
     register_flop_formula,
@@ -16,7 +18,6 @@ from torch.utils.flop_counter import (
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
-    VARLEN_BIASES,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
@@ -25,23 +26,27 @@ from .attn_bias import (
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
+    BlockDiagonalLocalAttentionPaddedKeysMask,
     BlockDiagonalMask,
     BlockDiagonalPaddedKeysMask,
     LocalAttentionFromBottomRightMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
     LowerTriangularMask,
+    PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+    PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
     ScaledTensor,
-    check_lastdim_alignment_stride1,
 )
 from .flash import (
     _check_needs_no_topleft,
@@ -52,45 +57,93 @@ from .flash import (
 )
 
 FLASH_VERSION = "0.0.0"
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
-if importlib.util.find_spec("..._C_flashattention3", package=__package__):
-    from ... import _C_flashattention3  # type: ignore[attr-defined]
+def maybe_contiguous(x: T) -> T:
+    return x.contiguous() if x is not None and x.stride(-1) != 1 else x  # type: ignore[attr-defined]
+
+
+def _flash_attention3_incompatible_reason() -> Optional[str]:
+    if not hasattr(torch.ops.flash_attn_3, "fwd") or not hasattr(
+        torch.ops.flash_attn_3, "bwd"
+    ):
+        return "PyTorch has no `flash_attn_3` - is your Flash-Attention version recent enough?"
+    if not torch.ops.flash_attn_3.fwd.default._schema.is_backward_compatible_with(
+        parse_schema(
+            "flash_attn_3::fwd(Tensor q, Tensor k, Tensor v, Tensor(k_new!)? k_new=None, "
+            "Tensor(v_new!)? v_new=None, Tensor? q_v=None, Tensor(out!)? out=None, "
+            "Tensor? cu_seqlens_q=None, Tensor? cu_seqlens_k=None, "
+            "Tensor? cu_seqlens_k_new=None, Tensor? seqused_q=None, Tensor? seqused_k=None, "
+            "int? max_seqlen_q=None, int? max_seqlen_k=None, Tensor? page_table=None, "
+            "Tensor? kv_batch_idx=None, Tensor? leftpad_k=None, Tensor? rotary_cos=None, Tensor? rotary_sin=None, "
+            "Tensor? seqlens_rotary=None, Tensor? q_descale=None, Tensor? k_descale=None, Tensor? v_descale=None, "
+            "float? softmax_scale=None, bool is_causal=False, int window_size_left=-1, int window_size_right=-1, "
+            "int attention_chunk=0, float softcap=0., bool is_rotary_interleaved=False, "
+            "Tensor? scheduler_metadata=None, int num_splits=0, bool? pack_gqa=None, int sm_margin=0) "
+            "-> (Tensor(out!), Tensor, Tensor, Tensor)"
+        )
+    ):
+        return "flash_attn_3::fwd operator is not compatible"
+    if not torch.ops.flash_attn_3.bwd.default._schema.is_backward_compatible_with(
+        parse_schema(
+            "flash_attn_3::bwd(Tensor dout, Tensor q, Tensor k, Tensor v, Tensor out, Tensor softmax_lse, "
+            "Tensor(dq!)? dq=None, Tensor(dk!)? dk=None, Tensor(dv!)? dv=None, Tensor? cu_seqlens_q=None, "
+            "Tensor? cu_seqlens_k=None, Tensor? seqused_q=None, Tensor? seqused_k=None, int? max_seqlen_q=None, "
+            "int? max_seqlen_k=None, float? softmax_scale=None, bool is_causal=False, int window_size_left=-1, "
+            "int window_size_right=-1, float softcap=0., bool deterministic=False, int sm_margin=0) "
+            "-> (Tensor(dq!), Tensor(dk!), Tensor(dv!), Tensor, Tensor, Tensor, Tensor, Tensor)"
+        )
+    ):
+        return "flash_attn_3::bwd operator is not compatible"
+    return None
+
+
+FLASH3_HAS_PAGED_ATTENTION = False
+FLASH3_HAS_FLOAT8 = False
+_C_flashattention3 = None
+if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
     from ..._cpp_lib import _build_metadata
+    from ...flash_attn_3 import _C  # type: ignore[attr-defined]  # noqa: F401
 
     if _build_metadata is not None:
         FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+    _C_flashattention3 = torch.ops.flash_attn_3
 
-elif importlib.util.find_spec("flash_attn_interface"):
-    from flash_attn_interface import flashattn_hopper_cuda as _C_flashattention3
+elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
+    "flash_attn_3._C"
+):
+    import flash_attn_3._C  # type: ignore[attr-defined]  # noqa: F401
 
-else:
-    # We end up here is arch is not 90a
-    _C_flashattention3 = None
-
-
-def maybe_contiguous(x):
-    return x.contiguous() if x is not None and x.stride(-1) != 1 else x
-
-
-def supported_dtypes() -> Set[torch.dtype]:
-    types = {
-        torch.half,
-        torch.bfloat16,
-    }
-    if os.environ.get("XFORMERS_FLASH3_FP8", "0") == "1":
-        types.add(torch.float8_e4m3fn)
-    return types
+    incompat_reason = _flash_attention3_incompatible_reason()
+    if incompat_reason is None:
+        _C_flashattention3 = torch.ops.flash_attn_3
+        FLASH_VERSION = "pip_pkg"
+        FLASH3_HAS_PAGED_ATTENTION = True
+        FLASH3_HAS_FLOAT8 = True
+    else:
+        logger.warning(f"Flash-Attention 3 package can't be used: {incompat_reason}")
 
 
-def _paged_attention_filter(attn_bias_types: Iterable[Any]) -> Iterable[Any]:
-    if os.environ.get("XFORMERS_FLASH3_PAGED", "0") == "1":
-        return attn_bias_types
-    return [
-        x
-        for x in attn_bias_types
-        if not issubclass(x, PagedBlockDiagonalPaddedKeysMask)
-    ]
+def _heuristic_kvsplit(
+    inp: Inputs,
+    enable_kvsplit_attn: bool,
+) -> bool:
+    atten_bias = inp.attn_bias
+
+    # make sure Q doesn't have varlen
+    # pyre-ignore Undefined attribute [16]
+    if atten_bias.q_seqinfo.min_seqlen != atten_bias.q_seqinfo.max_seqlen:  # type: ignore[union-attr]
+        return False
+
+    # filter out prefill case
+    # pyre-ignore Undefined attribute [16]
+    if atten_bias.q_seqinfo.max_seqlen == atten_bias.k_seqinfo.max_seqlen:  # type: ignore[union-attr]
+        return False
+
+    return enable_kvsplit_attn
 
 
 def mask_non_zeros(s_q: int, s_k: int, window_left: int, window_right: int) -> int:
@@ -163,35 +216,6 @@ def sdpa_flop_count(
 
 
 if _C_flashattention3 is not None:
-
-    # Compatibility check for FAv3 APIs
-    EXPECTED_NUM_OF_ARGS = [
-        ("fwd", 31),
-        ("bwd", 23),
-    ]
-
-    import re
-
-    def count_args_from_doc(docstring) -> int:
-        # Use a regular expression to find the argument list inside parentheses
-        match = re.search(r"\((.*?)\)", docstring)
-        if match:
-            # Extract the argument list and split by commas
-            args_list = match.group(1).split(",")
-            # Count the number of arguments
-            return len(args_list)
-        else:
-            raise ValueError("No valid argument list found in the docstring.")
-
-    for name, num_of_args in EXPECTED_NUM_OF_ARGS:
-        num_of_args_from_doc = count_args_from_doc(
-            getattr(_C_flashattention3, name).__doc__
-        )
-        assert num_of_args_from_doc == num_of_args, (
-            f"Found func signature mismatch for {name}. Expected {num_of_args},"
-            f"actual: {num_of_args_from_doc} Please update the version of Flash Attention3."
-        )
-
     # returns: out, q_padded, k_padded, v_padded, out_padded, softmax_lse, p
     @torch.library.custom_op(
         "xformers_flash3::flash_fwd", mutates_args=(), device_types=["cuda"]
@@ -203,163 +227,99 @@ if _C_flashattention3 is not None:
         cu_seqlens_q: Optional[torch.Tensor],
         cu_seqlens_k: Optional[torch.Tensor],
         seqused_k: Optional[torch.Tensor],
+        leftpad_k: Optional[torch.Tensor],
         max_seqlen_q: int,
         max_seqlen_k: int,
         p: float,
         softmax_scale: float,
         is_causal: bool,
-        window_left: int,
-        window_right: int,
         descale_q: Optional[torch.Tensor] = None,
         descale_k: Optional[torch.Tensor] = None,
         descale_v: Optional[torch.Tensor] = None,
         block_table: Optional[torch.Tensor] = None,
         use_kvsplit: bool = False,
+        window_left: int = -1,
+        window_right: int = -1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         query, key = [maybe_contiguous(x) for x in (query, key)]
-        if value.stride(-3) != 1:
-            # For FP8 it is ok to have stride(-3)==1 instead of stride(-1)
-            value = maybe_contiguous(value)
+        value = (
+            value.contiguous()
+            if value.stride(-1) != 1 and value.stride(-3) != 1
+            else value
+        )
         cu_seqlens_q, cu_seqlens_k, seqused_k = [
             maybe_contiguous(x) for x in (cu_seqlens_q, cu_seqlens_k, seqused_k)
         ]
         block_table = maybe_contiguous(block_table)
 
-        if cu_seqlens_q is None:
-            # Fixed-length case
-            assert cu_seqlens_k is None
-            assert seqused_k is None
-            assert (
-                block_table is None
-            ), "Block table is not supported for fixed-length query yet"
-            out, softmax_lse, *rest = _C_flashattention3.fwd(
-                query,
-                key,
-                value,
-                None,  # k_new
-                None,  # v_new
-                None,  # out
-                None,  # cu_seqlens_q
-                None,  # cu_seqlens_k
-                None,  # cu_seqlens_k_new
-                None,  # seqused_q
-                None,  # seqused_k
-                None,  # max_seqlen_q
-                None,  # max_seqlen_k
-                None,  # page_table
-                None,  # kv_batch_idx
-                None,  # leftpad_k
-                None,  # rotary_cos
-                None,  # rotary_sin
-                descale_q,
-                descale_k,
-                descale_v,
-                softmax_scale,
-                is_causal,
-                window_left,
-                window_right,
-                0,  # sink_token_length
-                0.0,  # softcap
-                False,  # rotary_interleaved
-                1,  # num_splits (not KVSplit Case)
-                False,  # pack_gqa
-                0,  # sm_margin
+        def _get_batch():
+            if cu_seqlens_q is not None:
+                return cu_seqlens_q.shape[0] - 1
+            return query.shape[0]
+
+        is_paged = block_table is not None
+        bs = _get_batch()
+        orig_query_shape = query.shape
+
+        pack_gqa = None
+        if use_kvsplit:
+            # For KV split, we need to make sure query in shape [batch, seqlen, num_heads, head_dim_q]
+            # to be compatible with `pack_gqa` feature
+            query = query.view(bs, -1, query.shape[-2], query.shape[-1])
+            cu_seqlens_q = None
+
+            # Auto-detect if we should use GQA parallel mode
+            if query.shape[1] <= 64 and query.shape[2] != key.shape[2]:
+                pack_gqa = True
+
+        assert _C_flashattention3 is not None
+        out, softmax_lse, *rest = _C_flashattention3.fwd(
+            query,
+            key,
+            value,
+            None,
+            None,  # k_new, v_new
+            None,  # qv
+            None,  # out
+            cu_seqlens_q,
+            cu_seqlens_k if not is_paged else None,
+            None,  # cu_seqlens_k_new
+            None,  # seqused_q
+            seqused_k,
+            max_seqlen_q,
+            max_seqlen_k,
+            block_table,
+            None,  # kv_batch_idx
+            leftpad_k,
+            None,  # rotary_cos
+            None,  # rotary_sin
+            None,  # seqlens_rotary
+            descale_q,
+            descale_k,
+            descale_v,
+            softmax_scale,
+            is_causal,
+            window_left,
+            window_right,
+            0,  # attention_chunk
+            0.0,  # softcap
+            not use_kvsplit,  # rotary_interleaved
+            None,  # scheduler_metadata
+            1 if not use_kvsplit else 0,  # num_splits
+            pack_gqa,  # pack_gqa
+            0,  # sm_margin
+        )
+
+        if query.shape != orig_query_shape:
+            # Reshape softmax_lse to match expected output format
+            num_heads_q = query.shape[-2]
+            orig_lse_shape = softmax_lse.shape
+            softmax_lse = softmax_lse.view(
+                orig_lse_shape[0], num_heads_q, -1, orig_lse_shape[2]
             )
-            return out, softmax_lse
+            softmax_lse = softmax_lse.permute(1, 0, 2, 3).reshape(num_heads_q, -1)
 
-        else:
-            assert (
-                descale_q is None and descale_k is None and descale_v is None
-            ), "FP8 attention does not yet support variable-length inputs during the forward pass"
-
-            if use_kvsplit:
-                # Split KV case
-                # Auto-detect if we should use GQA parallel mode
-                pack_gqa = False
-                if query.shape[1] <= 64 and query.shape[2] != key.shape[2]:
-                    pack_gqa = True
-
-                out, softmax_lse, *rest = _C_flashattention3.fwd(
-                    query,
-                    key,
-                    value,
-                    None,  # k_new
-                    None,  # v_new
-                    None,  # out
-                    None,  # cu_seqlens_q,
-                    cu_seqlens_k,
-                    None,  # cu_seqlens_k_new
-                    None,  # seqused_q
-                    seqused_k,
-                    max_seqlen_q,
-                    max_seqlen_k,
-                    block_table,  # page_table
-                    None,  # kv_batch_idx
-                    None,  # leftpad_k
-                    None,  # rotary_cos
-                    None,  # rotary_sin
-                    descale_q,
-                    descale_k,
-                    descale_v,
-                    softmax_scale,
-                    is_causal,
-                    window_left,
-                    window_right,
-                    0,  # sink_token_length
-                    0.0,  # softcap
-                    False,  # rotary_interleaved
-                    0,  # num_splits
-                    pack_gqa,
-                    0,  # sm_margin
-                )
-
-                # Reshape softmax_lse to match expected output format
-                num_heads_q = query.shape[-2]
-                ori_lse_shape = softmax_lse.shape
-                softmax_lse = softmax_lse.view(
-                    ori_lse_shape[0], num_heads_q, -1, ori_lse_shape[2]
-                )
-                softmax_lse = softmax_lse.permute(1, 0, 2, 3).reshape(num_heads_q, -1)
-
-                return out, softmax_lse
-
-            else:
-                # Variable length case
-                out, softmax_lse, *rest = _C_flashattention3.fwd(
-                    query,
-                    key,
-                    value,
-                    None,  # k_new
-                    None,  # v_new
-                    None,  # out
-                    cu_seqlens_q,
-                    cu_seqlens_k if block_table is None else None,
-                    None,  # cu_seqlens_k_new
-                    None,  # seqused_q
-                    seqused_k,
-                    max_seqlen_q,
-                    max_seqlen_k,
-                    block_table,  # page_table
-                    None,  # kv_batch_idx
-                    None,  # leftpad_k
-                    None,  # rotary_cos
-                    None,  # rotary_sin
-                    descale_q,
-                    descale_k,
-                    descale_v,
-                    softmax_scale,
-                    is_causal,
-                    window_left,
-                    window_right,
-                    0,  # sink_token_length
-                    0.0,  # softcap
-                    True,  # rotary_interleaved
-                    1,  # num_splits
-                    None,  # pack_gqa
-                    0,  # sm_margin
-                )
-
-                return out, softmax_lse
+        return out, softmax_lse
 
     @torch.library.register_fake("xformers_flash3::flash_fwd")
     def mha_fwd_fake(
@@ -369,19 +329,25 @@ if _C_flashattention3 is not None:
         cu_seqlens_q: Optional[torch.Tensor],
         cu_seqlens_k: Optional[torch.Tensor],
         seqused_k: Optional[torch.Tensor],
+        leftpad_k: Optional[torch.Tensor],
         max_seqlen_q: int,
         max_seqlen_k: int,
         p: float,
         softmax_scale: float,
         is_causal: bool,
-        window_left: int,
-        window_right: int,
         descale_q: Optional[torch.Tensor] = None,
         descale_k: Optional[torch.Tensor] = None,
         descale_v: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        use_kvsplit: bool = False,
+        window_left: int = -1,
+        window_right: int = -1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         query_shape = query.shape
-        out = query.new_empty(query_shape)
+        if query.dtype == torch.float8_e4m3fn or query.dtype == torch.float8_e5m2:
+            out = query.new_empty(query_shape, dtype=torch.bfloat16)
+        else:
+            out = query.new_empty(query_shape)
         # Query is (B, M, H, K) or (total_M, H, K)
         # LSE is (B, H, M) or (H, total_M)
         lse_shape = (
@@ -400,13 +366,19 @@ if _C_flashattention3 is not None:
         cu_seqlens_q: Optional[torch.Tensor],
         cu_seqlens_k: Optional[torch.Tensor],
         seqused_k: Optional[torch.Tensor],
+        leftpad_k: Optional[torch.Tensor],
         max_seqlen_q: int,
         max_seqlen_k: int,
         p: float,
         softmax_scale: float,
         is_causal: bool,
-        window_left: int,
-        window_right: int,
+        descale_q: Optional[torch.Tensor] = None,
+        descale_k: Optional[torch.Tensor] = None,
+        descale_v: Optional[torch.Tensor] = None,
+        block_table: Optional[torch.Tensor] = None,
+        use_kvsplit: bool = False,
+        window_left: int = -1,
+        window_right: int = -1,
         # The FLOPs counter might pass more args (out_val, out_shape, ...)
         *args,
         **kwargs,
@@ -487,62 +459,36 @@ if _C_flashattention3 is not None:
         window_left: int,
         window_right: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        seqused_q = seqused_k = None
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
         is_deterministic = False
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
-            dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                None,  # cu_seqlens_q
-                None,  # cu_seqlens_k
-                seqused_q,
-                seqused_k,
-                None,  # max_seqlen_q
-                None,  # max_seqlen_k
-                softmax_scale,
-                is_causal,
-                window_left,
-                window_right,
-                0,  # not used, sink_token_length
-                0.0,  # not used, softcap
-                is_deterministic,
-                0,  # not used, sm_margin
-            )
-        else:
-            dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
-                dout,
-                query,
-                key,
-                value,
-                out,
-                softmax_lse,
-                dq,
-                dk,
-                dv,
-                cu_seqlens_q,
-                cu_seqlens_k,
-                seqused_q,
-                seqused_k,
-                max_seqlen_q,
-                max_seqlen_k,
-                softmax_scale,
-                is_causal,
-                window_left,
-                window_right,
-                0,  # not used, sink_token_length
-                0.0,  # not used, softcap
-                is_deterministic,
-                0,  # not used, sm_margin
-            )
+
+        assert _C_flashattention3 is not None
+        dq, dk, dv, softmax_d, *rest = _C_flashattention3.bwd(
+            dout,
+            query,
+            key,
+            value,
+            out,
+            softmax_lse,
+            dq,
+            dk,
+            dv,
+            cu_seqlens_q,
+            cu_seqlens_k,
+            None,  # seqused_q
+            None,  # seqused_k
+            max_seqlen_q,
+            max_seqlen_k,
+            softmax_scale,
+            is_causal,
+            window_left,
+            window_right,
+            0.0,  # not used, softcap
+            is_deterministic,
+            0,  # not used, sm_margin
+        )
         return dq, dk, dv
 
     @torch.library.register_fake("xformers_flash3::flash_bwd")
@@ -598,16 +544,47 @@ if _C_flashattention3 is not None:
                 cu_seqlens_q=cu_seqlens_q,
                 cu_seqlens_k=cu_seqlens_k,
                 seqused_k=None,
+                leftpad_k=None,
                 max_seqlen_q=max_seqlen_q,
                 max_seqlen_k=max_seqlen_k,
                 p=0.0,
                 softmax_scale=1.0,
                 is_causal=is_causal,
+                descale_q=None,
+                descale_k=None,
+                descale_v=None,
+                block_table=None,
+                use_kvsplit=False,
                 window_left=window_left,
                 window_right=window_right,
             )
             // 2
         )
+
+
+def _check_different_value_headdim_ampere(d: Inputs, reasons: List[str]) -> None:
+    if (
+        d.query.device.type == "cuda"
+        and (torch.version.hip is None)
+        and d.query.shape[-1] != d.value.shape[-1]
+    ):
+        device_capability = torch.cuda.get_device_capability(d.device)
+        if device_capability < (9, 0):
+            reasons.append(
+                f"Q/K head-dim ({d.query.shape[-1]}) must be equal "
+                f"to V head-dim ({d.value.shape[-1]}) for Ampere GPUs"
+            )
+
+
+def _get_blocktables(inp_attn_bias) -> Optional[torch.Tensor]:
+    return (
+        inp_attn_bias.block_tables
+        if isinstance(
+            inp_attn_bias,
+            (PagedBlockDiagonalGappyKeysMask, PagedBlockDiagonalPaddedKeysMask),
+        )
+        else None
+    )
 
 
 @register_operator
@@ -619,10 +596,13 @@ class FwOp(AttentionFwOpBase):
 
     OPERATOR = get_operator("xformers_flash3", "flash_fwd")
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
-    CUDA_MINIMUM_COMPUTE_CAPABILITY = (9, 0)
-    SUPPORTED_DTYPES: Set[torch.dtype] = supported_dtypes()
+    CUDA_MINIMUM_COMPUTE_CAPABILITY = (8, 0)
+    SUPPORTED_DTYPES: Set[torch.dtype] = {
+        torch.half,
+        torch.bfloat16,
+    } | ({torch.float8_e4m3fn} if FLASH3_HAS_FLOAT8 else set())
     SUPPORTED_MAX_K = 256
-    SUPPORTED_MIN_K = 64
+    SUPPORTED_MIN_K = 32
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         LowerTriangularMask,
@@ -636,18 +616,24 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalFromBottomRightMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalLocalAttentionPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
         LocalAttentionFromBottomRightMask,
-        PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
-        PagedBlockDiagonalPaddedKeysMask,
+    ) + (
+        (
+            PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+            PagedBlockDiagonalGappyKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
+        )
+        if FLASH3_HAS_PAGED_ATTENTION
+        else tuple()
     )
-
-    SUPPORTED_ATTN_BIAS_TYPES = _paged_attention_filter(SUPPORTED_ATTN_BIAS_TYPES)
 
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = True
-    SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_DIFFERENT_VALUE_EMBED = True  # Only hopper
     SUPPORTS_BMGHK = True
     SUPPORTS_PARTIAL = True
     UNPADDED_LSE = True
@@ -658,11 +644,18 @@ class FwOp(AttentionFwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
-        if d.query.shape[-1] not in [64, 128, 192, 256]:
-            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
-
+        check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
         _check_needs_no_topleft(d, reasons)
-
+        _check_different_value_headdim_ampere(d, reasons)
+        if (
+            _get_blocktables(d.attn_bias) is not None
+            and d.query.shape[-1] != d.value.shape[-1]
+        ):
+            reasons.append(
+                f"Q/K head-dim ({d.query.shape[-1]}) must be equal "
+                f"to V head-dim ({d.value.shape[-1]}) for paged attention"
+            )
         return reasons
 
     @classmethod
@@ -672,12 +665,18 @@ class FwOp(AttentionFwOpBase):
         needs_gradient: bool,
         use_kvsplit: bool = False,
     ) -> Tuple[torch.Tensor, Optional[Context]]:
-
         original_query_shape = inp.query.shape
         out_shape = [
             *inp.query.shape[:-1],
             inp.value.shape[-1],
         ]
+
+        def unpack_func(x) -> Tuple[torch.Tensor, Any]:
+            return x.unpack() if isinstance(x, ScaledTensor) else (x, None)
+
+        inp.query, descale_q = unpack_func(inp.query)
+        inp.key, descale_k = unpack_func(inp.key)
+        inp.value, descale_v = unpack_func(inp.value)
         (
             inp,
             cu_seqlens_q,
@@ -687,39 +686,46 @@ class FwOp(AttentionFwOpBase):
             seqused_k,
         ) = _convert_input_format(inp, supports_mqa=True, use_kvsplit=use_kvsplit)
 
-        def unpack_func(x):
-            return x.unpack() if isinstance(x, ScaledTensor) else (x, None)
-
-        q, descale_q = unpack_func(inp.query)
-        k, descale_k = unpack_func(inp.key)
-        v, descale_v = unpack_func(inp.value)
+        q = inp.query
+        k = inp.key
+        v = inp.value
 
         if inp.query.numel() > 0 and inp.key.numel() > 0:
             win_left, win_right = _window_size(inp.attn_bias)
-            block_tables = (
-                inp.attn_bias.block_tables
-                if isinstance(inp.attn_bias, PagedBlockDiagonalPaddedKeysMask)
-                else None
-            )
-            (out, softmax_lse,) = cls.OPERATOR(
+            block_tables = _get_blocktables(inp.attn_bias)
+            leftpad_k = None
+            if isinstance(inp.attn_bias, PagedBlockDiagonalGappyKeysMask):
+                assert cu_seqlens_q is not None
+                assert cu_seqlens_k is not None
+                if len(cu_seqlens_q) == len(cu_seqlens_k):
+                    # case #1: len(cu_seqlens_k) = batch_size + 1
+                    leftpad_k = cu_seqlens_k[:-1]
+                else:
+                    # case #2: len(cu_seqlens_k) = batch_size
+                    assert (
+                        len(cu_seqlens_q) - len(cu_seqlens_k) == 1
+                    ), f"{len(cu_seqlens_q)=} {len(cu_seqlens_k)=}"
+                    leftpad_k = cu_seqlens_k
+            out, softmax_lse = cls.OPERATOR(
                 q,
                 k,
                 v,
                 cu_seqlens_q=cu_seqlens_q,
                 cu_seqlens_k=cu_seqlens_k,
                 seqused_k=seqused_k,
+                leftpad_k=leftpad_k,
                 max_seqlen_q=max_seqlen_q,
                 max_seqlen_k=max_seqlen_k,
                 p=inp.p,
                 softmax_scale=inp.scale_float,
                 is_causal=_is_causal(inp.attn_bias),
-                window_left=win_left,
-                window_right=win_right,
                 descale_q=descale_q,
                 descale_k=descale_k,
                 descale_v=descale_v,
                 block_table=block_tables,
                 use_kvsplit=use_kvsplit,
+                window_left=win_left,
+                window_right=win_right,
             )
             out = out.reshape(out_shape)
         else:
@@ -756,7 +762,7 @@ class BwOp(AttentionBwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = FwOp.CUDA_MINIMUM_COMPUTE_CAPABILITY
     SUPPORTED_DTYPES = FwOp.SUPPORTED_DTYPES
     SUPPORTED_MAX_K = FwOp.SUPPORTED_MAX_K
-    SUPPORTED_MIN_K = FwOp.SUPPORTED_MIN_K
+    SUPPORTED_MIN_K = 64
     SUPPORTED_ATTN_BIAS_TYPES = (
         # Exclude padded or gappy masks, since seqused_k is not supported by the kernel.
         type(None),
@@ -784,16 +790,14 @@ class BwOp(AttentionBwOpBase):
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
+        check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
+        check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
         _check_needs_no_topleft(d, reasons)
-        if d.query.shape[-1] not in [64, 128, 192, 256]:
-            reasons.append("only head-dim 64, 128, 192 or 256 is supported")
-
-        _check_needs_no_topleft(d, reasons)
+        _check_different_value_headdim_ampere(d, reasons)
         return reasons
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
-
         dq_shape, dk_shape, dv_shape = inp.query.shape, inp.key.shape, inp.value.shape
         (
             inp,
@@ -859,28 +863,33 @@ class FwOp_KVSplit(FwOp):
         implementation with heuristic rules to dispatch decoding shapes to KVSplit Attention \
     """
 
+    NAME = f"fa3F_splitKV@{FLASH_VERSION}"
     enable_kvsplit_attn: bool = True
 
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
+        type(None),
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
         BlockDiagonalPaddedKeysMask,
+        BlockDiagonalCausalWithOffsetGappyKeysMask,
+        BlockDiagonalGappyKeysMask,
+        BlockDiagonalLocalAttentionPaddedKeysMask,
+    ) + (
+        (
+            PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+            PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
+            PagedBlockDiagonalGappyKeysMask,
+            PagedBlockDiagonalPaddedKeysMask,
+        )
+        if FLASH3_HAS_PAGED_ATTENTION
+        else tuple()
     )
 
     @classmethod
-    def apply(
+    def apply(  # type: ignore[override]
         cls,
         inp: Inputs,
         needs_gradient: bool,
-        use_kvsplit: bool = True,
     ) -> Tuple[torch.Tensor, Optional[Context]]:
-        attn_bias = inp.attn_bias
-        assert isinstance(attn_bias, BlockDiagonalPaddedKeysMask)
-        homogeneous_q = attn_bias.q_seqinfo.min_seqlen == attn_bias.q_seqinfo.max_seqlen
-        short_q = attn_bias.q_seqinfo.max_seqlen <= 10
-
-        # Note that prefill shouldn't use kvsplit.
-        use_kvsplit = (
-            use_kvsplit and homogeneous_q and cls.enable_kvsplit_attn and short_q
-        )
+        use_kvsplit = _heuristic_kvsplit(inp, cls.enable_kvsplit_attn)
 
         return super().apply(inp, needs_gradient, use_kvsplit)

@@ -25,12 +25,9 @@ jobs:
       - run: sed -i '/triton/d' requirements-test.txt
       - name: Install deps
         run: pip install -r requirements-test.txt
-      - name: isort
+      - name: ufmt
         if: success() || failure()
-        run: python -m isort . --check --profile black
-      - name: black
-        if: success() || failure()
-        run: python -m black --check . --exclude "third_party/"
+        run: ufmt check
       - name: mypy
         if: success() || failure()
         run: |

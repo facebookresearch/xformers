@@ -24,7 +24,6 @@ jobs:
       matrix:
         arch:
           - "8.0"
-          - "7.0"
     name: win-build-${{ matrix.arch }}
     runs-on: windows-8-core
     env:
@@ -62,7 +61,7 @@ jobs:
         uses: ./.github/actions/setup-build-cuda
         with:
           toolkit_type: "cuda"
-          toolkit_short_version: "126"
+          toolkit_short_version: "128"
           python: "3.9"
 
       - name: Remove internal code
@@ -86,14 +85,13 @@ jobs:
       - name: Build from sdist
         shell: bash -l {0}
         run: |
-          $PY -m pip install -v dist/*
+          $PY -m pip install -v --no-build-isolation dist/*
 
       - name: Info
         run: |
           cd ../../  # So we don't have a folder named `xformers`
           XFORMERS_MORE_DETAILS=1 $PY -m xformers.info
 
-      # Open an SSH session on failure to debug
-      # - name: Setup tmate session
+      # - name: Open an SSH session on failure to debug
       #   if: ${{ failure() }}
       #   uses: mxschmitt/action-tmate@v3

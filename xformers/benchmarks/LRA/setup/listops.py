@@ -14,7 +14,7 @@ import numpy as np
 
 sys.path.append("./datasets/long-range-arena")
 sys.path.append("./datasets/long-range-arena/lra_benchmarks/listops/")
-import input_pipeline  # type: ignore # noqa
+import input_pipeline  # type: ignore  # noqa
 
 train_ds, eval_ds, test_ds, encoder = input_pipeline.get_datasets(  # type: ignore
     n_devices=1,

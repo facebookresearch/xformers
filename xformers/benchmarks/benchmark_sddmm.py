@@ -9,7 +9,7 @@ import torch
 from torch.utils import benchmark
 
 from xformers.components.attention._sputnik_sparse import _csr_to_coo
-from xformers.components.attention.core import SparseCS, _create_random_sparsity
+from xformers.components.attention.core import _create_random_sparsity, SparseCS
 
 MIN_RUN_TIME = 0.2
 

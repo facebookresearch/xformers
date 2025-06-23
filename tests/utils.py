@@ -18,6 +18,10 @@ from xformers.ops.fmha.attn_bias import (
 )
 from xformers.ops.fmha.triton_splitk import InputsFp8
 
+cuda_or_mtia_only = pytest.mark.skipif(
+    not torch.cuda.is_available() and not torch.mtia.is_available(),
+    reason="requires CUDA or MTIA",
+)
 cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 rocm_only = pytest.mark.skipif(
     not torch.cuda.is_available() or not torch.version.hip, reason="requires ROCM"
@@ -25,6 +29,51 @@ rocm_only = pytest.mark.skipif(
 disable_on_rocm = pytest.mark.skipif(
     not not torch.version.hip, reason="could not be done on ROCM"
 )
+disable_on_mtia = pytest.mark.skipif(
+    torch.mtia.is_available(), reason="Not supported yet on MTIA"
+)
+
+
+# We don't want to compare MTIA output against another MTIA output yet for 2 reasons:
+#   1. Some kernels may have bugs, and the reference implementation may share some of
+#      the same kernels as the mem_eff implementation. We would then end up comparing
+#      a faulty output against another faulty output, which could lead to tests passing
+#      when they shouldn't.
+#   2. We may run on some emulated devices that can be slower than the CPU implementation,
+#      and therefore increase the time it takes to run the tests by a lot.
+def use_cpu_ref(device: str):
+    return device.startswith("mtia")
+
+
+def maybe_use_cpu_ref(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        new_args = list(args)
+        new_kwargs = kwargs.copy()
+        original_device = None
+
+        for key in kwargs:
+            if isinstance(kwargs[key], torch.Tensor) and use_cpu_ref(
+                kwargs[key].device.type
+            ):
+                assert original_device is None or kwargs[key].device == original_device
+                original_device = kwargs[key].device
+                new_kwargs[key] = kwargs[key].cpu()
+
+        for index, arg in enumerate(new_args):
+            if isinstance(arg, torch.Tensor) and use_cpu_ref(arg.device.type):
+                assert original_device is None or arg.device == original_device
+                original_device = arg.device
+                new_args[index] = arg.cpu()
+
+        output = fn(*new_args, **new_kwargs)
+
+        if isinstance(output, torch.Tensor) and original_device is not None:
+            output = output.to(original_device)
+
+        return output
+
+    return wrapped
 
 
 def disable_tf32(fn):
@@ -49,8 +98,8 @@ def disable_tf32(fn):
     return wrapped
 
 
-ref_attention_for_test = disable_tf32(ref_attention)
-ref_attention_bmhk_for_test = disable_tf32(ref_attention_bmhk)
+ref_attention_for_test = disable_tf32(maybe_use_cpu_ref(ref_attention))
+ref_attention_bmhk_for_test = disable_tf32(maybe_use_cpu_ref(ref_attention_bmhk))
 
 
 def assert_allclose(

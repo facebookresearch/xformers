@@ -10,6 +10,7 @@ recursive-include third_party/cutlass/tools/util/include *
 recursive-include third_party/cutlass/examples *
 recursive-include third_party/flash-attention/csrc *
 recursive-include third_party/flash-attention/flash_attn *
+recursive-include third_party/flash-attention/hopper *
 
 prune third_party/flash-attention/csrc/cutlass/docs/
 prune third_party/flash-attention/csrc/cutlass/test/

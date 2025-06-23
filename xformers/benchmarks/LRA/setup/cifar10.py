@@ -12,7 +12,7 @@ import sys
 
 sys.path.append("./datasets/long-range-arena")
 sys.path.append("./datasets/long-range-arena/lra_benchmarks/image/")
-import input_pipeline  # type: ignore # noqa
+import input_pipeline  # type: ignore  # noqa
 
 (
     train_ds,

@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Callable, Dict, List, Optional, Sequence, Union, overload
+from typing import Callable, Dict, List, Optional, overload, Sequence, Union
 
 import torch
 import torch.distributed as dist
@@ -387,8 +387,7 @@ def fused_allgather_and_linear(
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
     out_dtype: Optional[torch.dtype] = None,
     **private_args_DO_NOT_USE,
-) -> torch.Tensor:
-    ...
+) -> torch.Tensor: ...
 
 
 @overload
@@ -403,8 +402,7 @@ def fused_allgather_and_linear(
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
     out_dtype: Optional[torch.dtype] = None,
     **private_args_DO_NOT_USE,
-) -> List[torch.Tensor]:
-    ...
+) -> List[torch.Tensor]: ...
 
 
 def fused_allgather_and_linear(
@@ -630,8 +628,7 @@ def fused_linear_and_reducescatter(
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
     out_dtype: Optional[torch.dtype] = None,
     **private_args_DO_NOT_USE,
-) -> torch.Tensor:
-    ...
+) -> torch.Tensor: ...
 
 
 @overload
@@ -646,8 +643,7 @@ def fused_linear_and_reducescatter(
     scale_weight: Optional[Union[torch.Tensor, List[torch.Tensor]]] = None,
     out_dtype: Optional[torch.dtype] = None,
     **private_args_DO_NOT_USE,
-) -> List[torch.Tensor]:
-    ...
+) -> List[torch.Tensor]: ...
 
 
 def fused_linear_and_reducescatter(

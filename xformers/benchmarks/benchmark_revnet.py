@@ -9,7 +9,7 @@ from typing import Any, Dict
 import torch
 import triton
 
-from xformers.benchmarks.utils import TestCase, pretty_plot, pretty_print
+from xformers.benchmarks.utils import pretty_plot, pretty_print, TestCase
 from xformers.components.reversible import ReversibleSequence
 
 SHAPES = [(16384, 32), (2048, 256), (128, 4096)]

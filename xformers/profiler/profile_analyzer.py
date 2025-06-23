@@ -6,7 +6,7 @@
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, cast
+from typing import Any, cast, Dict, List, Optional, Sequence
 
 import torch
 
@@ -167,9 +167,9 @@ class AnalyzedTrace:
                 and e.flops() > 0
             )
         ]
-        events_per_group: Dict[
-            Any, List[torch._C._autograd._KinetoEvent]
-        ] = defaultdict(list)
+        events_per_group: Dict[Any, List[torch._C._autograd._KinetoEvent]] = (
+            defaultdict(list)
+        )
         for e in all_ops_with_flops:
             events_per_group[(e.start_thread_id(), e.device_type())].append(e)
         root_events: List[torch._C._autograd._KinetoEvent] = []

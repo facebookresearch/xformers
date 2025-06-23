@@ -3,26 +3,26 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
+from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
 from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
 from .attn_bias import (
-    VARLEN_BIASES,
     AttentionBias,
     BlockDiagonalMask,
     LowerTriangularMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
     AttentionOp,
     AttentionOpBase,
+    bmk2bmhk,
     Context,
     Gradients,
     Inputs,
-    bmk2bmhk,
 )
 from .dispatch import (
     _dispatch_bw,
@@ -106,7 +106,8 @@ class _fMHA(torch.autograd.Function):
                 )
             op_bw = op_ctx.op_bw
         if (
-            op_bw is not None
+            op_fw is not None
+            and op_bw is not None
             and isinstance(inp.attn_bias, VARLEN_BIASES)
             and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
             and op_bw.VARLEN_LSE_PACKED != op_fw.VARLEN_LSE_PACKED
@@ -790,11 +791,15 @@ def merge_attentions(
         Kq,
         device=device,
         dtype=output_dtype or attn_dtype,
-        requires_grad=requires_grad,
     )
     if write_lse:
         lse_out = torch.empty(
-            B, G, H, M, device=device, dtype=lse_dtype, requires_grad=requires_grad
+            B,
+            G,
+            H,
+            M,
+            device=device,
+            dtype=lse_dtype,
         )
     else:
         lse_out = None

@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from xformers.ops import RMSNorm, fmha, rope_padded
+from xformers.ops import fmha, RMSNorm, rope_padded
 from xformers.ops.fmha.attn_bias import (
     BlockDiagonalCausalWithOffsetPaddedKeysMask as AttnBias,
 )

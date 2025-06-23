@@ -156,6 +156,7 @@ def create_attn_bias(
         return block_diag
     if bias_type in [
         fmha.attn_bias.BlockDiagonalPaddedKeysMask,
+        fmha.attn_bias.BlockDiagonalLocalAttentionPaddedKeysMask,
         fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
         fmha.attn_bias.PagedBlockDiagonalPaddedKeysMask,
@@ -174,6 +175,14 @@ def create_attn_bias(
                 kv_padding=kv_len,
                 kv_seqlen=k,
                 window_size=min(window_size, min(k)),
+            )
+        elif bias_type is fmha.attn_bias.BlockDiagonalLocalAttentionPaddedKeysMask:
+            g_block_diag = block_diag_type.from_seqlens_local(
+                q_seqlen=q,
+                kv_padding=kv_len,
+                kv_seqlen=k,
+                window_left=max(window_size, max(q)) + 1,
+                window_right=max(window_size, max(q)) + 1,
             )
         else:
             g_block_diag = block_diag_type.from_seqlens(
