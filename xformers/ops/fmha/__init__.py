@@ -7,15 +7,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
 
 import torch
 
-from . import (
-    attn_bias,
-    ck,
-    ck_splitk,
-    cutlass,
-    flash,
-    flash3,
-    triton_splitk,
-)
+from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
 from .attn_bias import (
     VARLEN_BIASES,
     AttentionBias,
