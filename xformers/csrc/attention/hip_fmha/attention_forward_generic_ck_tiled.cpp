@@ -47,7 +47,7 @@ namespace {
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
@@ -464,7 +464,10 @@ efficient_attention_forward_ck(
     };
   };
 
-  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
+  if (compute_logsumexp)
+    return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
+  else
+    return std::make_tuple(out, std::nullopt, philox_seed, philox_offset);
 }
 
 /*
@@ -472,7 +475,7 @@ efficient_attention_forward_ck(
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck_meta(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
@@ -515,7 +518,10 @@ efficient_attention_forward_ck_meta(
       logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
     }
   }
-  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
+  if (compute_logsumexp)
+    return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
+  else
+    return std::make_tuple(out, std::nullopt, philox_seed, philox_offset);
 }
 
 } // namespace
