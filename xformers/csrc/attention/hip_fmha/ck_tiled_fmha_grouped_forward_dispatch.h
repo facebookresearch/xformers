@@ -145,6 +145,7 @@ struct grouped_forward_mask_bias_dropout_dispatch {
                                   : -1, // window_left_size
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
           param.custom_mask_type,
+          0, // min_seqlen_q, most recently added kernel argument
           param.dropout_prob,
           false, // is_store_randval
           std::make_pair(param.philox_seed, param.philox_offset));
