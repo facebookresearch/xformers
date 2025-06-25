@@ -344,10 +344,11 @@ if _C_flashattention3 is not None:
         window_right: int = -1,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         query_shape = query.shape
+        out_shape = (*query_shape[:-1], value.shape[-1])
         if query.dtype == torch.float8_e4m3fn or query.dtype == torch.float8_e5m2:
-            out = query.new_empty(query_shape, dtype=torch.bfloat16)
+            out = query.new_empty(out_shape, dtype=torch.bfloat16)
         else:
-            out = query.new_empty(query_shape)
+            out = query.new_empty(out_shape)
         # Query is (B, M, H, K) or (total_M, H, K)
         # LSE is (B, H, M) or (H, total_M)
         lse_shape = (
