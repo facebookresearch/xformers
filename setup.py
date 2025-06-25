@@ -339,7 +339,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
         # Enabling paged attention causes segfault with some
         # versions of nvcc :(
         # https://github.com/Dao-AILab/flash-attention/issues/1453
-        ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
+        # ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
         # We have `CUDA_MINIMUM_COMPUTE_CAPABILITY` set to 9.0
         # ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
     )

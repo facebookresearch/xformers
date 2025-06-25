@@ -101,7 +101,7 @@ def _flash_attention3_incompatible_reason() -> Optional[str]:
     return None
 
 
-FLASH3_HAS_PAGED_ATTENTION = False
+FLASH3_HAS_PAGED_ATTENTION = True
 FLASH3_HAS_FLOAT8 = False
 _C_flashattention3 = None
 if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
