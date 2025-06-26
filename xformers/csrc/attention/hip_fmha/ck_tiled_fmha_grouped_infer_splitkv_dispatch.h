@@ -77,12 +77,6 @@ struct grouped_infer_splitkv_mask_bias_dropout_dispatch {
 
       bool is_paged_kv = param.use_paged_kvcache;
 
-      static bool dummy = [&](){
-          std::cout << __FILE__ << std::endl;
-          param.print();
-          return true;
-      }();
-
       BOOL_SWITCH_3(
           pad_headdim_q,
           kPadHeadDimQ,

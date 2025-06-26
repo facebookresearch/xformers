@@ -72,12 +72,6 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
 
       bool is_paged_kv = param.use_paged_kvcache;
 
-      static bool dummy = [&](){
-          std::cout << __FILE__ << std::endl;
-          param.print();
-          return true;
-      }();
-
       BOOL_SWITCH_3(
           pad_headdim_q,
           kPadHeadDimQ,
@@ -124,13 +118,12 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
 
   };
 
-  template <typename FmhaFwdPagedKVKernel>
+  template <typename FmhaKernel>
   static void RunWithFwdPagedKVKernel(
       GroupedForwardParams& param,
       hipStream_t stream) {
-    static_assert(FmhaFwdPagedKVKernel::kIsGroupMode == true,"must be group");
     const auto kargs = [&] {
-        return FmhaFwdPagedKVKernel::MakeKargs(
+        return FmhaKernel::MakeKargs(
             param.q_ptr,
             param.k_ptr,
             param.v_ptr,
@@ -176,17 +169,18 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
             0);                           // min_seqlen_q
     }();
 
-    dim3 kGridSize = FmhaFwdPagedKVKernel::GridSize(
+    dim3 kGridSize = FmhaKernel::GridSize(
         param.num_batches,
         param.Hq,
         param.max_seqlen_q,
-        param.Kv);
-    constexpr dim3 kBlockSize = FmhaFwdPagedKVKernel::BlockSize();
-    constexpr ck_tile::index_t kBlockPerCu = FmhaFwdPagedKVKernel::kBlockPerCu;
+        param.Kv,
+        kargs.seqlen_k_ptr != nullptr);
+    constexpr dim3 kBlockSize = FmhaKernel::BlockSize();
+    constexpr ck_tile::index_t kBlockPerCu = FmhaKernel::kBlockPerCu;
 
     (void)ck_tile::launch_kernel(
         ck_tile::stream_config{stream, false},
         ck_tile::make_kernel<kBlockSize.x, kBlockPerCu>(
-            FmhaFwdPagedKVKernel{}, kGridSize, kBlockSize, 0, kargs));
+            FmhaKernel{}, kGridSize, kBlockSize, 0, kargs));
   };
 };
