@@ -34,6 +34,11 @@ struct batched_infer_mask_bias_dropout_dispatch {
       (kUseWholeKPrefetchPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
                                                  : FmhaShape::kSubQKHeaddim;
 
+  template <typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<
+      FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP,
+      CK_TILE_FMHA_FWD_FAST_EXP2>;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -49,6 +54,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
       FmhaShape,
       false, // kIsGroupMode
+      AttentionVariant<FmhaTraits>,
       FmhaMask,
       FmhaTraits>;
 
@@ -88,6 +94,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
                 kPadSeqLenK,
                 kPadHeadDimQ, // kPadHeadDimQ,
                 kPadHeadDimV, // kPadHeadDimV,
+                false, // kHasLogitsSoftCap
                 kBiasEnum,
                 false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
@@ -137,6 +144,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
               kPadSeqLenK,
               true, // kPadHeadDimQ,
               true, // kPadHeadDimV,
+              false, // kHasLogitsSoftCap
               kBiasEnum,
               false, // kHasBiasGrad place-holder
               false, // kStoreLSE
@@ -187,6 +195,7 @@ struct batched_infer_mask_bias_dropout_dispatch {
           param.scale,
           1.0f, // scale_p
           1.0f, // scale_o
+          0.0f, // logits_soft_cap
           param.q_strides[1], // q, k, v, bias, randval, out tensor seq-dim
                               // stride
           param.k_strides[1],

@@ -24,6 +24,11 @@ template <
     ck_tile::index_t MaxK,
     ck_tile::index_t MaxSeqlenQ>
 struct batched_infer_splitkv_mask_bias_dropout_dispatch {
+  template <typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<
+      FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP,
+      CK_TILE_FMHA_FWD_FAST_EXP2>;
+
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -42,6 +47,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
           ODataType,
           typename FmhaFwdSplitKVShape<MaxK, MaxSeqlenQ>::Type,
           false, // kIsGroupMode
+          AttentionVariant<FmhaFwdSplitKVTraits>,
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
@@ -95,6 +101,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   kPadSeqLenK,
                   kPadHeadDim, // kPadHeadDimQ,
                   kPadHeadDim, // kPadHeadDimV,
+                  false, // kHasLogitsSoftCap
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   true, // kStoreLSE
@@ -131,6 +138,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
                   kPadSeqLenK,
                   kPadHeadDim, // kPadHeadDimQ,
                   kPadHeadDim, // kPadHeadDimV,
+                  false, // kHasLogitsSoftCap
                   kBiasEnum,
                   false, // kHasBiasGrad place-holder
                   false, // kStoreLSE
@@ -243,6 +251,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
             nullptr, // cache_batch_idx, not used
             param.scale,
             1.0f, // scale_p
+            0.0f, // logits_soft_cap
             param.q_strides[1], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[1],
@@ -292,6 +301,7 @@ struct batched_infer_splitkv_mask_bias_dropout_dispatch {
             nullptr, // cache_batch_idx, not used
             param.scale,
             1.0f, // scale_p
+            0.0f, // logits_soft_cap
             param.q_strides[1], // q, k, v, bias, out tensor seq-dim stride
             param.k_strides[1],
             param.v_strides[1],

@@ -6,12 +6,12 @@
  * LICENSE file in the root directory of this source tree.
  */
 #include <ATen/ATen.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
 #include <c10/core/TensorOptions.h>
+#include <c10/hip/HIPStream.h>
 #include <torch/library.h>
 #include <torch/types.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <ATen/cuda/PhiloxUtils.cuh>
 
 #include <ck_tile/core.hpp>
 #include <ck_tile/host/kernel_launch.hpp>
@@ -33,7 +33,7 @@ at::Tensor rand_uniform_int(
   int M = out_pattern.size(2);
   int N = out_pattern.size(3);
 
-  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
+  hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
 
   at::CUDAGeneratorImpl* gen =
       at::get_generator_or_default<at::CUDAGeneratorImpl>(
