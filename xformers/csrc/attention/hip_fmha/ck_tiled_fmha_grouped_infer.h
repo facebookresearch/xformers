@@ -10,9 +10,9 @@
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_smallq_selector.h"
 #include "ck_tiled_fmha_grouped_infer_dispatch.h"
+#include "ck_tiled_fmha_grouped_infer_pagedkv_dispatch.h"
 #include "ck_tiled_fmha_grouped_infer_splitkv_dispatch.h"
 #include "ck_tiled_fmha_grouped_infer_splitkv_smallq_dispatch.h"
-#include "ck_tiled_fmha_grouped_infer_pagedkv_dispatch.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
 
 template <

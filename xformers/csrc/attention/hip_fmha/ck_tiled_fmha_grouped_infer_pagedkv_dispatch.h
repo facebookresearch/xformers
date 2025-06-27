@@ -13,8 +13,8 @@
 #include <ck_tile/ops/fmha.hpp>
 
 #include "ck_tiled_bool_switch.h"
-#include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_fwd_setting.h"
+#include "ck_tiled_fmha_fwd_splitkv_setting.h"
 #include "ck_tiled_fmha_num_kv_split_switch.h"
 #include "ck_tiled_fmha_params.h"
 
@@ -28,7 +28,7 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
   using fmha_variant = ck_tile::ComposedAttention<
       true * ck_tile::LOGITS_SOFT_CAP,
       CK_TILE_FMHA_FWD_FAST_EXP2>;
-  
+
   template <
       typename FmhaFwdPagedKVTraits,
       typename FmhaMask,
@@ -55,8 +55,7 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
 
-      using FmhaTileShape =
-          typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type;
+      using FmhaTileShape = typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type;
 
       constexpr ck_tile::index_t occupancy = -1;
 
@@ -115,7 +114,6 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
             RunWithFwdPagedKVKernel<FmhaKernel>(param, stream);
           });
     };
-
   };
 
   template <typename FmhaKernel>
@@ -123,50 +121,50 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
       GroupedForwardParams& param,
       hipStream_t stream) {
     const auto kargs = [&] {
-        return FmhaKernel::MakeKargs(
-            param.q_ptr,
-            param.k_ptr,
-            param.v_ptr,
-            param.attn_bias_ptr,
-            nullptr, // lse_ptr,
-            param.out_ptr,    //o_ptr
-            param.seqstart_q_dev_ptr,
-            param.seqstart_k_dev_ptr,
-            param.seqlen_k_dev_ptr,
-            param.K, // hdim_q
-            param.Kv, // hdim_v
-            param.Hq, // nhead_q
-            param.Hq / param.Hkv, // nhead_ratio_qk
-            param.use_paged_kvcache ? param.block_table_ptr : nullptr,
-            param.use_paged_kvcache ? param.batch_stride_block_table : 0,
-            param.use_paged_kvcache ? param.page_block_size : 0,
-            param.use_paged_kvcache ? param.is_gappy : false,
-            param.scale,
-            1.0f, // scale_p
-            1.0f, // scale_o
-            0,    // logits_soft_cap
-            param.q_strides[0], // q, k, v, bias, out tensor seq-dim
-                                // stride
-            param.k_strides[0],
-            param.v_strides[0],
-            param.attn_bias_strides[2],
-            param.out_strides[0],
-            param.q_strides[1], // q, k, v, bias, lse, out tensor
-                                // head-dim stride
-            param.k_strides[1],
-            param.v_strides[1],
-            param.attn_bias_strides[1],
-            0, // nhead_stride_lse
-            param.out_strides[1],
-            param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_k
-            param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
-                                    : 0, // batch_stride_v
-            (param.window_size > 0) ? param.window_size - 1
-                                    : -1, // window_left_size
-            (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
-            param.custom_mask_type,
-            0);                           // min_seqlen_q
+      return FmhaKernel::MakeKargs(
+          param.q_ptr,
+          param.k_ptr,
+          param.v_ptr,
+          param.attn_bias_ptr,
+          nullptr, // lse_ptr,
+          param.out_ptr, // o_ptr
+          param.seqstart_q_dev_ptr,
+          param.seqstart_k_dev_ptr,
+          param.seqlen_k_dev_ptr,
+          param.K, // hdim_q
+          param.Kv, // hdim_v
+          param.Hq, // nhead_q
+          param.Hq / param.Hkv, // nhead_ratio_qk
+          param.use_paged_kvcache ? param.block_table_ptr : nullptr,
+          param.use_paged_kvcache ? param.batch_stride_block_table : 0,
+          param.use_paged_kvcache ? param.page_block_size : 0,
+          param.use_paged_kvcache ? param.is_gappy : false,
+          param.scale,
+          1.0f, // scale_p
+          1.0f, // scale_o
+          0, // logits_soft_cap
+          param.q_strides[0], // q, k, v, bias, out tensor seq-dim
+                              // stride
+          param.k_strides[0],
+          param.v_strides[0],
+          param.attn_bias_strides[2],
+          param.out_strides[0],
+          param.q_strides[1], // q, k, v, bias, lse, out tensor
+                              // head-dim stride
+          param.k_strides[1],
+          param.v_strides[1],
+          param.attn_bias_strides[1],
+          0, // nhead_stride_lse
+          param.out_strides[1],
+          param.use_paged_kvcache ? param.k_strides[0] * param.page_block_size
+                                  : 0, // batch_stride_k
+          param.use_paged_kvcache ? param.v_strides[0] * param.page_block_size
+                                  : 0, // batch_stride_v
+          (param.window_size > 0) ? param.window_size - 1
+                                  : -1, // window_left_size
+          (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
+          param.custom_mask_type,
+          0); // min_seqlen_q
     }();
 
     dim3 kGridSize = FmhaKernel::GridSize(
