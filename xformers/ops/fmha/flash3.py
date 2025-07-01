@@ -510,10 +510,7 @@ if _C_flashattention3 is not None:
         window_left: int,
         window_right: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        dq = torch.empty_like(query)
-        dk = torch.empty_like(key)
-        dv = torch.empty_like(value)
-        return dq, dk, dv
+        return _create_dq_dk_dv(grads_share_storage, query, key, value)
 
     @register_flop_formula(torch.ops.xformers_flash3.flash_bwd, get_raw=True)
     def mha_bwd_flops(

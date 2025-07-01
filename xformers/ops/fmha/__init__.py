@@ -179,6 +179,7 @@ class _fMHA(torch.autograd.Function):
             lse=lse,
             out=out,
             rng_state=rng_state,
+            qkv_share_storage=ctx.qkv_share_storage,
         )
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx,
