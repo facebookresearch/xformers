@@ -738,10 +738,7 @@ class BuildExtensionWithExtraFiles(BuildExtension):
             fixed_name = f"{last_part}.pyd"
             print(f"[INFO]get_ext_filename: Fixing inplace broken .pyd name: pyd -> {fixed_name}")
             return os.path.join(parent_path, fixed_name) if parent_path else fixed_name
-
         return filename
-
-
 
 if __name__ == "__main__":
     if os.getenv("BUILD_VERSION"):  # In CI
