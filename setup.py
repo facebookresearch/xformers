@@ -462,7 +462,7 @@ def get_extensions():
     extra_compile_args = {"cxx": ["-O3", "-std=c++17", "-DPy_LIMITED_API=0x03090000"]}
     if sys.platform == "win32":
         if os.getenv('DISTUTILS_USE_SDK') == '1':
-            extra_compile_args={"cxx": ["-O2", "/std:c++17", "/DPy_LIMITED_API=0x03090000" ]}
+            extra_compile_args = {"cxx": ["-O2", "/std:c++17", "/DPy_LIMITED_API=0x03090000"]}
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(
             ["/MP", "/Zc:lambda", "/Zc:preprocessor", "/Zc:__cplusplus"]
@@ -707,7 +707,7 @@ class BuildExtensionWithExtraFiles(BuildExtension):
         build_py = self.get_finalized_command("build_py")
         package_dir = build_py.get_package_dir(self.pkg_name)
 
-        #Fix for windows when using py_limited_api=True. see #1272
+        # Fix for windows when using py_limited_api=True. see #1272
         for ext in self.extensions:
             ext_path_parts = ext.name.split(".")
             ext_basename = ext_path_parts[-1]
@@ -729,7 +729,7 @@ class BuildExtensionWithExtraFiles(BuildExtension):
 
     def get_ext_filename(self, ext_name):
         filename = super().get_ext_filename(ext_name)
-        #Fix for windows when using py_limited_api=True. see #1272
+        # Fix for windows when using py_limited_api=True. see #1272
         # If setuptools returns a bogus 'pyd' filename, fix it.
         if os.path.basename(filename) == "pyd":
             # Extract the final component of the ext_name (after last dot)
