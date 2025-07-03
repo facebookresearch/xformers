@@ -8,7 +8,7 @@ import logging
 import math
 import random
 from contextlib import nullcontext
-from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar, Union
+from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar
 
 import pytest
 import torch
@@ -2817,68 +2817,6 @@ def test_merge_attentions_nobias(
 @disable_on_rocm
 @sm80_or_better_only
 @pytest.mark.parametrize(
-    "op",
-    [
-        pytest.param(fmha.flash.FwOp, id="flashfwd"),
-        pytest.param((fmha.flash.FwOp, fmha.cutlass.BwOp), id="flashcutlass"),
-        # pytest.param((fmha.triton_splitk.FwOp, fmha.cutlass.BwOp), id="splitk"), # XXX
-        pytest.param(fmha.MemoryEfficientAttentionFlashAttentionOp, id="flash"),
-        None,
-    ],
-)
-def test_merge_attentions_nobias_bwd(
-    op: Union[Type[AttentionFwOpBase], fmha.AttentionOp],
-):
-    B, M, Mq, H, K = 13, 5, 5, 4, 128
-    dtype = torch.bfloat16
-    nparts = 3
-    torch.manual_seed(1)
-    q = 3 * torch.rand(B, Mq, H, K, dtype=dtype, device="cuda")
-    kv = [
-        [3 * (torch.rand(B, M, H, K, dtype=dtype, device="cuda")) for _ in range(2)]
-        for _ in range(nparts)
-    ]
-    q = q.requires_grad_(True)
-    kv = [[j.requires_grad_(True) for j in i] for i in kv]
-    out_parts = [fmha.memory_efficient_attention_partial(q, k, v, op=op) for k, v in kv]
-    attn_split, lse_split = [list(x) for x in zip(*out_parts)]
-    out_merged = fmha.merge_attentions(attn_split, lse_split, write_lse=True)[0]
-    grad_out = torch.rand_like(q)
-    out_merged.backward(grad_out)
-    grad_q_out = q.grad
-    assert q.grad is not None
-    grad_kv_out = [[j.grad for j in i] for i in kv]
-    q = q.detach().requires_grad_(True)
-    kv = [[j.detach().requires_grad_(True) for j in i] for i in kv]
-
-    k2, v2 = [torch.cat([i[j] for i in kv], dim=1) for j in range(2)]
-
-    if op is None or isinstance(op, tuple):
-        full_op = op
-    else:
-        full_op = (op, None)
-    out_full = fmha.memory_efficient_attention(q, k2, v2, op=full_op)  # type: ignore
-    out_full.backward(grad_out)
-    assert_allclose(
-        out_merged, out_full.to(out_merged.dtype), rtol=1e-2, atol=2e-2, msg="out"
-    )
-    atol = fmha.AttentionBwOpBase.ERROR_ATOL[dtype] * 1.5
-    rtol = fmha.AttentionBwOpBase.ERROR_RTOL[dtype]
-    assert_allclose(grad_q_out, q.grad, rtol=rtol, atol=atol, msg="qgrad")
-    for i in range(nparts):
-        for j in range(2):
-            assert_allclose(
-                grad_kv_out[i][j],
-                kv[i][j].grad,
-                rtol=rtol,
-                atol=atol,
-                msg=f"kvgrad {i} {j}",
-            )
-
-
-@disable_on_rocm
-@sm80_or_better_only
-@pytest.mark.parametrize(
     "dtype,op",
     [
         (torch.bfloat16, fmha.triton_splitk.FwOp_S1),
@@ -3221,15 +3159,7 @@ def test_merge_attentions_sharedinput(
 
 @sm80_or_better_only
 @pytest.mark.parametrize("bmghk", (False, True))
-@pytest.mark.parametrize(
-    "stack_inputs", (False, True), ids=lambda x: "stack_inputs" if x else ""
-)
-@pytest.mark.parametrize(
-    "grad_var", ("lse", "attn", None)
-)  # Gradient with respect to attention, LSE, or neither
-def test_merge_attentions_against_ref(
-    bmghk: bool, stack_inputs: bool, grad_var: Optional[str]
-):
+def test_merge_attentions_against_ref(bmghk: bool):
     split_k = 16
     B = 12
     M = 137
@@ -3245,54 +3175,11 @@ def test_merge_attentions_against_ref(
         attn_split = attn_split[:, :, :, 0]
         lse_split = lse_split[:, :, 0]
 
-    if grad_var is not None:
-        attn_split.requires_grad_(True)
-        lse_split.requires_grad_(True)
-
     attn_out_ref, lse_out_ref = _merge_attentions_ref(attn_split, lse_split)
-    if grad_var is not None:
-        if grad_var == "attn":
-            out_grad = torch.randn_like(attn_out_ref)
-            attn_out_ref.backward(out_grad)
-        else:
-            out_grad = torch.randn_like(lse_out_ref)
-            lse_out_ref.backward(out_grad)
-
-        attn_grad_ref, lse_grad_ref = attn_split.grad, lse_split.grad
-
-        attn_split = attn_split.detach().unbind(0)  # type: ignore
-        lse_split = lse_split.detach().unbind(0)  # type: ignore
-
-        for x in attn_split + lse_split:
-            x.requires_grad_(True)
-            x.retain_grad()
-
     attn_out, lse_out = fmha.merge_attentions(attn_split, lse_split)
 
     torch.testing.assert_close(lse_out, lse_out_ref, rtol=1e-4, atol=1e-4)
     torch.testing.assert_close(attn_out, attn_out_ref, rtol=1e-4, atol=1e-4)
-
-    if grad_var is not None:
-        if grad_var == "attn":
-            attn_out.backward(out_grad)
-        else:
-            assert lse_out is not None
-            lse_out.backward(out_grad)
-
-        attn_grads = [x.grad for x in attn_split]
-        lse_grads = [x.grad for x in lse_split]
-        attn_grad_concat = torch.stack(attn_grads, dim=0)
-        lse_grad_concat = torch.stack(lse_grads, dim=0)
-
-        if grad_var == "lse":
-            # LSE doesn't depend on attn_split, so when only gradient with respect to LSE is provided as input,
-            # the output gradient with respect to attn_split is zero.
-            # The reference implementation produced None instead of zero in this case
-            attn_grad_ref = torch.zeros_like(attn_grad_concat)
-        torch.testing.assert_close(lse_grad_concat, lse_grad_ref, rtol=1e-4, atol=1e-4)
-        torch.testing.assert_close(
-            attn_grad_concat, attn_grad_ref, rtol=1e-4, atol=1e-4
-        )
 
 
 def _merge_attentions_ref(attn_split, lse_split):

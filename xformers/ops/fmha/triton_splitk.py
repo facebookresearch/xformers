@@ -1047,19 +1047,37 @@ def merge_attentions(
 
 @torch.library.custom_op(
     "xformers::fmha_merge_attentions_varargs",
-    mutates_args=("attn_out", "lse_out"),
+    mutates_args=(),
     device_types=["cuda"],
 )
 def merge_attentions_varargs(
-    attn_out: torch.Tensor,
-    lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-) -> None:
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
 
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+    else:
+        lse_out = None
     kernel_args, grid = _prepare_reduce_kernel_params(
         attn_out, lse_out, attn_split, lse_split
     )
@@ -1073,16 +1091,52 @@ def merge_attentions_varargs(
         BLOCK_SIZE=attn_out.shape[-1],
         WRITE_LSE=lse_out is not None,
     )
+    if write_lse:
+        assert lse_out is not None
+        return [attn_out, lse_out]
+    return [attn_out]
 
 
 @torch.library.register_fake("xformers::fmha_merge_attentions_varargs")
 def merge_attentions_varargs_fake(
-    attn_out: torch.Tensor,
-    lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-) -> None:
-    return
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+        return [attn_out, lse_out]
+    return [attn_out]
+
+
+def _merge_attentions_backward(
+    ctx: torch.autograd.function.FunctionCtx,
+    grad: List[torch.Tensor],
+) -> Tuple[None, ...]:
+    raise NotImplementedError(
+        "Backward pass is not implemented for merge_attentions. "
+        "If it was, it would be easy to get wrong attention gradients, "
+        "because the gradients of the LSEs "
+        "don't get propagated by attention backward."
+    )
+
+
+merge_attentions_varargs.register_autograd(_merge_attentions_backward)
 
 
 @torch.library.custom_op(
