@@ -1007,31 +1007,34 @@
         <span class="n">attn_dtype</span> <span class="o">=</span> <span class="n">attn_split</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span>
         <span class="n">lse_dtype</span> <span class="o">=</span> <span class="n">lse_split</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span>
 
-    <span class="n">attn_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
-        <span class="n">B</span><span class="p">,</span>
-        <span class="n">M</span><span class="p">,</span>
-        <span class="n">G</span><span class="p">,</span>
-        <span class="n">H</span><span class="p">,</span>
-        <span class="n">Kq</span><span class="p">,</span>
-        <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
-        <span class="n">dtype</span><span class="o">=</span><span class="n">output_dtype</span> <span class="ow">or</span> <span class="n">attn_dtype</span><span class="p">,</span>
-    <span class="p">)</span>
-    <span class="k">if</span> <span class="n">write_lse</span><span class="p">:</span>
-        <span class="n">lse_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+    <span class="k">if</span> <span class="n">concat_path</span><span class="p">:</span>
+        <span class="n">attn_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
             <span class="n">B</span><span class="p">,</span>
+            <span class="n">M</span><span class="p">,</span>
             <span class="n">G</span><span class="p">,</span>
             <span class="n">H</span><span class="p">,</span>
-            <span class="n">M</span><span class="p">,</span>
+            <span class="n">Kq</span><span class="p">,</span>
             <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
-            <span class="n">dtype</span><span class="o">=</span><span class="n">lse_dtype</span><span class="p">,</span>
+            <span class="n">dtype</span><span class="o">=</span><span class="n">output_dtype</span> <span class="ow">or</span> <span class="n">attn_dtype</span><span class="p">,</span>
         <span class="p">)</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">lse_out</span> <span class="o">=</span> <span class="kc">None</span>
-
-    <span class="k">if</span> <span class="n">concat_path</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">write_lse</span><span class="p">:</span>
+            <span class="n">lse_out</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span>
+                <span class="n">B</span><span class="p">,</span>
+                <span class="n">G</span><span class="p">,</span>
+                <span class="n">H</span><span class="p">,</span>
+                <span class="n">M</span><span class="p">,</span>
+                <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+                <span class="n">dtype</span><span class="o">=</span><span class="n">lse_dtype</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">lse_out</span> <span class="o">=</span> <span class="kc">None</span>
         <span class="n">triton_splitk</span><span class="o">.</span><span class="n">merge_attentions</span><span class="p">(</span><span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span><span class="p">,</span> <span class="n">attn_split</span><span class="p">,</span> <span class="n">lse_split</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span> <span class="o">=</span> <span class="n">_MergeAttentions</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span><span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span><span class="p">,</span> <span class="o">*</span><span class="n">attn_split</span><span class="p">,</span> <span class="o">*</span><span class="n">lse_split</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+        <span class="n">outs</span> <span class="o">=</span> <span class="n">triton_splitk</span><span class="o">.</span><span class="n">merge_attentions_varargs</span><span class="p">(</span>
+            <span class="n">attn_split</span><span class="p">,</span> <span class="n">lse_split</span><span class="p">,</span> <span class="n">write_lse</span><span class="p">,</span> <span class="n">output_dtype</span><span class="p">,</span> <span class="n">B</span><span class="p">,</span> <span class="n">M</span><span class="p">,</span> <span class="n">G</span><span class="p">,</span> <span class="n">H</span><span class="p">,</span> <span class="n">Kq</span>
+        <span class="p">)</span>  <span class="c1"># type: ignore</span>
+        <span class="n">attn_out</span> <span class="o">=</span> <span class="n">outs</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">lse_out</span> <span class="o">=</span> <span class="n">outs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="n">write_lse</span> <span class="k">else</span> <span class="kc">None</span>
 
     <span class="k">if</span> <span class="n">is_bmhk</span><span class="p">:</span>
         <span class="n">attn_out</span> <span class="o">=</span> <span class="n">attn_out</span><span class="p">[:,</span> <span class="p">:,</span> <span class="mi">0</span><span class="p">]</span>
@@ -1039,44 +1042,6 @@
             <span class="n">lse_out</span> <span class="o">=</span> <span class="n">lse_out</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">]</span>
 
     <span class="k">return</span> <span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span></div>
-
-
-<span class="k">class</span><span class="w"> </span><span class="nc">_MergeAttentions</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">autograd</span><span class="o">.</span><span class="n">Function</span><span class="p">):</span>
-    <span class="nd">@staticmethod</span>
-    <span class="c1"># type: ignore</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">forward</span><span class="p">(</span>
-        <span class="n">ctx</span><span class="p">,</span> <span class="n">attn_out</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">lse_out</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="o">*</span><span class="n">inputs</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
-        <span class="n">num_chunks</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
-        <span class="n">attn_split</span><span class="p">,</span> <span class="n">lse_split</span> <span class="o">=</span> <span class="n">inputs</span><span class="p">[:</span><span class="n">num_chunks</span><span class="p">],</span> <span class="n">inputs</span><span class="p">[</span><span class="n">num_chunks</span><span class="p">:]</span>
-
-        <span class="n">triton_splitk</span><span class="o">.</span><span class="n">merge_attentions_varargs</span><span class="p">(</span><span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span><span class="p">,</span> <span class="n">attn_split</span><span class="p">,</span> <span class="n">lse_split</span><span class="p">)</span>
-
-        <span class="n">ctx</span><span class="o">.</span><span class="n">save_for_backward</span><span class="p">(</span>
-            <span class="n">attn_out</span><span class="p">,</span>
-            <span class="n">lse_out</span><span class="p">,</span>
-            <span class="o">*</span><span class="n">inputs</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">attn_out</span><span class="p">,</span> <span class="n">lse_out</span>
-
-    <span class="nd">@staticmethod</span>
-    <span class="c1"># type: ignore</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">backward</span><span class="p">(</span>
-        <span class="n">ctx</span><span class="p">,</span> <span class="n">grad_attn</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">grad_lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
-    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Tuple</span><span class="p">[</span><span class="n">Optional</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">],</span> <span class="o">...</span><span class="p">]:</span>
-        <span class="n">out</span><span class="p">,</span> <span class="n">lse</span><span class="p">,</span> <span class="o">*</span><span class="n">inputs</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="n">saved_tensors</span>
-        <span class="n">num_chunks</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
-        <span class="n">attn_split</span><span class="p">,</span> <span class="n">lse_split</span> <span class="o">=</span> <span class="n">inputs</span><span class="p">[:</span><span class="n">num_chunks</span><span class="p">],</span> <span class="n">inputs</span><span class="p">[</span><span class="n">num_chunks</span><span class="p">:]</span>
-        <span class="n">dattn</span><span class="p">,</span> <span class="n">dlse</span> <span class="o">=</span> <span class="n">triton_splitk</span><span class="o">.</span><span class="n">merge_attentions_varargs_backward</span><span class="p">(</span>
-            <span class="n">attn_split</span><span class="p">,</span>
-            <span class="n">lse_split</span><span class="p">,</span>
-            <span class="n">out</span><span class="p">,</span>
-            <span class="n">lse</span><span class="p">,</span>
-            <span class="n">grad_attn</span><span class="p">,</span>
-            <span class="n">grad_lse</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="n">ret</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">+</span> <span class="n">dattn</span> <span class="o">+</span> <span class="n">dlse</span>
-        <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">ret</span><span class="p">)</span>
 
 
 <span class="n">ALL_FW_OPS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
