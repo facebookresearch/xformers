@@ -24,7 +24,7 @@ template <
     ck_tile::index_t MaxSeqlenQ>
 struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
   using fmha_variant = ck_tile::ComposedAttention<
-      true * ck_tile::LOGITS_SOFT_CAP,
+      false * ck_tile::LOGITS_SOFT_CAP,
       CK_TILE_FMHA_FWD_FAST_EXP2>;
 
   template <
