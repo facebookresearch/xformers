@@ -230,8 +230,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">AttentionBiasSubTensor</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+    <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
     <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
@@ -367,6 +369,7 @@
             <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
             <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+            <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
             <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
             <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
         <span class="p">),</span>
@@ -395,10 +398,11 @@
         <span class="n">BlockDiagonalCausalMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalWithOffsetGappyKeysMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalGappyKeysMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalPaddedKeysMask</span><span class="p">,</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
-        <span class="n">attn_bias</span><span class="o">.</span><span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalFromBottomRightMask</span><span class="p">,</span>
+        <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
         <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
         <span class="n">PagedBlockDiagonalPaddedKeysMask</span><span class="p">,</span>
         <span class="n">PagedBlockDiagonalCausalWithOffsetPaddedKeysMask</span><span class="p">,</span>
@@ -517,6 +521,7 @@
                         <span class="n">BlockDiagonalCausalLocalAttentionMask</span><span class="p">,</span>
                         <span class="n">BlockDiagonalCausalLocalAttentionFromBottomRightMask</span><span class="p">,</span>
                         <span class="n">LowerTriangularFromBottomRightLocalAttentionMask</span><span class="p">,</span>
+                        <span class="n">BlockDiagonalCausalLocalAttentionPaddedKeysMask</span><span class="p">,</span>
                     <span class="p">),</span>
                 <span class="p">)</span>
                 <span class="k">else</span> <span class="kc">None</span>
