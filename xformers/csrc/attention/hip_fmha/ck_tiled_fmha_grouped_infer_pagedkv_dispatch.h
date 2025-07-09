@@ -21,11 +21,13 @@ template <
     bool kHasMask,
     bool kHasBias,
     ck_tile::index_t MaxK,
-    ck_tile::index_t MaxSeqlenQ>
+    ck_tile::index_t MTile>
 struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
   using fmha_variant = ck_tile::ComposedAttention<
       false * ck_tile::LOGITS_SOFT_CAP,
       CK_TILE_FMHA_FWD_FAST_EXP2>;
+
+  using FmhaTileShape = typename FmhaFwdShape<MaxK, MTile>::Type;
 
   template <
       typename FmhaFwdPagedKVTraits,
@@ -43,7 +45,7 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
           typename FmhaFwdTypeConfig<ScalarType>::PDataType,
           typename FmhaFwdTypeConfig<ScalarType>::OaccDataType,
           ODataType,
-          typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type,
+          FmhaTileShape,
           true, // kIsGroupMode
           fmha_variant,
           FmhaMask,
@@ -52,8 +54,6 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
   static void Run(GroupedForwardParams& param, hipStream_t stream) {
     {
       using FmhaMask = ck_tile::SimplifiedGenericAttentionMask<kHasMask>;
-
-      using FmhaTileShape = typename FmhaFwdShape<MaxK, MaxSeqlenQ>::Type;
 
       constexpr ck_tile::index_t occupancy = -1;
 
