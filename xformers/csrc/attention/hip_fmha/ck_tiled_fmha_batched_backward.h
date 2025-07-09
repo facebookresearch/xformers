@@ -116,6 +116,7 @@ struct batched_backward_mask_bias_dropout_dispatch {
                 kPadSeqLenK,
                 kPadHeadDimQ,
                 kPadHeadDimV,
+                false, // kHasLogitsSoftCap
                 kBiasEnum,
                 kHasBiasGrad,
                 false, // kStoreLSE

@@ -23,6 +23,10 @@ template <
     bool kHasBias,
     ck_tile::index_t MaxK>
 struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
+  template <typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<
+      FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP,
+      CK_TILE_FMHA_FWD_FAST_EXP2>;
   template <
       typename FmhaFwdSplitKVTraits,
       typename FmhaMask,
@@ -41,6 +45,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
           ODataType,
           typename FmhaFwdSplitKVSmallQShape<MaxK>::Type,
           true, // kIsGroupMode
+          AttentionVariant<FmhaFwdSplitKVTraits>,
           FmhaMask,
           FmhaFwdSplitKVTraits>;
 
@@ -97,6 +102,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                     kPadSeqLenK,
                     kPadHeadDimQ,
                     kPadHeadDimV,
+                    false, // kLogitsSoftCap
                     ck_tile::BlockAttentionBiasEnum::NO_BIAS,
                     false, // kHasBiasGrad place-holder
                     true, // kStoreLSE
@@ -134,6 +140,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                     kPadSeqLenK,
                     kPadHeadDimQ,
                     kPadHeadDimV,
+                    false, // kLogitsSoftCap
                     ck_tile::BlockAttentionBiasEnum::NO_BIAS,
                     false, // kHasBiasGrad place-holder
                     false, // kStoreLSE
@@ -182,6 +189,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                     kPadSeqLenK,
                     kPadHeadDimQ,
                     kPadHeadDimV,
+                    false, // kLogitsSoftCap
                     kBiasEnum,
                     false, // kHasBiasGrad place-holder
                     true, // kStoreLSE
@@ -219,6 +227,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
                     kPadSeqLenK,
                     kPadHeadDimQ,
                     kPadHeadDimV,
+                    false, // kLogitsSoftCap
                     kBiasEnum,
                     false, // kHasBiasGrad place-holder
                     false, // kStoreLSE
@@ -330,6 +339,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out_acc tensor seq-dim
                                 // stride
             param.k_strides[0],
@@ -376,6 +386,7 @@ struct grouped_infer_splitkv_smallq_mask_bias_dropout_dispatch {
             param.use_paged_kvcache ? param.is_gappy : false,
             param.scale,
             1.0f, // scale_p
+            0.f, // logits_soft_cap
             param.q_strides[0], // q, k, v, bias, out tensor seq-dim
                                 // stride
             param.k_strides[0],

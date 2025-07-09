@@ -12,12 +12,11 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/Generator.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <c10/hip/HIPStream.h>
 #include <c10/util/Optional.h>
 #include <torch/library.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <ATen/cuda/PhiloxUtils.cuh>
 
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_fwd_splitkv_selector.h"
@@ -116,7 +115,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
-  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
+  hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);

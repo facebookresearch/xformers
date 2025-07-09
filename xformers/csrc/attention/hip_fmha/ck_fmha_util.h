@@ -47,23 +47,6 @@
     }                                                                        \
   } while (0)
 
-static inline size_t get_size_in_bytes(size_t n, at::ScalarType dtype) {
-  if (dtype == at::ScalarType::Float) {
-    return n * 4;
-  } else if (dtype == at::ScalarType::Half) {
-    return n * 2;
-  } else if (dtype == at::ScalarType::BFloat16) {
-    return n * 2;
-  } else if (dtype == at::ScalarType::Short) {
-    return n * 2;
-  } else if (dtype == at::ScalarType::Int) {
-    return n * 4;
-  } else if (dtype == at::ScalarType::Byte) {
-    return n;
-  }
-  return 0;
-}
-
 /**
  * kernels expect 4D bias/bias.grad with shape
  * (batch_sz, n_heads, n_queries, n_keys). common bias shapes users may pass
