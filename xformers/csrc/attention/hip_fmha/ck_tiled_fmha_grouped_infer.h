@@ -38,13 +38,14 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
               kHasBias,
               MaxK>::Run(param, stream);
         } else {
-          if (/*param.use_paged_kvcache &&*/ (!param.is_gappy) && param.page_block_size >= 128) {
-              grouped_infer_pagedkv_mask_bias_dropout_dispatch<
-                  ScalarType,
-                  kHasMask,
-                  kHasBias,
-                  MaxK,
-                  128>::Run(param, stream);
+          if ((param.num_kv_splits == 1) && param.use_paged_kvcache &&
+              (!param.is_gappy) && param.page_block_size >= 128) {
+            grouped_infer_pagedkv_mask_bias_dropout_dispatch<
+                ScalarType,
+                kHasMask,
+                kHasBias,
+                MaxK,
+                128>::Run(param, stream);
 
           } else {
             FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
