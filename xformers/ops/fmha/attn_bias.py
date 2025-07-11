@@ -36,7 +36,7 @@ from typing import (
 import torch
 
 
-def _to_device(t: torch.Tensor, device: torch.device):
+def _to_device(t: torch.Tensor, device: torch.device) -> torch.Tensor:
     if t.device == device:
         return t
     if device == torch.device("cpu"):
@@ -85,8 +85,6 @@ class AttentionBias:
     - :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`
 
     """
-
-    HOLDS_DENSE_TENSOR = False
 
     def materialize(
         self,
@@ -139,6 +137,36 @@ def _materialize_causal_mask(
         mask = torch.triu(mask, diagonal=shift - window_size + 1)
     mask = torch.log(mask)
     return mask.to(dtype)
+
+
+class LowerTriangularMask(AttentionBias):
+    """
+    A lower-triangular (aka causal) mask
+
+    A query Q cannot attend to a key which is farther from the
+    initial key than Q is from the initial query.
+
+    See also :attr:`LowerTriangularFromBottomRightMask` if the number
+    of queries is not equal to the number of keys/values.
+    """
+
+    def to(self, device: torch.device) -> "LowerTriangularMask":
+        assert type(self) is LowerTriangularMask, "Please implement in subclass"
+        return self
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(shape, dtype=dtype, device=device)
+
+    def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
+        """
+        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias
+        """
+        return LowerTriangularMaskWithTensorBias(bias)
 
 
 @dataclass
@@ -324,6 +352,27 @@ class LowerTriangularFromBottomRightLocalAttentionMask(
             window_size=self._window_size,
             from_bottomright=True,
         )
+
+
+class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
+    """A lower-triangular (aka causal) mask with an additive bias"""
+
+    def __init__(self, bias: torch.Tensor) -> None:
+        self._bias = bias
+
+    def to(self, device: torch.device) -> "LowerTriangularMaskWithTensorBias":
+        assert (
+            type(self) is LowerTriangularMaskWithTensorBias
+        ), "Please implement in subclass"
+        return LowerTriangularMaskWithTensorBias(_to_device(self._bias, device))
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return super().materialize(shape, dtype=dtype, device=device) + self._bias
 
 
 @dataclass
@@ -1897,159 +1946,6 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
             window_size=self._window_size,
             from_bottomright=True,
         )
-
-
-class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
-    HOLDS_DENSE_TENSOR = False
-
-    _subtensor: torch.Tensor
-
-    @staticmethod
-    def __new__(cls, *, _subtensor=None, device=None, **kwargs):
-        raise NotImplementedError()
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__()
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}"
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        kwargs = kwargs or {}
-        if func._overloadpacket in [
-            torch.ops.aten.clone,
-            torch.ops.aten.detach,
-            torch.ops.aten._to_copy,
-            torch.ops.aten.to,
-        ]:
-            return cls(_subtensor=func(args[0]._subtensor, *args[1:], **kwargs))
-        return NotImplemented
-
-    def __tensor_flatten__(self):
-        return ["_subtensor"], None
-
-    @classmethod
-    def __tensor_unflatten__(cls, inner_tensors, meta, outer_size, outer_stride):
-        assert meta is None
-        return cls(_subtensor=inner_tensors["_subtensor"])
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        """
-        Materializes the bias as a `torch.Tensor`. This is very slow
-        and we don't attempt to make it fast. Only use for debugging/testing.
-
-        Shape should be like `[*, q_seqlen, k_seqlen]`
-        """
-        raise NotImplementedError()
-
-
-class _AddDenseBias(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, causal_bias, tensor):
-        assert type(causal_bias) is LowerTriangularMask
-        return LowerTriangularMaskWithTensorBias(tensor)
-
-    @staticmethod
-    def backward(ctx, grad_out):
-        return None, grad_out
-
-
-class LowerTriangularMask(AttentionBiasSubTensor):
-    """
-    A lower-triangular (aka causal) mask
-
-    A query Q cannot attend to a key which is farther from the
-    initial key than Q is from the initial query.
-
-    See also :attr:`LowerTriangularFromBottomRightMask` if the number
-    of queries is not equal to the number of keys/values.
-    """
-
-    HOLDS_DENSE_TENSOR = False
-
-    @staticmethod
-    def __new__(cls, *, _subtensor=None, device="cpu", **kwargs):
-        """
-        Note: create on CPU by default to avoid initializing CUDA context
-        by mistake.
-        """
-        if _subtensor is None:
-            _subtensor = torch.empty((0,), device=device)
-        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
-            cls,
-            [],
-            device=_subtensor.device,
-            dtype=_subtensor.dtype,
-            requires_grad=False,
-        )
-        tensor._subtensor = _subtensor
-        return tensor
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        return _materialize_causal_mask(shape, dtype=dtype, device=device)
-
-    def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
-        """
-        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias
-        """
-        return _AddDenseBias.apply(self, bias)
-
-
-class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
-    """A lower-triangular (aka causal) mask with an additive bias"""
-
-    HOLDS_DENSE_TENSOR = True
-
-    @staticmethod
-    def __new__(cls, bias):
-        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
-            cls,
-            bias.shape,
-            device=bias.device,
-            dtype=bias.dtype,
-            requires_grad=bias.requires_grad,
-        )
-        tensor._subtensor = bias
-        return tensor
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        return super().materialize(shape, dtype=dtype, device=device) + self._subtensor
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        kwargs = kwargs or {}
-        if func._overloadpacket in [
-            torch.ops.aten.unsqueeze,
-            torch.ops.aten.select,
-            torch.ops.aten.slice,
-            torch.ops.aten.clone,
-            torch.ops.aten.detach,
-            torch.ops.aten._to_copy,
-            torch.ops.aten.to,
-            torch.ops.aten.view,
-        ]:
-            output = func(
-                *[a._subtensor if isinstance(a, cls) else a for a in args],
-                **kwargs,
-            )
-            return cls(output)
-        return NotImplemented
 
 
 torch._dynamo.allow_in_graph(LowerTriangularMask)

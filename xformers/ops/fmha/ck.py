@@ -14,7 +14,6 @@ from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
-    AttentionBiasSubTensor,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
@@ -91,10 +90,9 @@ def _get_seqlen_info(
 def _get_tensor_bias(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
-    if isinstance(attn_bias, AttentionBiasSubTensor):
-        if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-            return attn_bias._subtensor
-    elif isinstance(attn_bias, torch.Tensor):
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return attn_bias._bias
+    if isinstance(attn_bias, torch.Tensor):
         return attn_bias
     return None
 

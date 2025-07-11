@@ -648,7 +648,7 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
     if attn_bias is not None:
         if isinstance(
             attn_bias,
-            (fmha.attn_bias.AttentionBias, fmha.attn_bias.AttentionBiasSubTensor),
+            fmha.attn_bias.AttentionBias,
         ):
             bias_shape = (1, 1, query.shape[2], key.shape[2])
             tensor_bias = attn_bias.materialize(
@@ -1616,32 +1616,6 @@ def test_attn_bias_padded() -> None:
         atol=fmha.cutlass.FwOp.ERROR_ATOL[torch.float16],
         rtol=fmha.cutlass.FwOp.ERROR_RTOL[torch.float16],
     )
-
-
-@cuda_or_mtia_only
-def test_attn_bias_to_copy() -> None:
-    device = torch._C._get_accelerator().type
-
-    def _test_to_copy(attn_bias: torch.Tensor) -> None:
-        assert attn_bias.device.type == "cpu", f"{attn_bias.device}"
-        attn_bias_gpu = attn_bias.to(device)
-        assert attn_bias_gpu.device.type == device, f"{attn_bias_gpu.device}"
-        attn_bias_fp16 = attn_bias.to(torch.float16)
-        assert attn_bias_fp16.device.type == "cpu", f"{attn_bias_fp16.device}"
-        assert attn_bias_fp16.dtype == torch.float16, f"{attn_bias_fp16.dtype}"
-
-    attn_bias = fmha.attn_bias.LowerTriangularMask().to("cpu")
-    _test_to_copy(attn_bias)
-
-    with torch.inference_mode():
-        _test_to_copy(attn_bias)
-
-    tensor_bias = torch.tensor([[1.0, 2.0, 3.0], [3.0, 4.0, 5.0]])
-    attn_bias = fmha.attn_bias.LowerTriangularMaskWithTensorBias(tensor_bias).to("cpu")
-    _test_to_copy(attn_bias)
-
-    with torch.inference_mode():
-        _test_to_copy(attn_bias)
 
 
 def _kv_heads_label(kv_heads: Optional[int]) -> str:
@@ -3231,7 +3205,7 @@ def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     grad = torch.randn_like(q)
     if create_bias_inside_compiled:
         bias = None
-        if bias_t not in [None, fmha.attn_bias.LowerTriangularMask]:
+        if bias_t is not None:
             pytest.skip("Can't create this mask inside compile")
     if bias is not None:
         bias.to(q.device)
@@ -3269,23 +3243,6 @@ def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     assert_allclose(q.grad, dq_ref, "dq", atol=atol, rtol=rtol)
     assert_allclose(k.grad, dk_ref, "dk", atol=atol, rtol=rtol)
     assert_allclose(v.grad, dv_ref, "dv", atol=atol, rtol=rtol)
-
-
-def test_bias_lower_triangular() -> None:
-    mask = fmha.attn_bias.LowerTriangularMask()
-    mask.detach()
-
-
-def test_bias_lower_triangular_with_bias() -> None:
-    dense_bias = torch.randn([128, 128], dtype=torch.float16, requires_grad=True)
-    grad = torch.randn_like(dense_bias)
-    mask = fmha.attn_bias.LowerTriangularMask()
-    mask_biased = mask.add_bias(dense_bias)
-    mask_biased2 = mask_biased.detach()
-    mask_biased.backward(grad)
-    assert dense_bias.grad is not None
-    assert mask_biased2.grad is None
-    assert_allclose(dense_bias.grad, grad, "dense.grad")
 
 
 @sm90_or_better_only

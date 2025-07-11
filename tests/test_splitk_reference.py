@@ -45,8 +45,12 @@ def ref_attention_splitk(
     if q.ndim == 5:
 
         def attn_bias_group(group: int):
-            if getattr(attn_bias, "HOLDS_DENSE_TENSOR", True):
+            if isinstance(attn_bias, torch.Tensor):
                 return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
             return attn_bias
 
         return torch.stack(
