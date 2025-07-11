@@ -17,7 +17,11 @@ try:
     import triton
     import triton.language as tl
 
-    from xformers.triton.vararg_kernel import _VisitorConditionalKernel, unroll_varargs
+    from xformers.triton.vararg_kernel import (
+        _VisitorConditionalKernel,
+        unroll_varargs,
+        VarargMode,
+    )
 
     _triton_available = xformers._is_triton_available()
 except ImportError as e:
@@ -63,7 +67,8 @@ def test_triton_varargs_kernel():
 
 
 @pytest.mark.skipif(not enable_tests, reason="moe not supported")
-def test_triton_multiple_varargs_kernel():
+@pytest.mark.parametrize("conditional", [True, False])
+def test_triton_multiple_varargs_kernel(conditional: bool):
     @triton.jit
     def weighted_sumN(
         output_ptr,
@@ -89,7 +94,12 @@ def test_triton_multiple_varargs_kernel():
     b = [torch.randn([], dtype=torch.float32, device="cuda") for _ in range(NUM_INPUTS)]
     b_list = [x.item() for x in b]
     output = torch.randn([BLOCK_SIZE], dtype=torch.float32, device="cuda")
-    kernel = unroll_varargs(weighted_sumN, N=NUM_INPUTS)
+    if conditional:
+        kernel = unroll_varargs(
+            weighted_sumN, N=NUM_INPUTS, mode=VarargMode.CONDITIONAL
+        )
+    else:
+        kernel = unroll_varargs(weighted_sumN, N=NUM_INPUTS)
     kernel[(1,)](output, *a, *b_list, BLOCK_SIZE=32)
     expected_output = (torch.stack(a) * torch.stack(b).unsqueeze(1)).sum(0)
     assert torch.allclose(expected_output, output)
@@ -130,3 +140,20 @@ def test_triton_varargs_conditional():
     assert "for i in range(3):" in new_src
     assert "x_ptr = x_ptrs0 if i == 0 else x_ptrs1 if i == 1 else x_ptrs2" in new_src
     assert "y_ptr = y_ptrs0 if i == 0 else y_ptrs1 if i == 1 else y_ptrs2" in new_src
+
+
+@pytest.mark.skipif(not enable_tests, reason="moe not supported")
+def test_subscripting_call():
+    @triton.jit
+    def fused_group_contiguous_nan_clamp_copied_from_inductor(
+        _group_a_ptrs: "VAR_ARGS_ARRAY",  # type: ignore # noqa: F821
+        XBLOCK: tl.constexpr,
+    ):
+        xoffset = tl.program_id(0) * XBLOCK
+        xoffset + tl.arange(0, XBLOCK)[:]
+
+    unroll_varargs(
+        fused_group_contiguous_nan_clamp_copied_from_inductor,
+        N=2,
+        mode=VarargMode.CONDITIONAL,
+    )
