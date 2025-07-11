@@ -67,16 +67,8 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
       bool pad_headdim_q = !(param.K % FmhaTileShape::kSubQKHeaddim == 0);
       bool pad_headdim_v = !(param.Kv % FmhaTileShape::kN1 == 0);
 
-      bool is_paged_kv = param.use_paged_kvcache;
-
-      BOOL_SWITCH_3(
-          pad_headdim_q,
-          kPadHeadDimQ,
-          pad_headdim_v,
-          kPadHeadDimV,
-          is_paged_kv,
-          kIsPagedKV,
-          [&] {
+      BOOL_SWITCH_2(
+          pad_headdim_q, kPadHeadDimQ, pad_headdim_v, kPadHeadDimV, [&] {
             using FmhaTraits = ck_tile::TileFmhaFwdPagedKVTraits<
                 kPadSeqLenQ,
                 kPadSeqLenK,
@@ -86,7 +78,7 @@ struct grouped_infer_pagedkv_mask_bias_dropout_dispatch {
                 kBiasEnum,
                 false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
-                kIsPagedKV,
+                true, // kIsPagedKV
                 false, // kDoFp8StaticQuant place-holder
                 occupancy>;
 

@@ -39,7 +39,7 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
               MaxK>::Run(param, stream);
         } else {
           if ((param.num_kv_splits == 1) && param.use_paged_kvcache &&
-              (!param.is_gappy) && param.page_block_size >= 128) {
+              param.page_block_size >= 128) {
             grouped_infer_pagedkv_mask_bias_dropout_dispatch<
                 ScalarType,
                 kHasMask,
