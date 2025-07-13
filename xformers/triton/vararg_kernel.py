@@ -125,6 +125,8 @@ class _VisitorConditionalKernel(_VisitorVarargKernel):
         if isinstance(node.value, ast.Subscript):
             node.value = self.visit_Subscript(node.value)
             return node
+        if not isinstance(node.value, ast.Name):
+            return node
         if node.value.id in self.inline_variables and isinstance(node.slice, ast.Name):
             # given `a[i]`, replace with `res`, where `res` is:
             # a0 if i == 0 else a1 if i== 1 else a2 if i == 2 ...
@@ -247,10 +249,8 @@ def unroll_varargs(kernel, N: int, mode: VarargMode = VarargMode.UNROLL):
     fn = next(iter(_locals.values()))
 
     jitted_fn = triton.jit(fn)
-    if hasattr(jitted_fn, "_unsafe_update_src"):
-        jitted_fn._unsafe_update_src(new_src)
-        jitted_fn.hash = None
-    else:
+    if not hasattr(jitted_fn, "_unsafe_update_src"):
+        # Triton older than 3.2
         jitted_fn.src = new_src
     return jitted_fn
 

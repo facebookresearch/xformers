@@ -338,7 +338,7 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
         # Enabling paged attention causes segfault with some
         # versions of nvcc :(
         # https://github.com/Dao-AILab/flash-attention/issues/1453
-        ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
+        # ("paged", "-DFLASHATTENTION_DISABLE_PAGEDKV"),
         # We have `CUDA_MINIMUM_COMPUTE_CAPABILITY` set to 9.0
         # ("_sm80.cu", "-DFLASHATTENTION_DISABLE_SM8x"),
     )
@@ -460,6 +460,10 @@ def get_extensions():
 
     extra_compile_args = {"cxx": ["-O3", "-std=c++17", "-DPy_LIMITED_API=0x03090000"]}
     if sys.platform == "win32":
+        if os.getenv("DISTUTILS_USE_SDK") == "1":
+            extra_compile_args = {
+                "cxx": ["-O2", "/std:c++17", "/DPy_LIMITED_API=0x03090000"]
+            }
         define_macros += [("xformers_EXPORTS", None)]
         extra_compile_args["cxx"].extend(
             ["/MP", "/Zc:lambda", "/Zc:preprocessor", "/Zc:__cplusplus"]
@@ -558,8 +562,10 @@ def get_extensions():
                 "--ptxas-options=-O2",
                 "--ptxas-options=-allow-expensive-optimizations=true",
             ]
-    elif torch.version.hip and (
-        torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != ""
+    elif (
+        torch.version.hip
+        and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1"
+        and (torch.cuda.is_available() or os.getenv("HIP_ARCHITECTURES", "") != "")
     ):
         rename_cpp_cu(source_hip)
         hip_version = get_hip_version(ROCM_HOME)
@@ -670,6 +676,31 @@ class BuildExtensionWithExtraFiles(BuildExtension):
 
     def build_extensions(self) -> None:
         super().build_extensions()
+
+        # Fix incorrect output names caused by py_limited_api=True on Windows. see item #1272
+        for ext in self.extensions:
+            ext_path_parts = ext.name.split(".")
+            ext_basename = ext_path_parts[-1]
+            ext_subpath = os.path.join(
+                *ext_path_parts[:-1]
+            )  # xformers, xformers/flash_attn_3, etc.
+
+            # Directory where the .pyd was written
+            output_dir = os.path.join(self.build_lib, ext_subpath)
+
+            # Expected correct filename
+            correct_name = os.path.join(output_dir, f"{ext_basename}.pyd")
+
+            # But py_limited_api may incorrectly write it as just "pyd"
+            broken_name = os.path.join(output_dir, "pyd")
+            if os.path.exists(broken_name) and not os.path.exists(correct_name):
+                import shutil
+
+                print(
+                    f"[INFO]build_extensions: Fixing broken .pyd name: {broken_name} -> {correct_name}"
+                )
+                shutil.move(broken_name, correct_name)
+
         for filename, content in self.xformers_build_metadata.items():
             with open(
                 os.path.join(self.build_lib, self.pkg_name, filename), "w+"
@@ -684,11 +715,45 @@ class BuildExtensionWithExtraFiles(BuildExtension):
         build_py = self.get_finalized_command("build_py")
         package_dir = build_py.get_package_dir(self.pkg_name)
 
+        # Fix for windows when using py_limited_api=True. see #1272
+        for ext in self.extensions:
+            ext_path_parts = ext.name.split(".")
+            ext_basename = ext_path_parts[-1]
+            ext_subpath = os.path.join(*ext_path_parts[:-1])
+            build_dir = os.path.join(self.build_lib, ext_subpath)
+
+            correct_name = os.path.join(build_dir, f"{ext_basename}.pyd")
+            broken_name = os.path.join(build_dir, "pyd")
+            if os.path.exists(broken_name) and not os.path.exists(correct_name):
+                import shutil
+
+                print(
+                    f"[INFO]copy_extensions_to_source: Fixing inplace broken .pyd name: {broken_name} -> {correct_name}"
+                )
+                shutil.move(broken_name, correct_name)
+
         for filename in self.xformers_build_metadata.keys():
             inplace_file = os.path.join(package_dir, filename)
             regular_file = os.path.join(self.build_lib, self.pkg_name, filename)
             self.copy_file(regular_file, inplace_file, level=self.verbose)
         super().copy_extensions_to_source()
+
+    def get_ext_filename(self, ext_name):
+        filename = super().get_ext_filename(ext_name)
+        # Fix for windows when using py_limited_api=True. see #1272
+        # If setuptools returns a bogus 'pyd' filename, fix it.
+        if os.path.basename(filename) == "pyd":
+            # Extract the final component of the ext_name (after last dot)
+            last_part = ext_name.rsplit(".", 1)[-1]
+            parent_path = (
+                os.path.join(*ext_name.split(".")[:-1]) if "." in ext_name else ""
+            )
+            fixed_name = f"{last_part}.pyd"
+            print(
+                f"[INFO]get_ext_filename: Fixing inplace broken .pyd name: pyd -> {fixed_name}"
+            )
+            return os.path.join(parent_path, fixed_name) if parent_path else fixed_name
+        return filename
 
 
 if __name__ == "__main__":

@@ -14,9 +14,10 @@ from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
-    AttentionBiasSubTensor,
+    BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalCausalMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -89,10 +90,9 @@ def _get_seqlen_info(
 def _get_tensor_bias(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
-    if isinstance(attn_bias, AttentionBiasSubTensor):
-        if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-            return attn_bias._subtensor
-    elif isinstance(attn_bias, torch.Tensor):
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return attn_bias._bias
+    if isinstance(attn_bias, torch.Tensor):
         return attn_bias
     return None
 
@@ -152,6 +152,7 @@ def _custom_mask_type(bias: Optional[Union[torch.Tensor, AttentionBias]]) -> int
             LowerTriangularFromBottomRightLocalAttentionMask,
             attn_bias.BlockDiagonalCausalFromBottomRightMask,
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
@@ -180,10 +181,11 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
-        attn_bias.BlockDiagonalCausalFromBottomRightMask,
-        attn_bias.BlockDiagonalCausalLocalAttentionMask,
+        BlockDiagonalCausalFromBottomRightMask,
+        BlockDiagonalCausalLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
         PagedBlockDiagonalPaddedKeysMask,
         PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
@@ -302,6 +304,7 @@ class FwOp(AttentionFwOpBase):
                         BlockDiagonalCausalLocalAttentionMask,
                         BlockDiagonalCausalLocalAttentionFromBottomRightMask,
                         LowerTriangularFromBottomRightLocalAttentionMask,
+                        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
                     ),
                 )
                 else None

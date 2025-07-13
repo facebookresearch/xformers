@@ -34,6 +34,11 @@ struct grouped_infer_mask_bias_dropout_dispatch {
       (kUseWholeKPrefetchPipeline || MaxK > 256) ? FmhaShape::kQKHeaddim
                                                  : FmhaShape::kSubQKHeaddim;
 
+  template <typename FmhaTraits>
+  using AttentionVariant = ck_tile::ComposedAttention<
+      FmhaTraits::kHasLogitsSoftCap * ck_tile::LOGITS_SOFT_CAP,
+      CK_TILE_FMHA_FWD_FAST_EXP2>;
+
   template <typename FmhaTraits, typename FmhaMask>
   using FmhaPipelineProblemTemp = ck_tile::BlockFmhaPipelineProblem<
       typename FmhaFwdTypeConfig<ScalarType>::QDataType,
@@ -49,6 +54,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
       typename FmhaFwdTypeConfig<ScalarType>::ODataType,
       FmhaShape,
       true, // kIsGroupMode
+      AttentionVariant<FmhaTraits>,
       FmhaMask,
       FmhaTraits>;
 
@@ -82,6 +88,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
                 kPadSeqLenK,
                 kPadHeadDimQ,
                 kPadHeadDimV,
+                false, // kHasLogitsSoftCap
                 kBiasEnum,
                 false, // kHasBiasGrad place-holder
                 false, // kStoreLSE
@@ -130,6 +137,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
             kPadSeqLenK,
             true, // kPadHeadDimQ,
             true, // kPadHeadDimV,
+            false, // kHasLogitsSoftCap
             kBiasEnum,
             false, // kHasBiasGrad place-holder
             false, // kStoreLSE
@@ -180,6 +188,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
           param.scale,
           1.0f, // scale_p
           1.0f, // scale_o
+          0.f, // logits_soft_cap
           param.q_strides[0], // q, k, v, bias, randval, out tensor seq-dim
                               // stride
           param.k_strides[0],
@@ -199,6 +208,7 @@ struct grouped_infer_mask_bias_dropout_dispatch {
                                   : -1, // window_left_size
           (param.custom_mask_type == 0) ? -1 : 0, // window_right_size
           param.custom_mask_type,
+          0, // min_seqlen_q, most recently added kernel argument
           param.dropout_prob,
           false, // is_store_randval
           std::make_pair(param.philox_seed, param.philox_offset));

@@ -12,12 +12,11 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
 #include <ATen/core/Generator.h>
-#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAGeneratorImpl.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <c10/hip/HIPStream.h>
 #include <c10/util/Optional.h>
 #include <torch/library.h>
-#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <ATen/cuda/PhiloxUtils.cuh>
 
 #include "ck_fmha_util.h"
 #include "ck_tiled_fmha_fwd_splitkv_selector.h"
@@ -48,7 +47,7 @@ namespace {
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
@@ -116,7 +115,7 @@ efficient_attention_forward_ck(
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(key);
   CHECK_NOSPARSE_LASTCONTIGUOUS_CUDA(value);
 
-  hipStream_t stream = at::hip::getCurrentHIPStream().stream();
+  hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);
@@ -128,7 +127,7 @@ efficient_attention_forward_ck(
 
   auto opts = query.options();
 
-  at::Tensor logsumexp;
+  std::optional<at::Tensor> logsumexp = std::nullopt;
 
   at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
 
@@ -136,8 +135,8 @@ efficient_attention_forward_ck(
   at::Tensor out_acc;
 
   const bool use_dropout = std::fpclassify(dropout_p) != FP_ZERO;
-  int64_t philox_seed;
-  int64_t philox_offset;
+  int64_t philox_seed = 0;
+  int64_t philox_offset = 0;
 
   if (use_dropout) {
     at::PhiloxCudaState rng_engine_inputs;
@@ -230,11 +229,11 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
-      p.logsumexp_ptr = logsumexp.data_ptr();
+      p.logsumexp_ptr = logsumexp->data_ptr();
       p.lse_strides = {
-          static_cast<int>(logsumexp.stride(0)),
-          static_cast<int>(logsumexp.stride(1)),
-          static_cast<int>(logsumexp.stride(2))};
+          static_cast<int>(logsumexp->stride(0)),
+          static_cast<int>(logsumexp->stride(1)),
+          static_cast<int>(logsumexp->stride(2))};
     } else {
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0, 0};
@@ -379,10 +378,10 @@ efficient_attention_forward_ck(
 
     if (p.compute_logsumexp) {
       logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
-      p.logsumexp_ptr = logsumexp.data_ptr();
+      p.logsumexp_ptr = logsumexp->data_ptr();
       p.lse_strides = {
-          static_cast<int>(logsumexp.stride(1)),
-          static_cast<int>(logsumexp.stride(2))};
+          static_cast<int>(logsumexp->stride(1)),
+          static_cast<int>(logsumexp->stride(2))};
     } else {
       p.logsumexp_ptr = nullptr;
       p.lse_strides = {0, 0};
@@ -473,7 +472,7 @@ efficient_attention_forward_ck(
   (Mode BMHK) With all the heads having the same seqlen
   (Mode 1MHK) `batch=1` with all tokens across batches concatenated
 */
-std::tuple<at::Tensor, at::Tensor, int64_t, int64_t>
+std::tuple<at::Tensor, std::optional<at::Tensor>, int64_t, int64_t>
 efficient_attention_forward_ck_meta(
     const at::Tensor& query, // [b, seqlen, num_heads_q, K]
     const at::Tensor& key, // [b, seqlen, num_heads_kv, K]
@@ -495,25 +494,25 @@ efficient_attention_forward_ck_meta(
     const c10::optional<int64_t> window_size,
     const c10::optional<at::Tensor>& block_tables,
     const c10::optional<int64_t> page_size) {
-  int64_t B = query.size(0);
-  int64_t M = query.size(1);
-  int64_t N = key.size(1);
-  int64_t Hq = query.size(-2);
-  int64_t Hkv = key.size(-2);
-  int64_t K = query.size(-1);
-  int64_t Kv = value.size(-1);
+  at::SymInt B = query.sym_size(0);
+  at::SymInt M = query.sym_size(1);
+  at::SymInt N = key.sym_size(1);
+  at::SymInt Hq = query.sym_size(-2);
+  at::SymInt Hkv = key.sym_size(-2);
+  at::SymInt K = query.sym_size(-1);
+  at::SymInt Kv = value.sym_size(-1);
   auto opts = query.options();
-  at::Tensor logsumexp;
-  at::Tensor out = at::empty({B, M, Hq, Kv}, opts);
+  std::optional<at::Tensor> logsumexp = std::nullopt;
+  at::Tensor out = at::empty_symint({B, M, Hq, Kv}, opts);
   int64_t philox_seed = 0;
   int64_t philox_offset = 0;
   if (!seqstart_q.has_value()) { // input is batched
     if (compute_logsumexp) {
-      logsumexp = at::empty({B, Hq, M}, opts.dtype(at::kFloat));
+      logsumexp = at::empty_symint({B, Hq, M}, opts.dtype(at::kFloat));
     }
   } else {
     if (compute_logsumexp) {
-      logsumexp = at::empty({1, Hq, M}, opts.dtype(at::kFloat));
+      logsumexp = at::empty_symint({1, Hq, M}, opts.dtype(at::kFloat));
     }
   }
   return std::make_tuple(out, logsumexp, philox_seed, philox_offset);

@@ -7,16 +7,7 @@ from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import (
-    attn_bias,
-    ck,
-    ck_decoder,
-    ck_splitk,
-    cutlass,
-    flash,
-    flash3,
-    triton_splitk,
-)
+from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalMask,
@@ -45,7 +36,6 @@ MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
-MemoryEfficientAttentionCkDecoderOp = (ck_decoder.FwOp, ck.BwOp)
 MemoryEfficientAttentionSplitKCkOp = (ck_splitk.FwOp, ck.BwOp)
 
 
@@ -179,6 +169,7 @@ class _fMHA(torch.autograd.Function):
             lse=lse,
             out=out,
             rng_state=rng_state,
+            qkv_share_storage=ctx.qkv_share_storage,
         )
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx,
@@ -793,31 +784,34 @@ def merge_attentions(
         attn_dtype = attn_split[0].dtype
         lse_dtype = lse_split[0].dtype
 
-    attn_out = torch.empty(
-        B,
-        M,
-        G,
-        H,
-        Kq,
-        device=device,
-        dtype=output_dtype or attn_dtype,
-    )
-    if write_lse:
-        lse_out = torch.empty(
+    if concat_path:
+        attn_out = torch.empty(
             B,
+            M,
             G,
             H,
-            M,
+            Kq,
             device=device,
-            dtype=lse_dtype,
+            dtype=output_dtype or attn_dtype,
         )
-    else:
-        lse_out = None
-
-    if concat_path:
+        if write_lse:
+            lse_out = torch.empty(
+                B,
+                G,
+                H,
+                M,
+                device=device,
+                dtype=lse_dtype,
+            )
+        else:
+            lse_out = None
         triton_splitk.merge_attentions(attn_out, lse_out, attn_split, lse_split)  # type: ignore
     else:
-        attn_out, lse_out = _MergeAttentions.apply(attn_out, lse_out, *attn_split, *lse_split)  # type: ignore
+        outs = triton_splitk.merge_attentions_varargs(
+            attn_split, lse_split, write_lse, output_dtype, B, M, G, H, Kq
+        )  # type: ignore
+        attn_out = outs[0]
+        lse_out = outs[1] if write_lse else None
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
@@ -825,44 +819,6 @@ def merge_attentions(
             lse_out = lse_out[:, 0]
 
     return attn_out, lse_out
-
-
-class _MergeAttentions(torch.autograd.Function):
-    @staticmethod
-    # type: ignore
-    def forward(
-        ctx, attn_out: torch.Tensor, lse_out: torch.Tensor, *inputs: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        num_chunks = len(inputs) // 2
-        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
-
-        triton_splitk.merge_attentions_varargs(attn_out, lse_out, attn_split, lse_split)
-
-        ctx.save_for_backward(
-            attn_out,
-            lse_out,
-            *inputs,
-        )
-        return attn_out, lse_out
-
-    @staticmethod
-    # type: ignore
-    def backward(
-        ctx, grad_attn: torch.Tensor, grad_lse: torch.Tensor
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        out, lse, *inputs = ctx.saved_tensors
-        num_chunks = len(inputs) // 2
-        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
-        dattn, dlse = triton_splitk.merge_attentions_varargs_backward(
-            attn_split,
-            lse_split,
-            out,
-            lse,
-            grad_attn,
-            grad_lse,
-        )
-        ret = [None, None] + dattn + dlse
-        return tuple(ret)
 
 
 ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
@@ -888,7 +844,7 @@ __all__ = [
     "MemoryEfficientAttentionFlashAttentionOp",
     "memory_efficient_attention",
     "MemoryEfficientAttentionCkOp",
-    "MemoryEfficientAttentionCkDecoderOp",
+    "MemoryEfficientAttentionSplitKCkOp",
     "ALL_FW_OPS",
     "ALL_BW_OPS",
     "attn_bias",

@@ -338,7 +338,9 @@ class FwOp(AttentionFwOpBase):
         return reasons
 
     @classmethod
-    def get_split_k(cls, B: int, G: int, H: int, Mk: int, Mq: int) -> int:
+    def get_split_k(
+        cls, B: int, G: int, H: int, Mk: int, Mq: int, page_size: int, is_paged=False
+    ) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
         if torch.version.hip:
@@ -351,7 +353,7 @@ class FwOp(AttentionFwOpBase):
             while split_k > split_k_stop_val:
                 split_k = split_k // 2
 
-            split_size = (Mk + split_k - 1) // split_k
+            split_size = (Mk + split_k - 1) // max(split_k, 1)
 
             chunk_size = split_size // max_chunk_size * max_chunk_size
             if chunk_size < split_size:
@@ -371,6 +373,13 @@ class FwOp(AttentionFwOpBase):
 
         split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
+
+        # makes no sense that split_size is larger than page_size
+        if is_paged and torch.version.hip:
+            split_size = (Mk + split_k - 1) // split_k
+            if split_size > page_size:
+                split_size = page_size
+                split_k = (Mk + split_size - 1) // split_size
 
         return split_k
 
@@ -566,7 +575,9 @@ class FwOp(AttentionFwOpBase):
         else:
             # Use heuristics
             split_k = (
-                cls.get_split_k(B, G, H, Mk, Mq) if attn_bias_tensor is None else 1
+                cls.get_split_k(B, G, H, Mk, Mq, page_size, is_paged)
+                if attn_bias_tensor is None
+                else 1
             )
 
         # M_ceil = Mqq rounded up to a multiple of MAX_BLOCK_M
@@ -634,24 +645,25 @@ class FwOp(AttentionFwOpBase):
             # TODO: remove this when autotuning on AMD is working
             num_warps = cls.NUM_WARPS
             num_stages = cls.NUM_STAGES
-            if torch.version.hip:
-                mkv = k.shape[1] // B if is_paged else k.shape[1]
-                # TODO: Determine heursistics for paged attention
+            if torch.version.hip and attn_bias is not None:
+                # TODO: Double check paged.
+                mkv = attn_bias.k_seqinfo.max_seqlen
+                # TODO: Determine heuristics for paged attention
                 use_fp8_path = k_fp8_scale_shift is not None
                 if B == 1:
                     if use_fp8_path:
                         # Use specialized configs for FP8
                         if mkv <= 256:
                             BLOCK_N = 16
-                            num_warps = 8
-                            num_stages = 1 if is_paged else 2
-                        elif mkv <= 8192:
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 2048:
                             BLOCK_N = 32
-                            num_warps = 8
+                            num_warps = 4
                             num_stages = 1
                         elif mkv <= 16384:
                             BLOCK_N = 64
-                            num_warps = 8
+                            num_warps = 4
                             num_stages = 1
                         elif mkv >= 131072:
                             BLOCK_N = 128
@@ -674,11 +686,15 @@ class FwOp(AttentionFwOpBase):
                     if use_fp8_path:
                         if mkv <= 256:
                             BLOCK_N = 16
-                            num_warps = 8
-                            num_stages = 1 if is_paged else 2
-                        elif mkv <= 2048:
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 4096:
                             BLOCK_N = 32
                             num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 8192:
+                            BLOCK_N = 16
+                            num_warps = 2
                             num_stages = 1
                         elif mkv < 131072:
                             # Note: This isn't benchmarked, but fp8 seems to scale well.
@@ -716,10 +732,6 @@ class FwOp(AttentionFwOpBase):
                     else:
                         if mkv <= 256:
                             BLOCK_N = 16
-                            num_warps = 8
-                            num_stages = 2
-                        elif mkv <= 2048:
-                            BLOCK_N = 32
                             num_warps = 4
                             num_stages = 1
                         elif mkv < 131072:
@@ -748,7 +760,7 @@ class FwOp(AttentionFwOpBase):
                             num_warps = 1
                             BLOCK_N = 128
                     else:
-                        if mkv <= 256:
+                        if mkv <= 128:
                             num_warps = 4
                             BLOCK_N = 16
                         else:
@@ -801,12 +813,12 @@ class FwOp(AttentionFwOpBase):
                 "num_stages": num_stages,
             }
         if _is_triton_available():
-            # Triton 3.3.1fb is required for AMD specific changes to
+            # Triton 3.3.1+fb is required for AMD specific changes to
             # improve performance.
             # TODO: Remove once the triton update lands everywhere.
             import triton
 
-            IS_TRITON_UPGRADE = triton.__version__ == "3.3.1fb"
+            IS_TRITON_UPGRADE = triton.__version__ == "3.3.1+fb"
         else:
             IS_TRITON_UPGRADE = False
         IS_HIP = IS_TRITON_UPGRADE and torch.version.hip is not None
@@ -1047,19 +1059,37 @@ def merge_attentions(
 
 @torch.library.custom_op(
     "xformers::fmha_merge_attentions_varargs",
-    mutates_args=("attn_out", "lse_out"),
+    mutates_args=(),
     device_types=["cuda"],
 )
 def merge_attentions_varargs(
-    attn_out: torch.Tensor,
-    lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-) -> None:
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
 
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+    else:
+        lse_out = None
     kernel_args, grid = _prepare_reduce_kernel_params(
         attn_out, lse_out, attn_split, lse_split
     )
@@ -1073,16 +1103,52 @@ def merge_attentions_varargs(
         BLOCK_SIZE=attn_out.shape[-1],
         WRITE_LSE=lse_out is not None,
     )
+    if write_lse:
+        assert lse_out is not None
+        return [attn_out, lse_out]
+    return [attn_out]
 
 
 @torch.library.register_fake("xformers::fmha_merge_attentions_varargs")
 def merge_attentions_varargs_fake(
-    attn_out: torch.Tensor,
-    lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-) -> None:
-    return
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+        return [attn_out, lse_out]
+    return [attn_out]
+
+
+def _merge_attentions_backward(
+    ctx: torch.autograd.function.FunctionCtx,
+    grad: List[torch.Tensor],
+) -> Tuple[None, ...]:
+    raise NotImplementedError(
+        "Backward pass is not implemented for merge_attentions. "
+        "If it was, it would be easy to get wrong attention gradients, "
+        "because the gradients of the LSEs "
+        "don't get propagated by attention backward."
+    )
+
+
+merge_attentions_varargs.register_autograd(_merge_attentions_backward)
 
 
 @torch.library.custom_op(

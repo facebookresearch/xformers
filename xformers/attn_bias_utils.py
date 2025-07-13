@@ -10,7 +10,6 @@ from typing import List, Optional, Sequence, Tuple, Type
 import torch
 
 from xformers.ops import AttentionBias, fmha
-from xformers.ops.fmha.attn_bias import AttentionBiasSubTensor
 from xformers.ops.fmha.common import AttentionOpBase
 
 
@@ -376,11 +375,12 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
     if q.ndim == 5:
 
         def attn_bias_group(group: int):
-            if isinstance(attn_bias, fmha.attn_bias.AttentionBiasSubTensor):
-                if attn_bias.HOLDS_DENSE_TENSOR:
-                    return attn_bias[:, group]
-            elif isinstance(attn_bias, torch.Tensor):
+            if isinstance(attn_bias, torch.Tensor):
                 return attn_bias[:, group]
+            if isinstance(attn_bias, fmha.attn_bias.LowerTriangularMaskWithTensorBias):
+                return fmha.attn_bias.LowerTriangularMaskWithTensorBias(
+                    attn_bias._bias[:, group]
+                )
             return attn_bias
 
         return torch.stack(
@@ -408,7 +408,7 @@ def ref_attention(q, k, v, attn_bias=None, drop_mask=None, p=0.0, scale=None):
 
     attn = q @ k.transpose(-2, -1)
     if attn_bias is not None:
-        if isinstance(attn_bias, (AttentionBias, AttentionBiasSubTensor)):
+        if isinstance(attn_bias, AttentionBias):
             # Always create in B,H,Mq,Mk format
             attn_bias_tensor = attn_bias.materialize(
                 (q.shape[0], 1, q.shape[1], k.shape[1]),
@@ -437,7 +437,7 @@ def ref_attention_bmhk(q, k, v, attn_bias, scale=None) -> torch.Tensor:
             [t.shape[0] * t.shape[2], t.shape[1], t.shape[3]]
         )
 
-    if isinstance(attn_bias, (AttentionBias, AttentionBiasSubTensor)):
+    if isinstance(attn_bias, AttentionBias):
         attn_bias = attn_bias.materialize(
             (q.shape[0], q.shape[2], q.shape[1], k.shape[1]),
             device=q.device,
