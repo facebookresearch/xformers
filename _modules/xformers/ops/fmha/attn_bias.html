@@ -1400,7 +1400,17 @@
             <span class="n">block_tables</span><span class="o">=</span><span class="n">block_tables</span><span class="p">,</span>
             <span class="n">page_size</span><span class="o">=</span><span class="n">page_size</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="k">return</span> <span class="n">paged_bias</span></div>
+        <span class="k">return</span> <span class="n">paged_bias</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">make_local_attention</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">window_left</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">window_right</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BlockDiagonalLocalAttentionPaddedKeysMask&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">BlockDiagonalLocalAttentionPaddedKeysMask</span><span class="p">(</span>
+            <span class="n">q_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">q_seqinfo</span><span class="p">,</span>
+            <span class="n">k_seqinfo</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="p">,</span>
+            <span class="n">window_left</span><span class="o">=</span><span class="n">window_left</span><span class="p">,</span>
+            <span class="n">window_right</span><span class="o">=</span><span class="n">window_right</span><span class="p">,</span>
+        <span class="p">)</span></div>
 
 
 <div class="viewcode-block" id="BlockDiagonalCausalWithOffsetPaddedKeysMask"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask">[docs]</a><span class="nd">@dataclass</span>
