@@ -1187,6 +1187,16 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         )
         return paged_bias
 
+    def make_local_attention(
+        self, window_left: int, window_right: int
+    ) -> "BlockDiagonalLocalAttentionPaddedKeysMask":
+        return BlockDiagonalLocalAttentionPaddedKeysMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            window_left=window_left,
+            window_right=window_right,
+        )
+
 
 @dataclass
 class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
