@@ -997,9 +997,7 @@ memory_efficient_attention, and  <cite>lse</cite> is extra data, a log-sum-exp.
 The outputs of calls to this with the same query and separate keys and values
 can be merged with merge_attentions to obtain the attention of the queries
 against the disjoint union of the keys and values.</p>
-<p>Warning: The backward pass of this function is quite restricted. In particular
-we assume that in the forward pass the outputs were only used in merge_attention
-calculations, and that LSEs weren’t used anywhere except in merge attentions.</p>
+<p>This function doesn’t have a backward pass.</p>
 </dd></dl>
 
 <dl class="py function">

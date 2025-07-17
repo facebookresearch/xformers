@@ -812,9 +812,7 @@
 <span class="sd">    can be merged with merge_attentions to obtain the attention of the queries</span>
 <span class="sd">    against the disjoint union of the keys and values.</span>
 
-<span class="sd">    Warning: The backward pass of this function is quite restricted. In particular</span>
-<span class="sd">    we assume that in the forward pass the outputs were only used in merge_attention</span>
-<span class="sd">    calculations, and that LSEs weren&#39;t used anywhere except in merge attentions.</span>
+<span class="sd">    This function doesn&#39;t have a backward pass.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="n">p</span> <span class="o">!=</span> <span class="mf">0.0</span><span class="p">:</span>
         <span class="k">raise</span> <span class="ne">NotImplementedError</span><span class="p">(</span><span class="s2">&quot;dropout is not supported.&quot;</span><span class="p">)</span>
@@ -830,39 +828,11 @@
         <span class="n">is_partial</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
     <span class="p">)</span>
 
-    <span class="n">is_grad</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">is_grad_enabled</span><span class="p">()</span> <span class="ow">and</span> <span class="nb">any</span><span class="p">(</span>
-        <span class="n">x</span><span class="o">.</span><span class="n">requires_grad</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span><span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">]</span>
+    <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+        <span class="n">inp</span><span class="p">,</span>
+        <span class="n">op</span><span class="o">=</span><span class="n">fwop</span><span class="p">,</span>
     <span class="p">)</span>
-
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">is_grad</span><span class="p">:</span>
-        <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span> <span class="o">=</span> <span class="n">_memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
-            <span class="n">inp</span><span class="p">,</span>
-            <span class="n">op</span><span class="o">=</span><span class="n">fwop</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span>
-
-    <span class="k">if</span> <span class="n">query</span><span class="o">.</span><span class="n">ndim</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;gradients not supported for 5D tensors&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">op</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">):</span>
-        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
-        <span class="n">op_bw</span> <span class="o">=</span> <span class="n">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-    <span class="k">elif</span> <span class="n">op</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">op_bw</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="n">op_fw</span> <span class="o">=</span> <span class="n">_serialize_op</span><span class="p">(</span><span class="n">op</span><span class="p">)</span>
-        <span class="n">op_bw</span> <span class="o">=</span> <span class="kc">None</span>
-    <span class="k">return</span> <span class="n">_fMHA</span><span class="o">.</span><span class="n">apply</span><span class="p">(</span>
-        <span class="n">op_fw</span><span class="p">,</span>
-        <span class="n">op_bw</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">query</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">key</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">attn_bias</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">p</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">scale</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">output_dtype</span><span class="p">,</span>
-        <span class="n">inp</span><span class="o">.</span><span class="n">is_partial</span><span class="p">,</span>
-    <span class="p">)</span></div>
+    <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span></div>
 
 
 <div class="viewcode-block" id="merge_attentions"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.merge_attentions">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">merge_attentions</span><span class="p">(</span>
