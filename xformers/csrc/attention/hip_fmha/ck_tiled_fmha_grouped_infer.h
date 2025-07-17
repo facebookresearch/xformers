@@ -40,23 +40,12 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
         } else {
           if (!param.use_split_kv && param.use_paged_kvcache &&
               param.page_block_size >= 128) {
-            const auto mtile = get_fmha_fwd_mtile(
-                param.num_batches, param.Hq, param.max_seqlen_q);
-
-            if (mtile == 128)
-              grouped_infer_pagedkv_mask_bias_dropout_dispatch<
-                  ScalarType,
-                  kHasMask,
-                  kHasBias,
-                  MaxK,
-                  128>::Run(param, stream);
-            else
-              grouped_infer_pagedkv_mask_bias_dropout_dispatch<
-                  ScalarType,
-                  kHasMask,
-                  kHasBias,
-                  MaxK,
-                  64>::Run(param, stream);
+            grouped_infer_pagedkv_mask_bias_dropout_dispatch<
+                ScalarType,
+                kHasMask,
+                kHasBias,
+                MaxK,
+                128>::Run(param, stream);
           } else {
             FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
               grouped_infer_splitkv_mask_bias_dropout_dispatch<
