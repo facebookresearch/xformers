@@ -706,15 +706,25 @@ class FwOp(AttentionFwOpBase):
         else:
             out = torch.zeros(out_shape, device=inp.query.device, dtype=inp.query.dtype)
             rng_state = None
-            softmax_lse = torch.empty(
-                (
-                    [inp.query.shape[2], inp.query.shape[0] * inp.query.shape[1]]
-                    if VARLEN_LSE_PACKED and isinstance(inp.attn_bias, VARLEN_BIASES)
-                    else [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]]
-                ),
-                device=inp.query.device,
-                dtype=torch.float32,
+            lse_shape = (
+                [inp.query.shape[2], inp.query.shape[0] * inp.query.shape[1]]
+                if VARLEN_LSE_PACKED and isinstance(inp.attn_bias, VARLEN_BIASES)
+                else [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]]
             )
+            if inp.is_partial:
+                softmax_lse = torch.full(
+                    lse_shape,
+                    float("-inf"),
+                    device=inp.query.device,
+                    dtype=torch.float32,
+                )
+            else:
+                softmax_lse = torch.empty(
+                    lse_shape,
+                    device=inp.query.device,
+                    dtype=torch.float32,
+                )
+
         if not needs_gradient:
             return out, None
         ctx = Context(

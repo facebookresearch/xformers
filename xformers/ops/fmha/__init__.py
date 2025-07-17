@@ -599,9 +599,7 @@ def memory_efficient_attention_partial(
     can be merged with merge_attentions to obtain the attention of the queries
     against the disjoint union of the keys and values.
 
-    Warning: The backward pass of this function is quite restricted. In particular
-    we assume that in the forward pass the outputs were only used in merge_attention
-    calculations, and that LSEs weren't used anywhere except in merge attentions.
+    This function doesn't have a backward pass.
     """
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
@@ -617,39 +615,11 @@ def memory_efficient_attention_partial(
         is_partial=True,
     )
 
-    is_grad = torch.is_grad_enabled() and any(
-        x.requires_grad for x in [query, key, value]
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        inp,
+        op=fwop,
     )
-
-    if not is_grad:
-        out, ctx = _memory_efficient_attention_forward_requires_grad(
-            inp,
-            op=fwop,
-        )
-        return out, ctx.lse
-
-    if query.ndim == 5:
-        raise ValueError("gradients not supported for 5D tensors")
-    if isinstance(op, tuple):
-        op_fw = _serialize_op(op[0])
-        op_bw = _serialize_op(op[1])
-    elif op is None:
-        op_fw = op_bw = None
-    else:
-        op_fw = _serialize_op(op)
-        op_bw = None
-    return _fMHA.apply(
-        op_fw,
-        op_bw,
-        inp.query,
-        inp.key,
-        inp.value,
-        inp.attn_bias,
-        inp.p,
-        inp.scale,
-        inp.output_dtype,
-        inp.is_partial,
-    )
+    return out, ctx.lse
 
 
 def merge_attentions(

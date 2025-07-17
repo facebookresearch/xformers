@@ -730,11 +730,20 @@ class FwOp(AttentionFwOpBase):
             out = torch.zeros(
                 inp.query.shape, device=inp.query.device, dtype=inp.query.dtype
             )
-            softmax_lse = torch.empty(
-                [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]],
-                device=inp.query.device,
-                dtype=torch.float32,
-            )
+            if inp.is_partial:
+                softmax_lse = torch.full(
+                    [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]],
+                    float("-inf"),
+                    device=inp.query.device,
+                    dtype=torch.float32,
+                )
+            else:
+                softmax_lse = torch.empty(
+                    [inp.query.shape[0], inp.query.shape[2], inp.query.shape[1]],
+                    device=inp.query.device,
+                    dtype=torch.float32,
+                )
+
         ctx = Context(
             out=out,
             lse=softmax_lse,
