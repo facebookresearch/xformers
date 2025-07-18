@@ -463,10 +463,7 @@ efficient_attention_forward_ck(
     };
   };
 
-  if (compute_logsumexp)
-    return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
-  else
-    return std::make_tuple(out, std::nullopt, philox_seed, philox_offset);
+  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }
 
 /*
@@ -517,10 +514,7 @@ efficient_attention_forward_ck_meta(
       logsumexp = at::empty_symint({1, Hq, M}, opts.dtype(at::kFloat));
     }
   }
-  if (compute_logsumexp)
-    return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
-  else
-    return std::make_tuple(out, std::nullopt, philox_seed, philox_offset);
+  return std::make_tuple(out, logsumexp, philox_seed, philox_offset);
 }
 
 } // namespace
