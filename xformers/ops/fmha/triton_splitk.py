@@ -7,8 +7,8 @@ import functools
 import sys
 from dataclasses import dataclass
 from typing import (
-    TYPE_CHECKING,
     Any,
+    cast,
     Dict,
     Iterable,
     List,
@@ -16,8 +16,8 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TYPE_CHECKING,
     Union,
-    cast,
 )
 
 import torch
@@ -25,16 +25,18 @@ import torch
 from ... import _is_triton_available
 from ..common import register_operator
 from .attn_bias import (
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalCausalWithOffsetGappyKeysMask,
     BlockDiagonalCausalWithOffsetPaddedKeysMask,
     BlockDiagonalGappyKeysMask,
+    BlockDiagonalLocalAttentionPaddedKeysMask,
     BlockDiagonalPaddedKeysMask,
     PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
 )
-from .common import AttentionFwOpBase, Context, Inputs, check_lastdim_alignment_stride1
+from .common import AttentionFwOpBase, check_lastdim_alignment_stride1, Context, Inputs
 
 
 def _strides(x: Optional[torch.Tensor], *stride_names: str):
@@ -50,8 +52,19 @@ def _is_supported_causal_bias(attn_bias: Any) -> bool:
         (
             BlockDiagonalCausalWithOffsetPaddedKeysMask,
             BlockDiagonalCausalWithOffsetGappyKeysMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
             PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
             PagedBlockDiagonalCausalWithOffsetGappyKeysMask,
+        ),
+    )
+
+
+def _is_supported_local_bias(attn_bias: Any) -> bool:
+    return isinstance(
+        attn_bias,
+        (
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
+            BlockDiagonalLocalAttentionPaddedKeysMask,
         ),
     )
 
@@ -194,6 +207,8 @@ class FwOp(AttentionFwOpBase):
         type(None),
         torch.Tensor,
         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
+        BlockDiagonalLocalAttentionPaddedKeysMask,
         BlockDiagonalGappyKeysMask,
         BlockDiagonalCausalWithOffsetGappyKeysMask,
         BlockDiagonalPaddedKeysMask,
@@ -240,10 +255,6 @@ class FwOp(AttentionFwOpBase):
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
         if K not in {16, 32, 64, 128, 256, 512}:
             reasons.append(f"Embed dim {K} not supported")
-        if Mkv == 0:
-            # Other ops support this; but here, triton compilation
-            # crashes on A100
-            reasons.append("Query length is 0")
         return reasons
 
     @classmethod
@@ -271,6 +282,7 @@ class FwOp(AttentionFwOpBase):
         )
         is_paged = _is_supported_paged_bias(d.attn_bias)
         is_causal = _is_supported_causal_bias(d.attn_bias)
+        is_local = _is_supported_local_bias(d.attn_bias)
         if is_block_diagonal or is_paged:
             seqinfo = d.attn_bias.q_seqinfo  # type: ignore
             if q_len != seqinfo.seqstart_py[-1]:
@@ -279,12 +291,18 @@ class FwOp(AttentionFwOpBase):
                 )
             q_len = seqinfo.max_seqlen
             if is_causal and q_len != seqinfo.min_seqlen:
-                reasons.append("Variable query len is not supported for causal masks.")
-        if q_len > 16 and is_causal:
+                reasons.append(
+                    f"Variable query len is not supported for causal masks: got {seqinfo.max_seqlen=} {seqinfo.min_seqlen=}."
+                )
+            elif is_local and q_len != seqinfo.min_seqlen:
+                reasons.append(
+                    f"Variable query len is not supported for local masks: got {seqinfo.max_seqlen=} {seqinfo.min_seqlen=}."
+                )
+        if q_len > 16 and (is_causal or is_local):
             # 16 is the minimum BLOCK_M which gets used
             # XXX I don't really understand why this is needed.
             reasons.append(
-                "Query length should not be larger than 16 for causal attention biases"
+                "Query length should not be larger than 16 for causal or local attention biases"
             )
 
         if is_paged:
@@ -295,8 +313,6 @@ class FwOp(AttentionFwOpBase):
                     "by the page size, "
                     f"but got {d.key.shape[1]=}, {page_size=}."
                 )
-            if cls.AUTOTUNE:
-                reasons.append("Paged attention doesn't support autotuning yet.")
             if page_size % cls.BLOCK_N:
                 reasons.append(
                     "For paged attention, page size should be divisible "
@@ -318,7 +334,9 @@ class FwOp(AttentionFwOpBase):
         return reasons
 
     @classmethod
-    def get_split_k(cls, B: int, G: int, H: int, Mk: int, Mq: int) -> int:
+    def get_split_k(
+        cls, B: int, G: int, H: int, Mk: int, Mq: int, page_size: int, is_paged=False
+    ) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
         if torch.version.hip:
@@ -331,7 +349,7 @@ class FwOp(AttentionFwOpBase):
             while split_k > split_k_stop_val:
                 split_k = split_k // 2
 
-            split_size = (Mk + split_k - 1) // split_k
+            split_size = (Mk + split_k - 1) // max(split_k, 1)
 
             chunk_size = split_size // max_chunk_size * max_chunk_size
             if chunk_size < split_size:
@@ -351,6 +369,13 @@ class FwOp(AttentionFwOpBase):
 
         split_k = min(split_k, split_k_upper_bound)
         split_k = max(split_k, 1)
+
+        # makes no sense that split_size is larger than page_size
+        if is_paged and torch.version.hip:
+            split_size = (Mk + split_k - 1) // split_k
+            if split_size > page_size:
+                split_size = page_size
+                split_k = (Mk + split_size - 1) // split_size
 
         return split_k
 
@@ -387,6 +412,197 @@ class FwOp(AttentionFwOpBase):
         )
 
     @classmethod
+    def get_extra_args(
+        cls,
+        *,
+        is_paged: bool,
+        B: int,
+        M: int,
+        Kkv: int,
+        Kq: int,
+        Mq: int,
+        split_k: int,
+        attn_bias: Any,
+        k_fp8_scale_shift: Any,
+    ) -> Dict[str, Any]:
+        BLOCK_M = cls.BLOCK_M
+        BLOCK_N = cls.BLOCK_N
+        if cls.AUTOTUNE:
+            extra_args = {}
+        else:
+            # TODO: remove this when autotuning on AMD is working
+            num_warps = cls.NUM_WARPS
+            num_stages = cls.NUM_STAGES
+            if torch.version.hip and attn_bias is not None:
+                # TODO: Double check paged.
+                mkv = attn_bias.k_seqinfo.max_seqlen
+                # TODO: Determine heuristics for paged attention
+                use_fp8_path = k_fp8_scale_shift is not None
+                if B == 1:
+                    if use_fp8_path:
+                        # Use specialized configs for FP8
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 2048:
+                            BLOCK_N = 32
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 16384:
+                            BLOCK_N = 64
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv >= 131072:
+                            BLOCK_N = 128
+                            num_warps = 2
+                            num_stages = 1
+                        else:
+                            # Note: We don't have data for when transitioning num_wraps works well
+                            BLOCK_N = 64
+                            num_warps = 4
+                            num_stages = 1
+                    else:
+                        num_warps = 4
+                        num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
+                        BLOCK_N = 32
+                elif B <= 4 and split_k <= 128:
+                    num_warps = 2
+                    num_stages = 1
+                    BLOCK_N = 32
+                elif B <= 16:
+                    if use_fp8_path:
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 4096:
+                            BLOCK_N = 32
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 8192:
+                            BLOCK_N = 16
+                            num_warps = 2
+                            num_stages = 1
+                        elif mkv < 131072:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 64
+                            num_warps = 1
+                            num_stages = 1
+                        else:
+                            BLOCK_N = 128
+                            num_warps = 1
+                            num_stages = 1
+                    else:
+                        if M < 16:
+                            num_warps = 2
+                            num_stages = 1
+                        else:
+                            num_warps = 1
+                            num_stages = 1
+                        BLOCK_N = 32
+                elif B <= 64 and use_fp8_path:
+                    if is_paged:
+                        num_stages = 1
+                        if mkv <= 256:
+                            BLOCK_N = 64
+                            num_warps = 8
+                        elif mkv <= 8192:
+                            BLOCK_N = 64
+                            num_warps = 1
+                        elif mkv <= 16384:
+                            BLOCK_N = 128
+                            num_warps = 2
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 128
+                            num_warps = 1
+                    else:
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv < 131072:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 64
+                            num_warps = 1
+                            num_stages = 1
+                        else:
+                            BLOCK_N = 128
+                            num_warps = 1
+                            num_stages = 1
+                elif B <= 128 and use_fp8_path:
+                    num_stages = 1
+                    if is_paged:
+                        if mkv <= 256:
+                            num_warps = 4
+                            BLOCK_N = 16
+                        elif mkv <= 2048:
+                            num_warps = 1
+                            BLOCK_N = 64
+                        elif mkv < 131072:
+                            num_warps = 2
+                            BLOCK_N = 128
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            num_warps = 1
+                            BLOCK_N = 128
+                    else:
+                        if mkv <= 128:
+                            num_warps = 4
+                            BLOCK_N = 16
+                        else:
+                            num_warps = 1
+                            BLOCK_N = 64
+                elif B <= 256 and use_fp8_path:
+                    num_stages = 1
+                    if is_paged:
+                        if mkv <= 2048:
+                            num_warps = 1
+                            BLOCK_N = 64
+                        elif mkv < 131072:
+                            num_warps = 2
+                            BLOCK_N = 128
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            num_warps = 1
+                            BLOCK_N = 128
+                    else:
+                        if mkv <= 256:
+                            num_warps = 2
+                            BLOCK_N = 32
+                        else:
+                            num_warps = 1
+                            BLOCK_N = 64
+                else:
+                    num_warps = 1
+                    num_stages = 1
+                    BLOCK_N = 64
+            else:
+                should_modify_warp_and_block = (
+                    Kkv == 128
+                    and Kq == 128
+                    and torch.cuda.get_device_capability() >= (8, 9)
+                )
+                if should_modify_warp_and_block:
+                    if Mq > 1:
+                        num_warps = 4
+                    # Choose minimal round block size which covers M.
+                    if M > 16:
+                        BLOCK_M = 32
+                    if M > 32:
+                        BLOCK_M = 64
+                    if M > 64:
+                        BLOCK_M = 128
+            extra_args = {
+                "BLOCK_M": BLOCK_M,
+                "BLOCK_N": BLOCK_N,
+                "num_warps": num_warps,
+                "num_stages": num_stages,
+            }
+        return extra_args
+
+    @classmethod
     def apply(
         cls,
         inp: Inputs,
@@ -398,15 +614,35 @@ class FwOp(AttentionFwOpBase):
         values at the beginning of each row, and inp has type Inputs.
         """
 
+        output_dtype = inp.get_output_dtype()
+        # LSE may need higher precision than output
+        output_f64_lse = output_dtype in (torch.float32, torch.float64)
+        lse_dtype = torch.float64 if output_f64_lse else torch.float32
+
+        if inp.query.numel() == 0 or inp.key.numel() == 0:
+            out = torch.zeros_like(inp.query)
+            if needs_gradient:
+                lse_out = torch.full(
+                    (inp.query.shape[0],)
+                    + inp.query.shape[2:-1]
+                    + (inp.query.shape[1],),
+                    float("-inf"),
+                    device=inp.query.device,
+                    dtype=lse_dtype,
+                )
+                return out, Context(out=out, lse=lse_out)
+            return out, None
+
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
 
-        output_dtype = inp.get_output_dtype()
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
             attn_bias = cast(
                 Optional[
                     Union[
                         BlockDiagonalCausalWithOffsetPaddedKeysMask,
+                        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
+                        BlockDiagonalLocalAttentionPaddedKeysMask,
                         BlockDiagonalGappyKeysMask,
                         BlockDiagonalCausalWithOffsetGappyKeysMask,
                         BlockDiagonalPaddedKeysMask,
@@ -428,8 +664,11 @@ class FwOp(AttentionFwOpBase):
         seq_starts_q_multiplier = None
         q, k, v = inp.get_qkv_in_bmghk()
         IS_CAUSAL = False
+        IS_LOCAL = False
         NUM_QUERIES_CAUSAL = 1
         variable_q = False
+        window_left = -1
+        window_right = -1
 
         is_block_diagonal = isinstance(attn_bias, BlockDiagonalPaddedKeysMask)
         is_gappy = _is_supported_gappy_bias(attn_bias)
@@ -448,8 +687,14 @@ class FwOp(AttentionFwOpBase):
             # force a bool because triton cannot take np.bool_
             multiple_q = bool(attn_bias.q_seqinfo.max_seqlen > 1)
             IS_CAUSAL = multiple_q and _is_supported_causal_bias(attn_bias)
+            IS_LOCAL = _is_supported_local_bias(attn_bias)
             variable_q = multiple_q and not IS_CAUSAL
             Kkv = v.shape[-1]
+            if isinstance(attn_bias, BlockDiagonalLocalAttentionPaddedKeysMask):
+                window_left = attn_bias.window_left
+                window_right = attn_bias.window_right
+            elif isinstance(attn_bias, BlockDiagonalCausalLocalAttentionPaddedKeysMask):
+                window_left = attn_bias._window_size - 1
 
             if variable_q:
                 seq_starts_q = attn_bias.q_seqinfo.seqstart
@@ -535,7 +780,9 @@ class FwOp(AttentionFwOpBase):
         else:
             # Use heuristics
             split_k = (
-                cls.get_split_k(B, G, H, Mk, Mq) if attn_bias_tensor is None else 1
+                cls.get_split_k(B, G, H, Mk, Mq, page_size, is_paged)
+                if attn_bias_tensor is None
+                else 1
             )
 
         # M_ceil = Mqq rounded up to a multiple of MAX_BLOCK_M
@@ -565,24 +812,22 @@ class FwOp(AttentionFwOpBase):
                 device=q.device,
             ).permute(0, 3, 4, 1, 2, 5)
         lse, lse_splitk = None, None
-        # LSE may need higher precision than output
-        output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK or needs_gradient:
+            if IS_SPLITK or output_f64_lse:
+                lse_splitk_dtype = torch.float64
+            else:
+                lse_splitk_dtype = torch.float32
             if cls.SPLIT_K_EARLY_EXIT:
                 lse_splitk = torch.full(
                     [Bqq, G, H, split_k, Mqq],
                     -float("inf"),
-                    dtype=torch.float64
-                    if IS_SPLITK or output_f64_lse
-                    else torch.float32,
+                    dtype=lse_splitk_dtype,
                     device=q.device,
                 )
             else:
                 lse_splitk = torch.empty(
                     [Bqq, G, H, split_k, Mqq],
-                    dtype=torch.float64
-                    if IS_SPLITK or output_f64_lse
-                    else torch.float32,
+                    dtype=lse_splitk_dtype,
                     device=q.device,
                 )
 
@@ -595,57 +840,28 @@ class FwOp(AttentionFwOpBase):
         use_seq_len = seq_len is not None
 
         kernel = cls.get_kernel()
-        BLOCK_M = cls.BLOCK_M
-        BLOCK_N = cls.BLOCK_N
-        if cls.AUTOTUNE:
-            extra_args = {}
+        extra_args = cls.get_extra_args(
+            is_paged=is_paged,
+            B=B,
+            M=M,
+            Kkv=Kkv,
+            Kq=Kq,
+            Mq=Mq,
+            split_k=split_k,
+            attn_bias=attn_bias,
+            k_fp8_scale_shift=k_fp8_scale_shift,
+        )
+
+        if _is_triton_available():
+            # Triton 3.3.1+fb is required for AMD specific changes to
+            # improve performance.
+            # TODO: Remove once the triton update lands everywhere.
+            import triton
+
+            IS_TRITON_UPGRADE = triton.__version__ == "3.3.1+fb"
         else:
-            # TODO: remove this when autotuning on AMD is working
-            num_warps = cls.NUM_WARPS
-            num_stages = cls.NUM_STAGES
-            if torch.version.hip:
-                if B == 1:
-                    num_warps = 4
-                    num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
-                    BLOCK_N = 32
-                elif B <= 4 and split_k <= 128:
-                    num_warps = 2
-                    num_stages = 1
-                    BLOCK_N = 32
-                elif B <= 16:
-                    if M < 16:
-                        num_warps = 2
-                        num_stages = 1
-                    else:
-                        num_warps = 1
-                        num_stages = 1
-                    BLOCK_N = 32
-                else:
-                    num_warps = 1
-                    num_stages = 1
-                    BLOCK_N = 64
-            else:
-                should_modify_warp_and_block = (
-                    Kkv == 128
-                    and Kq == 128
-                    and torch.cuda.get_device_capability() >= (8, 9)
-                )
-                if should_modify_warp_and_block:
-                    if Mq > 1:
-                        num_warps = 4
-                    # Choose minimal round block size which covers M.
-                    if M > 16:
-                        BLOCK_M = 32
-                    if M > 32:
-                        BLOCK_M = 64
-                    if M > 64:
-                        BLOCK_M = 128
-            extra_args = {
-                "BLOCK_M": BLOCK_M,
-                "BLOCK_N": BLOCK_N,
-                "num_warps": num_warps,
-                "num_stages": num_stages,
-            }
+            IS_TRITON_UPGRADE = False
+        IS_HIP = IS_TRITON_UPGRADE and torch.version.hip is not None
         kernel[grid](
             Q=q,
             K=k,
@@ -696,13 +912,18 @@ class FwOp(AttentionFwOpBase):
             PACKED_PER_VAL=PACKED_PER_VAL,
             N_GROUPS=cls.NUM_GROUPS,
             IS_CAUSAL=IS_CAUSAL,
+            IS_LOCAL=IS_LOCAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
+            WINDOW_LEFT=window_left,
+            WINDOW_RIGHT=window_right,
             WRITE_LSE=IS_SPLITK or needs_gradient,
             HAS_ADDITIVE_BIAS=attn_bias_tensor is not None,
+            NUM_PROGRAMS_DIM2_CONST=split_k,
+            IS_HIP=IS_HIP,
             **extra_args,
         )
         if not IS_SPLITK:
@@ -742,7 +963,6 @@ class FwOp(AttentionFwOpBase):
         assert lse_splitk is not None
         output_lse = None
         if needs_gradient:
-            lse_dtype = torch.float64 if output_f64_lse else torch.float32
             if attn_bias is None or variable_q:
                 output_lse = torch.empty(
                     (Bqq, G, Hq, Mq), device=q.device, dtype=lse_dtype
@@ -876,16 +1096,39 @@ def merge_attentions(
     )
 
 
+@torch.library.custom_op(
+    "xformers::fmha_merge_attentions_varargs",
+    mutates_args=(),
+    device_types=["cuda"],
+)
 def merge_attentions_varargs(
-    attn_out: torch.Tensor,
-    lse_out: Optional[torch.Tensor],
     attn_split: Sequence[torch.Tensor],
     lse_split: Sequence[torch.Tensor],
-):
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
 
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+    else:
+        lse_out = None
     kernel_args, grid = _prepare_reduce_kernel_params(
         attn_out, lse_out, attn_split, lse_split
     )
@@ -899,8 +1142,59 @@ def merge_attentions_varargs(
         BLOCK_SIZE=attn_out.shape[-1],
         WRITE_LSE=lse_out is not None,
     )
+    if write_lse:
+        assert lse_out is not None
+        return [attn_out, lse_out]
+    return [attn_out]
 
 
+@torch.library.register_fake("xformers::fmha_merge_attentions_varargs")
+def merge_attentions_varargs_fake(
+    attn_split: Sequence[torch.Tensor],
+    lse_split: Sequence[torch.Tensor],
+    write_lse: bool,
+    output_dtype: Optional[torch.dtype],
+    B: int,
+    M: int,
+    G: int,
+    H: int,
+    Kq: int,
+) -> List[torch.Tensor]:
+    attn_out = torch.empty(
+        (B, M, G, H, Kq),
+        device=attn_split[0].device,
+        dtype=output_dtype or attn_split[0].dtype,
+    )
+    if write_lse:
+        lse_out = torch.empty(
+            (B, G, H, M),
+            device=attn_split[0].device,
+            dtype=lse_split[0].dtype,
+        )
+        return [attn_out, lse_out]
+    return [attn_out]
+
+
+def _merge_attentions_backward(
+    ctx: torch.autograd.function.FunctionCtx,
+    grad: List[torch.Tensor],
+) -> Tuple[None, ...]:
+    raise NotImplementedError(
+        "Backward pass is not implemented for merge_attentions. "
+        "If it was, it would be easy to get wrong attention gradients, "
+        "because the gradients of the LSEs "
+        "don't get propagated by attention backward."
+    )
+
+
+merge_attentions_varargs.register_autograd(_merge_attentions_backward)
+
+
+@torch.library.custom_op(
+    "xformers::merge_attentions_varargs_backward",
+    mutates_args=(),
+    device_types=["cuda"],
+)
 def merge_attentions_varargs_backward(
     attn_split: List[torch.Tensor],
     lse_split: List[torch.Tensor],
@@ -939,6 +1233,20 @@ def merge_attentions_varargs_backward(
     return dattn_splitk, dlse_splitk
 
 
+@torch.library.register_fake("xformers::merge_attentions_varargs_backward")
+def merge_attentions_varargs_backward_fake(
+    attn_split: List[torch.Tensor],
+    lse_split: List[torch.Tensor],
+    attn_out: torch.Tensor,
+    lse_out: torch.Tensor,
+    grad_attn: torch.Tensor,
+    grad_lse: torch.Tensor,
+) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
+    dattn_splitk = [torch.empty_like(x) for x in attn_split]
+    dlse_splitk = [torch.empty_like(x) for x in lse_split]
+    return dattn_splitk, dlse_splitk
+
+
 def _prepare_reduce_kernel_params(
     attn_out: torch.Tensor,
     lse_out: Optional[torch.Tensor],
@@ -947,7 +1255,6 @@ def _prepare_reduce_kernel_params(
     grad_attn: Optional[torch.Tensor] = None,
     grad_lse: Optional[torch.Tensor] = None,
 ) -> Tuple[Dict[str, int], Tuple[int, int, int]]:
-
     B, M, G, H, Kq = attn_out.shape
     B1, G1, H1, M1, Kq1 = attn_split[0].shape
     B2, G2, H2, M2 = lse_split[0].shape

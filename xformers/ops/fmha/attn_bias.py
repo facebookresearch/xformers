@@ -22,6 +22,7 @@ import math
 from dataclasses import dataclass
 from typing import (
     Any,
+    cast,
     ClassVar,
     Iterable,
     List,
@@ -30,13 +31,12 @@ from typing import (
     Tuple,
     Type,
     Union,
-    cast,
 )
 
 import torch
 
 
-def _to_device(t: torch.Tensor, device: torch.device):
+def _to_device(t: torch.Tensor, device: torch.device) -> torch.Tensor:
     if t.device == device:
         return t
     if device == torch.device("cpu"):
@@ -86,8 +86,6 @@ class AttentionBias:
 
     """
 
-    HOLDS_DENSE_TENSOR = False
-
     def materialize(
         self,
         shape: Tuple[int, ...],
@@ -107,6 +105,8 @@ def _get_default_bias_device(device: Optional[torch.device] = None) -> torch.dev
     if device is None:
         if torch.cuda.is_available():
             return torch.device("cuda")
+        if torch.mtia.is_available():
+            return torch.device("mtia")
         return torch.device("cpu")
     return device
 
@@ -137,6 +137,36 @@ def _materialize_causal_mask(
         mask = torch.triu(mask, diagonal=shift - window_size + 1)
     mask = torch.log(mask)
     return mask.to(dtype)
+
+
+class LowerTriangularMask(AttentionBias):
+    """
+    A lower-triangular (aka causal) mask
+
+    A query Q cannot attend to a key which is farther from the
+    initial key than Q is from the initial query.
+
+    See also :attr:`LowerTriangularFromBottomRightMask` if the number
+    of queries is not equal to the number of keys/values.
+    """
+
+    def to(self, device: torch.device) -> "LowerTriangularMask":
+        assert type(self) is LowerTriangularMask, "Please implement in subclass"
+        return self
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return _materialize_causal_mask(shape, dtype=dtype, device=device)
+
+    def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
+        """
+        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias
+        """
+        return LowerTriangularMaskWithTensorBias(bias)
 
 
 @dataclass
@@ -284,7 +314,7 @@ class LowerTriangularFromBottomRightLocalAttentionMask(
     whose distance to the final key is either of:
 
     * less than X (i.e. "causal attention", same as :attr:`LowerTriangularFromBottomRightMask`)
-    * greater than X + window_size (i.e. "local attention")
+    * greater than or equal to X + window_size (i.e. "local attention")
 
 
     .. figure:: /_static/causal_bottom_right_local.png
@@ -322,6 +352,27 @@ class LowerTriangularFromBottomRightLocalAttentionMask(
             window_size=self._window_size,
             from_bottomright=True,
         )
+
+
+class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
+    """A lower-triangular (aka causal) mask with an additive bias"""
+
+    def __init__(self, bias: torch.Tensor) -> None:
+        self._bias = bias
+
+    def to(self, device: torch.device) -> "LowerTriangularMaskWithTensorBias":
+        assert (
+            type(self) is LowerTriangularMaskWithTensorBias
+        ), "Please implement in subclass"
+        return LowerTriangularMaskWithTensorBias(_to_device(self._bias, device))
+
+    def materialize(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return super().materialize(shape, dtype=dtype, device=device) + self._bias
 
 
 @dataclass
@@ -397,6 +448,27 @@ class _SeqLenInfo:
             seqstart_py=seqstart_py,
         )
 
+    def from_seqlens_inplace(self, seqlens: Iterable[int]) -> None:
+        """
+        Perform in-place update. You can only update with the same shape.
+        Can be useful with CUDA graphs.
+        """
+        min_seqlen, max_seqlen, seqstart_py, seqstart = self._get_seqstart(
+            seqlens, device=self.seqstart.device
+        )
+
+        assert len(seqstart_py) == len(self.seqstart_py), (
+            f"Old / New len {len(self.seqstart_py)} / {len(seqstart)}, "
+            f"Contents {self.seqstart_py} / {seqstart}"
+        )
+        assert self.max_seqlen >= max_seqlen, (
+            f"For inplace update, new max_seqlen {max_seqlen} "
+            f"cannot exceed the previous max_seqlen {self.max_seqlen}"
+        )
+        for i in range(len(seqstart_py)):
+            self.seqstart_py[i] = seqstart_py[i]
+        self.seqstart.copy_(seqstart, non_blocking=True)
+
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
     ) -> List[torch.Tensor]:
@@ -458,7 +530,7 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
     """
 
     seqlen: torch.Tensor
-    seqlen_py: Sequence[int]
+    seqlen_py: List[int]
     padding: int
     # From parent: seqstart[i] contains the start position
     # of the i-th sequence
@@ -524,6 +596,33 @@ class _PaddedSeqLenInfo(_SeqLenInfo):
             padding=padding,
         )
 
+    def from_seqlens_padded_inplace(self, seqlens: Sequence[int]) -> None:
+        """
+        Perform in-place update. You can only update with the same shape.
+        Can be useful with CUDA graphs.
+        Note: we don't update padding because they would have been already baked
+        into CUDA graphs during the generation.
+        """
+        assert not isinstance(seqlens, torch.Tensor)
+        assert all(
+            seqlen <= self.padding for seqlen in seqlens
+        ), f"Seqlens {seqlens} Padding {self.padding}"
+        seqlen_tensor = torch.tensor(seqlens, dtype=torch.int32)
+
+        assert len(self.seqlen_py) == len(seqlens), (
+            f"Old/New len {len(self.seqlen_py)} / {len(seqlens)}, "
+            f"Contents {self.seqlen_py} / {seqlens}"
+        )
+        assert self.max_seqlen >= max(seqlens), (
+            f"For inplace update, new max_seqlen {max(seqlens)} "
+            f"cannot exceed the previous max_seqlen {self.max_seqlen}"
+        )
+
+        for i in range(len(self.seqlen_py)):
+            self.seqlen_py[i] = seqlens[i]
+
+        self.seqlen.copy_(seqlen_tensor, non_blocking=True)
+
     def split(
         self, x: torch.Tensor, batch_sizes: Optional[Sequence[int]] = None
     ) -> List[torch.Tensor]:
@@ -573,7 +672,8 @@ class _GappySeqInfo(_SeqLenInfo):
     (2) For paged masks:
     The notional space is divided into batch-size-many blocks.
     seqstart and seqstart_py is an offset in the block, not in
-    the whole space, and doesn't have an extra last element.
+    the whole space, and the extra last element is not important.
+    And seqlen is the index of the last key in the block.
     Otherwise as above.
     """
 
@@ -621,17 +721,21 @@ class _GappySeqInfo(_SeqLenInfo):
         seqstart_py = list(seqstarts)
         if len(seqlens) == 0:
             raise ValueError("No elements")
-        if len(seqstarts) - len(seqlens) != (0 if paged else 1):
-            extra = "" if paged else "1 + "
+        if len(seqstarts) - len(seqlens) != 1:
             raise ValueError(
-                f"len(seqstarts)={seqstarts} should be {extra}len(seqlens)={seqlens}"
+                f"len(seqstarts)={seqstarts} should be len(seqlens)={seqlens}"
             )
+        max_seqlen = max(seqlens)
+        min_seqlen = min(seqlens)
+        if paged:
+            seqstart_py.append(-1)
+            seqlens = [i + j for i, j in zip(seqstart_py, seqlens)]
         seqlen = _to_device_tensor(seqlens, dtype=torch.int32, device=device)
         return cls(
             seqlen=seqlen,
             seqlen_py=seqlens,
-            max_seqlen=max(seqlens),
-            min_seqlen=min(seqlens),
+            max_seqlen=max_seqlen,
+            min_seqlen=min_seqlen,
             seqstart=_to_device_tensor(seqstart_py, dtype=torch.int32, device=device),
             seqstart_py=seqstart_py,
         )
@@ -819,9 +923,11 @@ class BlockDiagonalMask(AttentionBias):
             block_diag,
             torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_q], dim=1),
             torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_k], dim=1),
-            torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_v], dim=1)
-            if tensors_v is not None
-            else None,
+            (
+                torch.cat([x.reshape([1, -1, *x.shape[2:]]) for x in tensors_v], dim=1)
+                if tensors_v is not None
+                else None
+            ),
         )
 
     def split_queries(self, tensor: torch.Tensor) -> Sequence[torch.Tensor]:
@@ -997,7 +1103,7 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
         dtype: torch.dtype = torch.float32,
         device: Union[str, torch.device] = "cpu",
     ) -> torch.Tensor:
-        return torch.tensor(0.0, device=device, dtype=dtype)
+        return torch.zeros([1], device=device, dtype=dtype)
 
     def materialize(
         self,
@@ -1067,12 +1173,29 @@ class BlockDiagonalPaddedKeysMask(AttentionBias):
     ) -> "PagedBlockDiagonalPaddedKeysMask":
         paged_bias = paged_type(
             q_seqinfo=self.q_seqinfo,
-            k_seqinfo=self.k_seqinfo,
+            k_seqinfo=_PaddedSeqLenInfo(
+                seqstart=self.k_seqinfo.seqstart,
+                seqstart_py=self.k_seqinfo.seqstart_py,
+                seqlen=self.k_seqinfo.seqlen,
+                seqlen_py=self.k_seqinfo.seqlen_py,
+                padding=block_tables.shape[1] * page_size,
+                max_seqlen=self.k_seqinfo.max_seqlen,
+                min_seqlen=self.k_seqinfo.min_seqlen,
+            ),
             block_tables=block_tables,
             page_size=page_size,
         )
-        paged_bias.k_seqinfo.padding = block_tables.shape[1] * page_size
         return paged_bias
+
+    def make_local_attention(
+        self, window_left: int, window_right: int
+    ) -> "BlockDiagonalLocalAttentionPaddedKeysMask":
+        return BlockDiagonalLocalAttentionPaddedKeysMask(
+            q_seqinfo=self.q_seqinfo,
+            k_seqinfo=self.k_seqinfo,
+            window_left=window_left,
+            window_right=window_right,
+        )
 
 
 @dataclass
@@ -1150,6 +1273,72 @@ class BlockDiagonalCausalWithOffsetPaddedKeysMask(BlockDiagonalPaddedKeysMask):
 
 
 @dataclass
+class BlockDiagonalLocalAttentionPaddedKeysMask(BlockDiagonalPaddedKeysMask):
+    """
+    Like :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalLocalAttentionPaddedKeysMask`,
+    except that this is non-causal.
+
+    A query Q in block i cannot attend to a key which is not in block i,
+    nor one which is not in use (i.e. in the padded area),
+    nor one whose distance to the final key in block i
+    is more than window_left further or window_right nearer
+    than Q is to the final query in block i.
+
+    A query attends to at most window_left + window_right - 1 keys.
+
+    NOTE that if window_right is 0, then this is like a
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask whose window_size is equal to
+    window_left - 1.
+    """
+
+    window_left: int
+    window_right: int
+
+    def to(self, device) -> "BlockDiagonalLocalAttentionPaddedKeysMask":
+        assert (
+            type(self) is BlockDiagonalLocalAttentionPaddedKeysMask
+        ), "Please implement in subclass"
+        return BlockDiagonalLocalAttentionPaddedKeysMask(
+            q_seqinfo=self.q_seqinfo.to(device),
+            k_seqinfo=self.k_seqinfo.to(device),
+            window_left=self.window_left,
+            window_right=self.window_right,
+        )
+
+    def _create_block_mask(
+        self,
+        shape: Tuple[int, ...],
+        dtype: torch.dtype = torch.float32,
+        device: Union[str, torch.device] = "cpu",
+    ) -> torch.Tensor:
+        return LocalAttentionFromBottomRightMask(
+            window_left=self.window_left, window_right=self.window_right
+        ).materialize(shape=shape, dtype=dtype, device=device)
+
+    @classmethod
+    def from_seqlens_local(
+        cls,
+        q_seqlen: Sequence[int],
+        kv_padding: int,
+        kv_seqlen: Sequence[int],
+        window_left: int,
+        window_right: int,
+    ) -> "BlockDiagonalLocalAttentionPaddedKeysMask":
+        assert kv_seqlen is None or len(q_seqlen) == len(kv_seqlen), (
+            q_seqlen,
+            kv_seqlen,
+        )
+        q_seqinfo = _SeqLenInfo.from_seqlens(q_seqlen)
+        k_seqinfo = _PaddedSeqLenInfo.from_seqlens_padded(kv_seqlen, kv_padding)
+        return cls(
+            q_seqinfo=q_seqinfo,
+            k_seqinfo=k_seqinfo,
+            window_left=window_left,
+            window_right=window_right,
+        )
+
+
+@dataclass
 class BlockDiagonalCausalLocalAttentionPaddedKeysMask(BlockDiagonalPaddedKeysMask):
     """
     Like :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask`,
@@ -1158,7 +1347,7 @@ class BlockDiagonalCausalLocalAttentionPaddedKeysMask(BlockDiagonalPaddedKeysMas
     A query Q in block i cannot attend to a key which is not in block i,
     nor one which is not in use (i.e. in the padded area),
     nor one which is nearer to the final key in block i
-    than Q is to the final query in block i, nor one that is more than
+    than Q is to the final query in block i, nor one that is at least
     window_size further from the final key in block i than Q is
     to the final query in block i.
     """
@@ -1220,9 +1409,9 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
     block_tables: torch.Tensor
     page_size: int
 
-    _UNPAGED_TYPE: ClassVar[
-        Type[BlockDiagonalPaddedKeysMask]
-    ] = BlockDiagonalPaddedKeysMask
+    _UNPAGED_TYPE: ClassVar[Type[BlockDiagonalPaddedKeysMask]] = (
+        BlockDiagonalPaddedKeysMask
+    )
 
     def to(self, device: torch.device) -> "PagedBlockDiagonalPaddedKeysMask":
         assert (
@@ -1269,9 +1458,9 @@ class PagedBlockDiagonalPaddedKeysMask(AttentionBias):
                 k_logical_end = k_logical_start + self.page_size
                 k_physical_start = physical_page_idx * self.page_size
                 k_physical_end = k_physical_start + self.page_size
-                mask_paged[
-                    ..., q_start:q_end, k_physical_start:k_physical_end
-                ] = mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                mask_paged[..., q_start:q_end, k_physical_start:k_physical_end] = (
+                    mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                )
         return mask_paged
 
     @classmethod
@@ -1412,16 +1601,45 @@ class BlockDiagonalGappyKeysMask(AttentionBias):
     ) -> AttentionBias:
         """
         Assuming our keys actually live in separate blocks of length
-        notional_padding, convert to a Paged version.
+        notional_padding, convert to a Paged version, avoiding GPU syncs.
         """
+        if notional_padding % page_size:
+            raise ValueError(
+                "Notional padding should be divisible by the page size,"
+                f" but got {notional_padding=}, {page_size=}."
+            )
         max_row_len = block_tables.shape[1] * page_size
-        new_seqstarts = [
+        new_seqstarts_py = [
             start - i * notional_padding
             for i, start in enumerate(self.k_seqinfo.seqstart_py[:-1])
         ]
-        assert all(0 <= i < max_row_len for i in new_seqstarts)
-        k_seqinfo = _GappySeqInfo.from_seqlens_gappy(
-            new_seqstarts, self.k_seqinfo.seqlen_py, True, device=block_tables.device
+        new_seqstarts_py.append(-1)
+        assert all(
+            0 <= i < max_row_len for i in new_seqstarts_py[:-1]
+        ), f"{max_row_len=} {new_seqstarts_py=}"
+
+        # Sequence info is duplicated on CPU and GPU,
+        # but we process them independently to avoid GPU sync.
+        batch_size = len(self.k_seqinfo.seqlen_py)
+        notional_starts = notional_padding * torch.arange(
+            batch_size + 1,
+            device=block_tables.device,
+            dtype=torch.int32,
+        )
+        new_seqstarts = self.k_seqinfo.seqstart - notional_starts
+
+        new_seqlens_py = [
+            i + j for i, j in zip(new_seqstarts_py, self.k_seqinfo.seqlen_py)
+        ]
+        new_seqlens = self.k_seqinfo.seqlen + new_seqstarts[:-1]
+
+        k_seqinfo = _GappySeqInfo(
+            seqlen=new_seqlens,
+            seqlen_py=new_seqlens_py,
+            max_seqlen=self.k_seqinfo.max_seqlen,
+            min_seqlen=self.k_seqinfo.min_seqlen,
+            seqstart=new_seqstarts,
+            seqstart_py=new_seqstarts_py,
         )
         assert self.k_seqinfo.max_seqlen <= max_row_len
         paged_bias = paged_type(
@@ -1497,9 +1715,9 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
     block_tables: torch.Tensor
     page_size: int
 
-    _UNPAGED_TYPE: ClassVar[
-        Type[BlockDiagonalGappyKeysMask]
-    ] = BlockDiagonalGappyKeysMask
+    _UNPAGED_TYPE: ClassVar[Type[BlockDiagonalGappyKeysMask]] = (
+        BlockDiagonalGappyKeysMask
+    )
 
     def to(self, device: torch.device) -> "PagedBlockDiagonalGappyKeysMask":
         assert (
@@ -1525,13 +1743,17 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
         max_row_len = self.block_tables.shape[1] * self.page_size
         new_seqstarts = [
             start + i * max_row_len
-            for i, start in enumerate(self.k_seqinfo.seqstart_py)
+            for i, start in enumerate(self.k_seqinfo.seqstart_py[:-1])
         ] + [shape[-1]]
+        new_seqlens = [
+            end - start
+            for start, end in zip(self.k_seqinfo.seqstart_py, self.k_seqinfo.seqlen_py)
+        ]
         bias_nonpaged = self._UNPAGED_TYPE(
             q_seqinfo=self.q_seqinfo,
             k_seqinfo=_GappySeqInfo.from_seqlens_gappy(
                 new_seqstarts,
-                self.k_seqinfo.seqlen_py,
+                new_seqlens,
                 False,
                 device=torch.device(device),
             ),
@@ -1553,9 +1775,9 @@ class PagedBlockDiagonalGappyKeysMask(AttentionBias):
                 k_logical_end = k_logical_start + self.page_size
                 k_physical_start = physical_page_idx * self.page_size
                 k_physical_end = k_physical_start + self.page_size
-                mask_paged[
-                    ..., q_start:q_end, k_physical_start:k_physical_end
-                ] = mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                mask_paged[..., q_start:q_end, k_physical_start:k_physical_end] = (
+                    mask_nonpaged[..., q_start:q_end, k_logical_start:k_logical_end]
+                )
         return mask_paged
 
     @classmethod
@@ -1631,8 +1853,8 @@ class BlockDiagonalCausalLocalAttentionMask(BlockDiagonalCausalMask):
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
-    Query i only attends to keys in its block and cannot attend keys further than "window_size"
-    from it.
+    The ith query in a block only attends to keys in its block with index
+    greater than i - window_size and less than or equal to i.
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
@@ -1696,8 +1918,9 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
     Same as :attr:`xformers.ops.fmha.attn_bias.BlockDiagonalCausalMask`.
     This makes the mask "local" and the attention pattern banded.
 
-    Query i only attends to keys in its block and cannot attend keys further than "window_size"
-    from it.
+    A query with distance j from the last query in its block only attends to
+    keys in the same block, and only those whose distance to the last key
+    in the block is greater than or equal to j and less than window_size + j.
     """
 
     _window_size: int = 0  # forced due to inheritance and default arguments
@@ -1733,159 +1956,6 @@ class BlockDiagonalCausalLocalAttentionFromBottomRightMask(
             window_size=self._window_size,
             from_bottomright=True,
         )
-
-
-class AttentionBiasSubTensor(torch.Tensor, AttentionBias):
-    HOLDS_DENSE_TENSOR = False
-
-    _subtensor: torch.Tensor
-
-    @staticmethod
-    def __new__(cls, *, _subtensor=None, device=None, **kwargs):
-        raise NotImplementedError()
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__()
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}"
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        kwargs = kwargs or {}
-        if func._overloadpacket in [
-            torch.ops.aten.clone,
-            torch.ops.aten.detach,
-            torch.ops.aten._to_copy,
-            torch.ops.aten.to,
-        ]:
-            return cls(_subtensor=func(args[0]._subtensor, *args[1:], **kwargs))
-        return NotImplemented
-
-    def __tensor_flatten__(self):
-        return ["_subtensor"], None
-
-    @classmethod
-    def __tensor_unflatten__(cls, inner_tensors, meta, outer_size, outer_stride):
-        assert meta is None
-        return cls(_subtensor=inner_tensors["_subtensor"])
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        """
-        Materializes the bias as a `torch.Tensor`. This is very slow
-        and we don't attempt to make it fast. Only use for debugging/testing.
-
-        Shape should be like `[*, q_seqlen, k_seqlen]`
-        """
-        raise NotImplementedError()
-
-
-class _AddDenseBias(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, causal_bias, tensor):
-        assert type(causal_bias) is LowerTriangularMask
-        return LowerTriangularMaskWithTensorBias(tensor)
-
-    @staticmethod
-    def backward(ctx, grad_out):
-        return None, grad_out
-
-
-class LowerTriangularMask(AttentionBiasSubTensor):
-    """
-    A lower-triangular (aka causal) mask
-
-    A query Q cannot attend to a key which is farther from the
-    initial key than Q is from the initial query.
-
-    See also :attr:`LowerTriangularFromBottomRightMask` if the number
-    of queries is not equal to the number of keys/values.
-    """
-
-    HOLDS_DENSE_TENSOR = False
-
-    @staticmethod
-    def __new__(cls, *, _subtensor=None, device="cpu", **kwargs):
-        """
-        Note: create on CPU by default to avoid initializing CUDA context
-        by mistake.
-        """
-        if _subtensor is None:
-            _subtensor = torch.empty((0,), device=device)
-        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
-            cls,
-            [],
-            device=_subtensor.device,
-            dtype=_subtensor.dtype,
-            requires_grad=False,
-        )
-        tensor._subtensor = _subtensor
-        return tensor
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        return _materialize_causal_mask(shape, dtype=dtype, device=device)
-
-    def add_bias(self, bias: torch.Tensor) -> "LowerTriangularMaskWithTensorBias":
-        """
-        Creates a new causal mask with an arbitrary ``torch.Tensor`` bias
-        """
-        return _AddDenseBias.apply(self, bias)
-
-
-class LowerTriangularMaskWithTensorBias(LowerTriangularMask):
-    """A lower-triangular (aka causal) mask with an additive bias"""
-
-    HOLDS_DENSE_TENSOR = True
-
-    @staticmethod
-    def __new__(cls, bias):
-        tensor = torch.Tensor._make_wrapper_subclass(  # type: ignore[attr-defined]
-            cls,
-            bias.shape,
-            device=bias.device,
-            dtype=bias.dtype,
-            requires_grad=bias.requires_grad,
-        )
-        tensor._subtensor = bias
-        return tensor
-
-    def materialize(
-        self,
-        shape: Tuple[int, ...],
-        dtype: torch.dtype = torch.float32,
-        device: Union[str, torch.device] = "cpu",
-    ) -> torch.Tensor:
-        return super().materialize(shape, dtype=dtype, device=device) + self._subtensor
-
-    @classmethod
-    def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
-        kwargs = kwargs or {}
-        if func._overloadpacket in [
-            torch.ops.aten.unsqueeze,
-            torch.ops.aten.select,
-            torch.ops.aten.slice,
-            torch.ops.aten.clone,
-            torch.ops.aten.detach,
-            torch.ops.aten._to_copy,
-            torch.ops.aten.to,
-            torch.ops.aten.view,
-        ]:
-            output = func(
-                *[a._subtensor if isinstance(a, cls) else a for a in args],
-                **kwargs,
-            )
-            return cls(output)
-        return NotImplemented
 
 
 torch._dynamo.allow_in_graph(LowerTriangularMask)

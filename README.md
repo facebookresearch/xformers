@@ -51,7 +51,8 @@ pip install --pre -U xformers
 # (Optional) Makes the build much faster
 pip install ninja
 # Set TORCH_CUDA_ARCH_LIST if running and building on different GPU types
-pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
+# NOTE: pytorch must already be installed!
+pip install -v --no-build-isolation -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 # (this can take dozens of minutes)
 ```
 

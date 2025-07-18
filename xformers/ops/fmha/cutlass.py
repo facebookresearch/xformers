@@ -15,7 +15,6 @@ from ..common import get_operator, register_operator
 from . import attn_bias
 from .attn_bias import (
     AttentionBias,
-    AttentionBiasSubTensor,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
     BlockDiagonalCausalMask,
@@ -27,13 +26,13 @@ from .attn_bias import (
     LowerTriangularMaskWithTensorBias,
 )
 from .common import (
+    _attn_bias_apply,
     AttentionBwOpBase,
     AttentionFwOpBase,
+    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
-    _attn_bias_apply,
-    check_lastdim_alignment_stride1,
 )
 from .torch_attention_compat import is_pt_cutlass_compatible
 
@@ -85,12 +84,11 @@ def _get_seqlen_info(
 
 
 def _get_tensor_bias(
-    attn_bias: Optional[Union[torch.Tensor, AttentionBias]]
+    attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
 ) -> Optional[torch.Tensor]:
-    if isinstance(attn_bias, AttentionBiasSubTensor):
-        if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
-            return attn_bias._subtensor
-    elif isinstance(attn_bias, torch.Tensor):
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return attn_bias._bias
+    if isinstance(attn_bias, torch.Tensor):
         return attn_bias
     return None
 

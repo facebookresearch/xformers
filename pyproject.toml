@@ -1,0 +1,11 @@
+[build-system]
+# XXX: If your project needs other packages to build properly, add them to this list.
+requires = ["setuptools >= 64", "torch >= 2.7"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+target-version = ["py310"]
+line-length = 88
+
+[tool.usort]
+first_party_detection = false

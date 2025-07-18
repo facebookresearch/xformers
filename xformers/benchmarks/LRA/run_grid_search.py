@@ -14,10 +14,10 @@ from typing import Dict, Iterable
 import submitit
 
 from xformers.benchmarks.LRA.run_with_submitit import (
-    Trainer,
     get_init_file,
     get_shared_folder,
     parse_args,
+    Trainer,
 )
 
 

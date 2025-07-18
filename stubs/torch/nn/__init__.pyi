@@ -11,11 +11,11 @@ from typing import (
     Iterator,
     List,
     Optional,
+    overload,
     Tuple,
     Type,
     TypeVar,
     Union,
-    overload,
 )
 
 import torch

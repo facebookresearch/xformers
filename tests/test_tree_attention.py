@@ -17,10 +17,10 @@ from xformers.ops.fmha.attn_bias import (
 )
 from xformers.ops.fmha.common import AttentionFwOpBase
 from xformers.ops.tree_attention import (
-    TreeAttnMetadata,
     construct_full_tree_choices,
     construct_tree_choices,
     tree_attention,
+    TreeAttnMetadata,
     use_triton_splitk_for_prefix,
 )
 from xformers.utils import do_bench_cudagraph
@@ -123,6 +123,13 @@ def run_tree_attention_inner(
     """
     Test Medusa-style tree attention.
     """
+    if (
+        paged
+        and PagedBlockDiagonalPaddedKeysMask
+        not in SplitKAutotune.SUPPORTED_ATTN_BIAS_TYPES
+    ):
+        pytest.skip("Does not supported paged attention bias")
+
     torch.manual_seed(0)
     # + 1 comes from the root node
     tree_size_kv = len(tree_choices) + 1

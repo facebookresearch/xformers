@@ -28,9 +28,8 @@ runs:
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
           "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
-          "126": ("12.6.3", "https://developer.download.nvidia.com/compute/cuda/12.6.3/local_installers/cuda_12.6.3_560.35.05_linux.run"),
-          "124": ("12.4.1", "https://developer.download.nvidia.com/compute/cuda/12.4.1/local_installers/cuda_12.4.1_550.54.15_linux.run"),
-          "121": ("12.1.0", "https://developer.download.nvidia.com/compute/cuda/12.1.0/local_installers/cuda_12.1.0_530.30.02_linux.run"),
+          # (Build with nvcc 12.8 on linux even when building for 12.6 to avoid seg fault in Flash3 build)
+          "126": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
           "118": ("11.8.0", "https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda_11.8.0_520.61.05_linux.run"),
           "6.0": ("6.0.2", "https://repo.radeon.com/amdgpu-install/6.0.2/rhel/8.9/amdgpu-install-6.0.60002-1.el8.noarch.rpm"),
           "6.1": ("6.1.2", "https://repo.radeon.com/amdgpu-install/6.1.3/rhel/8.9/amdgpu-install-6.1.60103-1.el8.noarch.rpm"),
@@ -107,10 +106,27 @@ runs:
     - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda')
       name: (Linux) install cuda
       shell: bash -l {0}
-      run: >
-        wget -q "${{ steps.cuda_info.outputs.CUDA_INSTALL_SCRIPT }}" -O cuda.run &&
-        sh ./cuda.run --silent --toolkit &&
+      run: |
+        wget -q "${{ steps.cuda_info.outputs.CUDA_INSTALL_SCRIPT }}" -O cuda.run && \
+        sh ./cuda.run --silent --toolkit && \
         rm ./cuda.run
+        echo "CUDA_HOME=/usr/local/cuda" >> ${GITHUB_ENV}
+
+    - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'cuda')
+      name: (Linux) print cuda setup info
+      shell: bash -l {0}
+      run: |
+        echo "CUDA_HOME=$CUDA_HOME"
+        echo "###############################"
+        echo "############ NVCC  ############"
+        echo "###############################"
+        $CUDA_HOME/bin/nvcc --version
+        md5sum $CUDA_HOME/bin/nvcc
+        echo "###############################"
+        echo "############ PTXAS ############"
+        echo "###############################"
+        $CUDA_HOME/bin/ptxas --version
+        md5sum $CUDA_HOME/bin/ptxas
 
     - if: runner.os == 'Linux' && contains(inputs.toolkit_type, 'rocm')
       name: (Linux) install rocm

@@ -11,7 +11,7 @@ import torch
 import triton
 import triton.language as tl
 
-from xformers.triton.vararg_kernel import VAR_ARGS_ARRAY, unroll_varargs
+from xformers.triton.vararg_kernel import unroll_varargs, VAR_ARGS_ARRAY
 
 AUTOTUNER_KEY = [
     "Z",
@@ -23,6 +23,7 @@ AUTOTUNER_KEY = [
     "PACKED_PER_VAL",
     "N_GROUPS",
     "BLOCK_N_PER_SPLIT",
+    "PAGE_SIZE",
 ]
 
 
@@ -103,11 +104,16 @@ def _fwd_kernel_splitK(
     IS_SPLITK: tl.constexpr,
     SPLIT_K_EARLY_EXIT: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
+    IS_LOCAL: tl.constexpr,
     NUM_QUERIES_CAUSAL: tl.constexpr,  # The N_CTX_Q queries are from this many sequence positions
     USE_PAGED_ATTENTION: tl.constexpr,
     PAGE_SIZE: tl.constexpr,
+    WINDOW_LEFT: tl.constexpr,
+    WINDOW_RIGHT: tl.constexpr,
     WRITE_LSE: tl.constexpr,
     HAS_ADDITIVE_BIAS: tl.constexpr,
+    NUM_PROGRAMS_DIM2_CONST: tl.constexpr,
+    IS_HIP: tl.constexpr,
 ):
     """This kernel can accept non-quantized or int4-quantized keys/values.
     PACKED_PER_VAL determines the quantization type:
@@ -173,6 +179,10 @@ def _fwd_kernel_splitK(
         start_kv_idx = 0
     else:
         start_kv_idx = tl.load(Seq_starts_k + off_z)
+        if USE_SEQ_LEN and PAGE_SIZE > 0:
+            # gappy with paged attention stores each "end" instead of each "length"
+            # because that's what FA3 needs.
+            kv_len -= start_kv_idx
 
     if Seq_starts_q is None:
         q_len = N_CTX_Q
@@ -214,7 +224,9 @@ def _fwd_kernel_splitK(
         BLOCKS_IN_PAGE: tl.constexpr = PAGE_SIZE // BLOCK_N
         # Align boundaries of split-k chunk to block boundaries
         # In the last chunk, shift hi to the right, in the other chunks, shift it to the left
-        is_last_chunk = splitk_idx == tl.num_programs(2) - 1
+        # TODO: Replace NUM_PROGRAMS_DIM2_CONST with tl.num_programs(2) after
+        # the next Triton upgrade.
+        is_last_chunk = splitk_idx == NUM_PROGRAMS_DIM2_CONST - 1
         shift = BLOCK_N - 1 if is_last_chunk else 0
         lo = (tl.maximum(chunk_lo, start_kv_idx) // BLOCK_N) * BLOCK_N
         ignore_in_first_block = tl.maximum(0, (start_kv_idx - lo))
@@ -253,8 +265,8 @@ def _fwd_kernel_splitK(
 
         if INT4_QUANTIZED:
             # Pointers to quantization coefficients. Even those they are 1D,
-            # we have to use block pointers, since usual pointers
-            # don't support boundary checks
+            # we use block pointers here so the pointer arithmetic is in int64,
+            # as otherwise the offsets for V_scale_shift_block_ptr may overflow.
             K_scale_shift_block_ptr = tl.make_block_ptr(
                 base=k_base,
                 shape=(1, hi),
@@ -355,7 +367,7 @@ def _fwd_kernel_splitK(
             tl.advance(Q_block_ptr, (0, i * D_PER_GROUP)), boundary_check=(0,)
         )
 
-    if IS_CAUSAL:
+    if IS_CAUSAL or IS_LOCAL:
         # Why does the masking conditon below work as a causal mask?
         # Assuming num_queries <= BLOCK_M:
         # kv_pos = kv_start + range(0, BLOCK_N)
@@ -402,8 +414,8 @@ def _fwd_kernel_splitK(
             )
             if INT4_QUANTIZED:
                 # Pointers to quantization coefficients. Even those they are 1D,
-                # we have to use block pointers, since usual pointers
-                # don't support boundary checks
+                # we use block pointers here so the pointer arithmetic is in int64,
+                # as otherwise the offsets for V_scale_shift_block_ptr may overflow.
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_base,
                     shape=(1, offset + current_block_size),
@@ -456,6 +468,7 @@ def _fwd_kernel_splitK(
                 FP8_QUANTIZED,
                 Q.dtype.element_ty,
                 i,
+                IS_HIP,
             )
 
         # -- compute qk ---
@@ -484,11 +497,25 @@ def _fwd_kernel_splitK(
         if IS_CAUSAL:
             # -- apply the causal mask --
             qk = tl.where(diag_idx_shifted >= start_n - start_kv_idx, qk, float("-inf"))
+        if IS_LOCAL:
+            # -- apply the local window size mask --
+            qk = tl.where(
+                diag_idx_shifted < start_n - start_kv_idx + WINDOW_LEFT + 1,
+                qk,
+                float("-inf"),
+            )
+            if not IS_CAUSAL and WINDOW_RIGHT >= 0:
+                qk = tl.where(
+                    diag_idx_shifted >= start_n - start_kv_idx - WINDOW_RIGHT,
+                    qk,
+                    float("-inf"),
+                )
+
         # -- compute scaling constant ---
         m_i_new = tl.maximum(m_i, tl.max(qk, 1))
         alpha = tl.math.exp2(m_i - m_i_new)
         p = tl.math.exp2(qk - m_i_new[:, None])
-        if HAS_ADDITIVE_BIAS or IS_CAUSAL:
+        if HAS_ADDITIVE_BIAS or (IS_CAUSAL or IS_LOCAL):
             # NOTE: It's possible that an entire block is masked out.
             # if this is the case, `m_i_new=nan` and everything becomes nan
             alpha = tl.where(m_i_new == float("-inf"), 0, alpha)
@@ -601,13 +628,23 @@ def _get_splitk_kernel(num_groups):
     return kernel
 
 
+def early_config_prune(configs, named_args, **kwargs):
+    use_paged_attention = kwargs["USE_PAGED_ATTENTION"]
+    page_size = kwargs["PAGE_SIZE"]
+    if use_paged_attention:
+        return list(
+            filter(lambda config: page_size % config.kwargs["BLOCK_N"] == 0, configs)
+        )
+    else:
+        return configs
+
+
 @functools.lru_cache(None)
 def autotune_kernel(kernel: Callable):
-    BLOCK_M_VALUES = [16, 32]
-    BLOCK_N_VALUES = [32, 64, 128]
-    # On AMD num_stages has to be 0 or 1, but 0 sometimes produces NaN or incorrect results.
-    STAGES_VALUES = [1] if torch.version.hip else [1, 2, 3]
-    WARPS_VALUES = [1, 2, 4]
+    BLOCK_M_VALUES = [16, 32, 64, 128]
+    BLOCK_N_VALUES = [16, 32, 64, 128]
+    STAGES_VALUES = [1, 2] if torch.version.hip else [1, 2, 3]
+    WARPS_VALUES = [1, 2, 4, 8]
 
     TRITON_CONFIGS = [
         gen_config(block_m, block_n, stages, warps)
@@ -615,12 +652,16 @@ def autotune_kernel(kernel: Callable):
         for block_n in BLOCK_N_VALUES
         for stages in STAGES_VALUES
         for warps in WARPS_VALUES
+        if block_n >= block_m
     ]
 
     kernel = triton.autotune(
         configs=TRITON_CONFIGS,
         key=AUTOTUNER_KEY,
         use_cuda_graph=True,
+        prune_configs_by={
+            "early_config_prune": early_config_prune,
+        },
     )(kernel)
     return kernel
 
@@ -666,6 +707,7 @@ def load_dequantize_k_v_group(
     FP8_QUANTIZED: tl.constexpr,
     dtype: tl.constexpr,
     group_id: tl.constexpr,
+    IS_HIP: tl.constexpr,
 ):
     """Load K/V for a given block. In case of int4/fp8-quantized K/V, dequantize them after loading.
     If quantization is group-wise, use group_id to advance the pointers to the current group.
@@ -683,17 +725,30 @@ def load_dequantize_k_v_group(
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
-        v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
+        if IS_HIP:
+            # MI300 doesn't have builtin casting instructions for fp8 -> bf16,
+            # so casting to f32 is actually more performant on this workload.
+            v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
+        else:
+            v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
+        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
 
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
         )
-        k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
-        k_t = dequantize(
-            tl.trans(k), tl.trans(k_scale), tl.trans(k_shift), PACKED_PER_VAL
-        ).to(dtype)
-        k = tl.trans(k_t)
+        if IS_HIP:
+            k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        else:
+            k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
+            k_t = dequantize(
+                tl.trans(k),
+                tl.trans(k_scale),
+                tl.trans(k_shift),
+                PACKED_PER_VAL,
+                IS_HIP,
+            ).to(dtype)
+            k = tl.trans(k_t)
     elif PACKED_PER_VAL > 1:
         # Int4 quantization.
         K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
@@ -705,17 +760,23 @@ def load_dequantize_k_v_group(
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
-
-        k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
-        v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL).to(dtype)
-        k_t = dequantize(
-            tl.trans(k),
-            tl.trans(k_scale),
-            tl.trans(k_shift),
-            PACKED_PER_VAL,
-        ).to(dtype)
-        k = tl.trans(k_t)
+        if IS_HIP:
+            k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
+            v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        else:
+            k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
+            v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
+            k_t = dequantize(
+                tl.trans(k),
+                tl.trans(k_scale),
+                tl.trans(k_shift),
+                PACKED_PER_VAL,
+                IS_HIP,
+            ).to(dtype)
+            k = tl.trans(k_t)
     return k, v
 
 
@@ -730,11 +791,70 @@ def cast_uint32_to_half2(scale_shift):
 
 
 @triton.jit
+def cast_uint32_to_float(scale_shift):
+    """Extract two float16 packed into one int32 as float32"""
+    scale = scale_shift & 0xFFFF
+    shift = scale_shift >> 16
+    scale = scale.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    shift = shift.to(tl.uint16).to(tl.float16, bitcast=True).to(tl.float32)
+    return scale, shift
+
+
+@triton.jit
+def dequantize_k_hip(
+    x_,
+    scale,
+    shift,
+    PACKED_PER_VAL: tl.constexpr,
+):
+    """PACKED_PER_VAL is the number of values packed into each element x_.
+    For example, for int4 quantization and x_ of type int32, PACKED_PER_VAL is 8.
+    """
+    # x_ : (BLOCK_N, D // PACKED_PER_VAL)
+    # scale: (BLOCK_N, 1)
+    # offsets: (PACKED_PER_VAL,)
+    BLOCK_N: tl.constexpr = x_.shape[1]
+    BLOCK_DMODEL_PACKED: tl.constexpr = x_.shape[0]
+    offsets = tl.arange(0, PACKED_PER_VAL) * (32 // PACKED_PER_VAL)
+    quant_offset = (
+        x_[:, None, :, :] >> offsets[:, None]
+    )  # (BLOCK_N, D // PACKED_PER_VAL, PACKED_PER_VAL)
+
+    quant_offset = tl.reshape(
+        quant_offset, (BLOCK_DMODEL_PACKED * PACKED_PER_VAL, BLOCK_N)
+    )
+
+    if PACKED_PER_VAL == 4:
+        # FP8 quantization.
+        fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+        dequant = (
+            quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
+            + shift
+        )
+    else:
+        # Int4 quantization.
+        # Trick - instead of converting int4 to float16 we view it as float16
+        # and then multiply by 32768 * 512 == 2**24
+        quant_offset = (
+            (quant_offset & 0xF)
+            .to(tl.uint16)
+            .to(tl.float16, bitcast=True)
+            .to(tl.float32)
+        )
+        quant_offset = quant_offset * 32768.0
+        scale_512 = scale * 512
+
+        dequant = quant_offset * scale_512 + shift
+    return dequant
+
+
+@triton.jit
 def dequantize(
     x_,
     scale,
     shift,
     PACKED_PER_VAL: tl.constexpr,
+    IS_HIP: tl.constexpr,
 ):
     """PACKED_PER_VAL is the number of values packed into each element x_.
     For example, for int4 quantization and x_ of type int32, PACKED_PER_VAL is 8.
@@ -763,8 +883,21 @@ def dequantize(
         # Int4 quantization.
         # Trick - instead of converting int4 to float16 we view it as float16
         # and then multiply by 32768 * 512 == 2**24
-        quant_offset = (quant_offset & 0xF).to(tl.uint16).to(tl.float16, bitcast=True)
-        quant_offset = (quant_offset * 32768.0).to(tl.float16)
+        if IS_HIP:
+            # Do final math in float32 to avoid casting to bf16 on MI300. There
+            # no direct instructions for this so its less performant on this workload.
+            quant_offset = (
+                (quant_offset & 0xF)
+                .to(tl.uint16)
+                .to(tl.float16, bitcast=True)
+                .to(tl.float32)
+            )
+            quant_offset = quant_offset * 32768.0
+        else:
+            quant_offset = (
+                (quant_offset & 0xF).to(tl.uint16).to(tl.float16, bitcast=True)
+            )
+            quant_offset = (quant_offset * 32768.0).to(tl.float16)
         scale_512 = scale * 512
 
         dequant = quant_offset * scale_512 + shift

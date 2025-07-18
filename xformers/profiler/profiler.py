@@ -90,7 +90,7 @@ class PyTorchProfiler:
             self._analyze_trace(prof)
         except Exception as exc:
             self.main_profiler.summary.append(("TraceAnalysis", "Error"))
-            logger.warn("Exception analyzing kineto trace", exc_info=exc)
+            logger.warning("Exception analyzing kineto trace", exc_info=exc)
 
     def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
         if prof.profiler is None or prof.profiler.kineto_results is None:

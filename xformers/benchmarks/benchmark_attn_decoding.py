@@ -14,7 +14,7 @@ import torch
 
 import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
-from xformers.benchmarks.utils import NotSupportedInputError, benchmark_main_helper2
+from xformers.benchmarks.utils import benchmark_main_helper2, NotSupportedInputError
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -377,9 +377,9 @@ try:
                 v = v[:, :, :, 0]
             return flash_attn.flash_attn_func(q, k, v)
 
-    BENCHMARKS[
-        f"flash-attention@{flash_attn.__version__}"
-    ] = AttentionDecodingFlashAttention
+    BENCHMARKS[f"flash-attention@{flash_attn.__version__}"] = (
+        AttentionDecodingFlashAttention
+    )
 except ImportError:
     pass
 

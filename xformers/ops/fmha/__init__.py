@@ -3,26 +3,26 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Any, List, Optional, Sequence, Tuple, Type, Union, cast
+from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
 from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
 from .attn_bias import (
-    VARLEN_BIASES,
     AttentionBias,
     BlockDiagonalMask,
     LowerTriangularMask,
+    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
     AttentionOp,
     AttentionOpBase,
+    bmk2bmhk,
     Context,
     Gradients,
     Inputs,
-    bmk2bmhk,
 )
 from .dispatch import (
     _dispatch_bw,
@@ -106,7 +106,8 @@ class _fMHA(torch.autograd.Function):
                 )
             op_bw = op_ctx.op_bw
         if (
-            op_bw is not None
+            op_fw is not None
+            and op_bw is not None
             and isinstance(inp.attn_bias, VARLEN_BIASES)
             and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
             and op_bw.VARLEN_LSE_PACKED != op_fw.VARLEN_LSE_PACKED
@@ -168,6 +169,7 @@ class _fMHA(torch.autograd.Function):
             lse=lse,
             out=out,
             rng_state=rng_state,
+            qkv_share_storage=ctx.qkv_share_storage,
         )
         grads = _memory_efficient_attention_backward(
             ctx=op_ctx,
@@ -597,9 +599,7 @@ def memory_efficient_attention_partial(
     can be merged with merge_attentions to obtain the attention of the queries
     against the disjoint union of the keys and values.
 
-    Warning: The backward pass of this function is quite restricted. In particular
-    we assume that in the forward pass the outputs were only used in merge_attention
-    calculations, and that LSEs weren't used anywhere except in merge attentions.
+    This function doesn't have a backward pass.
     """
     if p != 0.0:
         raise NotImplementedError("dropout is not supported.")
@@ -615,39 +615,11 @@ def memory_efficient_attention_partial(
         is_partial=True,
     )
 
-    is_grad = torch.is_grad_enabled() and any(
-        x.requires_grad for x in [query, key, value]
+    out, ctx = _memory_efficient_attention_forward_requires_grad(
+        inp,
+        op=fwop,
     )
-
-    if not is_grad:
-        out, ctx = _memory_efficient_attention_forward_requires_grad(
-            inp,
-            op=fwop,
-        )
-        return out, ctx.lse
-
-    if query.ndim == 5:
-        raise ValueError("gradients not supported for 5D tensors")
-    if isinstance(op, tuple):
-        op_fw = _serialize_op(op[0])
-        op_bw = _serialize_op(op[1])
-    elif op is None:
-        op_fw = op_bw = None
-    else:
-        op_fw = _serialize_op(op)
-        op_bw = None
-    return _fMHA.apply(
-        op_fw,
-        op_bw,
-        inp.query,
-        inp.key,
-        inp.value,
-        inp.attn_bias,
-        inp.p,
-        inp.scale,
-        inp.output_dtype,
-        inp.is_partial,
-    )
+    return out, ctx.lse
 
 
 def merge_attentions(
@@ -782,27 +754,34 @@ def merge_attentions(
         attn_dtype = attn_split[0].dtype
         lse_dtype = lse_split[0].dtype
 
-    attn_out = torch.empty(
-        B,
-        M,
-        G,
-        H,
-        Kq,
-        device=device,
-        dtype=output_dtype or attn_dtype,
-        requires_grad=requires_grad,
-    )
-    if write_lse:
-        lse_out = torch.empty(
-            B, G, H, M, device=device, dtype=lse_dtype, requires_grad=requires_grad
-        )
-    else:
-        lse_out = None
-
     if concat_path:
+        attn_out = torch.empty(
+            B,
+            M,
+            G,
+            H,
+            Kq,
+            device=device,
+            dtype=output_dtype or attn_dtype,
+        )
+        if write_lse:
+            lse_out = torch.empty(
+                B,
+                G,
+                H,
+                M,
+                device=device,
+                dtype=lse_dtype,
+            )
+        else:
+            lse_out = None
         triton_splitk.merge_attentions(attn_out, lse_out, attn_split, lse_split)  # type: ignore
     else:
-        attn_out, lse_out = _MergeAttentions.apply(attn_out, lse_out, *attn_split, *lse_split)  # type: ignore
+        outs = triton_splitk.merge_attentions_varargs(
+            attn_split, lse_split, write_lse, output_dtype, B, M, G, H, Kq
+        )  # type: ignore
+        attn_out = outs[0]
+        lse_out = outs[1] if write_lse else None
 
     if is_bmhk:
         attn_out = attn_out[:, :, 0]
@@ -810,44 +789,6 @@ def merge_attentions(
             lse_out = lse_out[:, 0]
 
     return attn_out, lse_out
-
-
-class _MergeAttentions(torch.autograd.Function):
-    @staticmethod
-    # type: ignore
-    def forward(
-        ctx, attn_out: torch.Tensor, lse_out: torch.Tensor, *inputs: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        num_chunks = len(inputs) // 2
-        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
-
-        triton_splitk.merge_attentions_varargs(attn_out, lse_out, attn_split, lse_split)
-
-        ctx.save_for_backward(
-            attn_out,
-            lse_out,
-            *inputs,
-        )
-        return attn_out, lse_out
-
-    @staticmethod
-    # type: ignore
-    def backward(
-        ctx, grad_attn: torch.Tensor, grad_lse: torch.Tensor
-    ) -> Tuple[Optional[torch.Tensor], ...]:
-        out, lse, *inputs = ctx.saved_tensors
-        num_chunks = len(inputs) // 2
-        attn_split, lse_split = inputs[:num_chunks], inputs[num_chunks:]
-        dattn, dlse = triton_splitk.merge_attentions_varargs_backward(
-            attn_split,
-            lse_split,
-            out,
-            lse,
-            grad_attn,
-            grad_lse,
-        )
-        ret = [None, None] + dattn + dlse
-        return tuple(ret)
 
 
 ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [

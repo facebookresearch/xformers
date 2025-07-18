@@ -25,11 +25,11 @@ from ..._cpp_lib import _built_with_cuda
 from ..common import BaseOperator
 from .attn_bias import (
     AttentionBias,
-    AttentionBiasSubTensor,
     BlockDiagonalGappyKeysMask,
     BlockDiagonalMask,
     BlockDiagonalPaddedKeysMask,
     LowerTriangularMask,
+    LowerTriangularMaskWithTensorBias,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
 )
@@ -48,8 +48,10 @@ def _attn_bias_apply(
     attn_bias: Optional[Union[torch.Tensor, AttentionBias]],
     op: Callable[[torch.Tensor], torch.Tensor],
 ) -> Optional[Union[torch.Tensor, AttentionBias]]:
-    if isinstance(attn_bias, torch.Tensor) and attn_bias.ndim != 0:
+    if isinstance(attn_bias, torch.Tensor):
         return op(attn_bias)
+    if isinstance(attn_bias, LowerTriangularMaskWithTensorBias):
+        return LowerTriangularMaskWithTensorBias(op(attn_bias._bias))
     return attn_bias
 
 
@@ -255,9 +257,8 @@ class Inputs:
                 f"than BMK when using bias type `{type(self.attn_bias).__name__}`"
             )
         attn_bias_t: Optional[torch.Tensor] = None
-        if isinstance(self.attn_bias, AttentionBiasSubTensor):
-            if self.attn_bias.HOLDS_DENSE_TENSOR:
-                attn_bias_t = self.attn_bias._subtensor
+        if isinstance(self.attn_bias, LowerTriangularMaskWithTensorBias):
+            attn_bias_t = self.attn_bias._bias
         elif isinstance(self.attn_bias, torch.Tensor):
             attn_bias_t = self.attn_bias
         if self.query.ndim == 4 and attn_bias_t is not None:

@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Optional, TypeVar, overload
+from typing import Optional, overload, TypeVar
 
 from pyre_extensions import TypeVarTuple, Unpack
 from torch import Tensor
