@@ -33,20 +33,8 @@ jobs:
         PYTHON_VERSION = "3.9"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['118', '121', '124']
-        ROCM_VERSIONS = ['6.1', '6.2', '6.3'] # <- 6.0 broken in `manylinux_2_28`
-        PY_CU = list(itertools.product(PY_VERSIONS, CU_VERSIONS))
-        PY_ROCM = list(itertools.product(PY_VERSIONS, ROCM_VERSIONS))
-        print("Full matrix PY_CU", PY_CU)
-        if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
-          print("pull-request: limiting matrix to save resources")
-          PY_CU = [(PY_VERSIONS[0], CU_VERSIONS[0])]
-          for cu in CU_VERSIONS[1:]:
-            PY_CU.append((PY_VERSIONS[-1], cu))
-          print("Limited matrix PY_CU", PY_CU)
-          PY_ROCM = [(PY_VERSIONS[0], ROCM_VERSIONS[0])]
-          for rocm in ROCM_VERSIONS[1:]:
-            PY_ROCM.append((PY_VERSIONS[-1], rocm))
+        CU_VERSIONS = ['118', '126', '128']
+        ROCM_VERSIONS = ["6.2.4", "6.3"]
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
@@ -112,10 +100,9 @@ jobs:
       matrix:
         suffix:
           - cu118
-          - cu121
-          - cu124
-          - rocm6.1
-          - rocm6.2
+          - cu126
+          - cu128
+          - rocm6.2.4
           - rocm6.3
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
