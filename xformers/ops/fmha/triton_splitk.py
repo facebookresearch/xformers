@@ -255,10 +255,6 @@ class FwOp(AttentionFwOpBase):
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
         if K not in {16, 32, 64, 128, 256, 512}:
             reasons.append(f"Embed dim {K} not supported")
-        if Mkv == 0:
-            # Other ops support this; but here, triton compilation
-            # crashes on A100
-            reasons.append("Query length is 0")
         return reasons
 
     @classmethod
@@ -416,6 +412,197 @@ class FwOp(AttentionFwOpBase):
         )
 
     @classmethod
+    def get_extra_args(
+        cls,
+        *,
+        is_paged: bool,
+        B: int,
+        M: int,
+        Kkv: int,
+        Kq: int,
+        Mq: int,
+        split_k: int,
+        attn_bias: Any,
+        k_fp8_scale_shift: Any,
+    ) -> Dict[str, Any]:
+        BLOCK_M = cls.BLOCK_M
+        BLOCK_N = cls.BLOCK_N
+        if cls.AUTOTUNE:
+            extra_args = {}
+        else:
+            # TODO: remove this when autotuning on AMD is working
+            num_warps = cls.NUM_WARPS
+            num_stages = cls.NUM_STAGES
+            if torch.version.hip and attn_bias is not None:
+                # TODO: Double check paged.
+                mkv = attn_bias.k_seqinfo.max_seqlen
+                # TODO: Determine heuristics for paged attention
+                use_fp8_path = k_fp8_scale_shift is not None
+                if B == 1:
+                    if use_fp8_path:
+                        # Use specialized configs for FP8
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 2048:
+                            BLOCK_N = 32
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 16384:
+                            BLOCK_N = 64
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv >= 131072:
+                            BLOCK_N = 128
+                            num_warps = 2
+                            num_stages = 1
+                        else:
+                            # Note: We don't have data for when transitioning num_wraps works well
+                            BLOCK_N = 64
+                            num_warps = 4
+                            num_stages = 1
+                    else:
+                        num_warps = 4
+                        num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
+                        BLOCK_N = 32
+                elif B <= 4 and split_k <= 128:
+                    num_warps = 2
+                    num_stages = 1
+                    BLOCK_N = 32
+                elif B <= 16:
+                    if use_fp8_path:
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 4096:
+                            BLOCK_N = 32
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv <= 8192:
+                            BLOCK_N = 16
+                            num_warps = 2
+                            num_stages = 1
+                        elif mkv < 131072:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 64
+                            num_warps = 1
+                            num_stages = 1
+                        else:
+                            BLOCK_N = 128
+                            num_warps = 1
+                            num_stages = 1
+                    else:
+                        if M < 16:
+                            num_warps = 2
+                            num_stages = 1
+                        else:
+                            num_warps = 1
+                            num_stages = 1
+                        BLOCK_N = 32
+                elif B <= 64 and use_fp8_path:
+                    if is_paged:
+                        num_stages = 1
+                        if mkv <= 256:
+                            BLOCK_N = 64
+                            num_warps = 8
+                        elif mkv <= 8192:
+                            BLOCK_N = 64
+                            num_warps = 1
+                        elif mkv <= 16384:
+                            BLOCK_N = 128
+                            num_warps = 2
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 128
+                            num_warps = 1
+                    else:
+                        if mkv <= 256:
+                            BLOCK_N = 16
+                            num_warps = 4
+                            num_stages = 1
+                        elif mkv < 131072:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            BLOCK_N = 64
+                            num_warps = 1
+                            num_stages = 1
+                        else:
+                            BLOCK_N = 128
+                            num_warps = 1
+                            num_stages = 1
+                elif B <= 128 and use_fp8_path:
+                    num_stages = 1
+                    if is_paged:
+                        if mkv <= 256:
+                            num_warps = 4
+                            BLOCK_N = 16
+                        elif mkv <= 2048:
+                            num_warps = 1
+                            BLOCK_N = 64
+                        elif mkv < 131072:
+                            num_warps = 2
+                            BLOCK_N = 128
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            num_warps = 1
+                            BLOCK_N = 128
+                    else:
+                        if mkv <= 128:
+                            num_warps = 4
+                            BLOCK_N = 16
+                        else:
+                            num_warps = 1
+                            BLOCK_N = 64
+                elif B <= 256 and use_fp8_path:
+                    num_stages = 1
+                    if is_paged:
+                        if mkv <= 2048:
+                            num_warps = 1
+                            BLOCK_N = 64
+                        elif mkv < 131072:
+                            num_warps = 2
+                            BLOCK_N = 128
+                        else:
+                            # Note: This isn't benchmarked, but fp8 seems to scale well.
+                            num_warps = 1
+                            BLOCK_N = 128
+                    else:
+                        if mkv <= 256:
+                            num_warps = 2
+                            BLOCK_N = 32
+                        else:
+                            num_warps = 1
+                            BLOCK_N = 64
+                else:
+                    num_warps = 1
+                    num_stages = 1
+                    BLOCK_N = 64
+            else:
+                should_modify_warp_and_block = (
+                    Kkv == 128
+                    and Kq == 128
+                    and torch.cuda.get_device_capability() >= (8, 9)
+                )
+                if should_modify_warp_and_block:
+                    if Mq > 1:
+                        num_warps = 4
+                    # Choose minimal round block size which covers M.
+                    if M > 16:
+                        BLOCK_M = 32
+                    if M > 32:
+                        BLOCK_M = 64
+                    if M > 64:
+                        BLOCK_M = 128
+            extra_args = {
+                "BLOCK_M": BLOCK_M,
+                "BLOCK_N": BLOCK_N,
+                "num_warps": num_warps,
+                "num_stages": num_stages,
+            }
+        return extra_args
+
+    @classmethod
     def apply(
         cls,
         inp: Inputs,
@@ -427,9 +614,27 @@ class FwOp(AttentionFwOpBase):
         values at the beginning of each row, and inp has type Inputs.
         """
 
+        output_dtype = inp.get_output_dtype()
+        # LSE may need higher precision than output
+        output_f64_lse = output_dtype in (torch.float32, torch.float64)
+        lse_dtype = torch.float64 if output_f64_lse else torch.float32
+
+        if inp.query.numel() == 0 or inp.key.numel() == 0:
+            out = torch.zeros_like(inp.query)
+            if needs_gradient:
+                lse_out = torch.full(
+                    (inp.query.shape[0],)
+                    + inp.query.shape[2:-1]
+                    + (inp.query.shape[1],),
+                    float("-inf"),
+                    device=inp.query.device,
+                    dtype=lse_dtype,
+                )
+                return out, Context(out=out, lse=lse_out)
+            return out, None
+
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
 
-        output_dtype = inp.get_output_dtype()
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
             attn_bias = cast(
@@ -607,24 +812,22 @@ class FwOp(AttentionFwOpBase):
                 device=q.device,
             ).permute(0, 3, 4, 1, 2, 5)
         lse, lse_splitk = None, None
-        # LSE may need higher precision than output
-        output_f64_lse = output_dtype in (torch.float32, torch.float64)
         if IS_SPLITK or needs_gradient:
+            if IS_SPLITK or output_f64_lse:
+                lse_splitk_dtype = torch.float64
+            else:
+                lse_splitk_dtype = torch.float32
             if cls.SPLIT_K_EARLY_EXIT:
                 lse_splitk = torch.full(
                     [Bqq, G, H, split_k, Mqq],
                     -float("inf"),
-                    dtype=(
-                        torch.float64 if IS_SPLITK or output_f64_lse else torch.float32
-                    ),
+                    dtype=lse_splitk_dtype,
                     device=q.device,
                 )
             else:
                 lse_splitk = torch.empty(
                     [Bqq, G, H, split_k, Mqq],
-                    dtype=(
-                        torch.float64 if IS_SPLITK or output_f64_lse else torch.float32
-                    ),
+                    dtype=lse_splitk_dtype,
                     device=q.device,
                 )
 
@@ -637,181 +840,18 @@ class FwOp(AttentionFwOpBase):
         use_seq_len = seq_len is not None
 
         kernel = cls.get_kernel()
-        BLOCK_M = cls.BLOCK_M
-        BLOCK_N = cls.BLOCK_N
-        if cls.AUTOTUNE:
-            extra_args = {}
-        else:
-            # TODO: remove this when autotuning on AMD is working
-            num_warps = cls.NUM_WARPS
-            num_stages = cls.NUM_STAGES
-            if torch.version.hip and attn_bias is not None:
-                # TODO: Double check paged.
-                mkv = attn_bias.k_seqinfo.max_seqlen
-                # TODO: Determine heuristics for paged attention
-                use_fp8_path = k_fp8_scale_shift is not None
-                if B == 1:
-                    if use_fp8_path:
-                        # Use specialized configs for FP8
-                        if mkv <= 256:
-                            BLOCK_N = 16
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv <= 2048:
-                            BLOCK_N = 32
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv <= 16384:
-                            BLOCK_N = 64
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv >= 131072:
-                            BLOCK_N = 128
-                            num_warps = 2
-                            num_stages = 1
-                        else:
-                            # Note: We don't have data for when transitioning num_wraps works well
-                            BLOCK_N = 64
-                            num_warps = 4
-                            num_stages = 1
-                    else:
-                        num_warps = 4
-                        num_stages = 1  # TODO num_stages = 0 gives better perf on AMD, but sometimes produces NaNs
-                        BLOCK_N = 32
-                elif B <= 4 and split_k <= 128:
-                    num_warps = 2
-                    num_stages = 1
-                    BLOCK_N = 32
-                elif B <= 16:
-                    if use_fp8_path:
-                        if mkv <= 256:
-                            BLOCK_N = 16
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv <= 4096:
-                            BLOCK_N = 32
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv <= 8192:
-                            BLOCK_N = 16
-                            num_warps = 2
-                            num_stages = 1
-                        elif mkv < 131072:
-                            # Note: This isn't benchmarked, but fp8 seems to scale well.
-                            BLOCK_N = 64
-                            num_warps = 1
-                            num_stages = 1
-                        else:
-                            BLOCK_N = 128
-                            num_warps = 1
-                            num_stages = 1
-                    else:
-                        if M < 16:
-                            num_warps = 2
-                            num_stages = 1
-                        else:
-                            num_warps = 1
-                            num_stages = 1
-                        BLOCK_N = 32
-                elif B <= 64 and use_fp8_path:
-                    if is_paged:
-                        num_stages = 1
-                        if mkv <= 256:
-                            BLOCK_N = 64
-                            num_warps = 8
-                        elif mkv <= 8192:
-                            BLOCK_N = 64
-                            num_warps = 1
-                        elif mkv <= 16384:
-                            BLOCK_N = 128
-                            num_warps = 2
-                        else:
-                            # Note: This isn't benchmarked, but fp8 seems to scale well.
-                            BLOCK_N = 128
-                            num_warps = 1
-                    else:
-                        if mkv <= 256:
-                            BLOCK_N = 16
-                            num_warps = 4
-                            num_stages = 1
-                        elif mkv < 131072:
-                            # Note: This isn't benchmarked, but fp8 seems to scale well.
-                            BLOCK_N = 64
-                            num_warps = 1
-                            num_stages = 1
-                        else:
-                            BLOCK_N = 128
-                            num_warps = 1
-                            num_stages = 1
-                elif B <= 128 and use_fp8_path:
-                    num_stages = 1
-                    if is_paged:
-                        if mkv <= 256:
-                            num_warps = 4
-                            BLOCK_N = 16
-                        elif mkv <= 2048:
-                            num_warps = 1
-                            BLOCK_N = 64
-                        elif mkv < 131072:
-                            num_warps = 2
-                            BLOCK_N = 128
-                        else:
-                            # Note: This isn't benchmarked, but fp8 seems to scale well.
-                            num_warps = 1
-                            BLOCK_N = 128
-                    else:
-                        if mkv <= 128:
-                            num_warps = 4
-                            BLOCK_N = 16
-                        else:
-                            num_warps = 1
-                            BLOCK_N = 64
-                elif B <= 256 and use_fp8_path:
-                    num_stages = 1
-                    if is_paged:
-                        if mkv <= 2048:
-                            num_warps = 1
-                            BLOCK_N = 64
-                        elif mkv < 131072:
-                            num_warps = 2
-                            BLOCK_N = 128
-                        else:
-                            # Note: This isn't benchmarked, but fp8 seems to scale well.
-                            num_warps = 1
-                            BLOCK_N = 128
-                    else:
-                        if mkv <= 256:
-                            num_warps = 2
-                            BLOCK_N = 32
-                        else:
-                            num_warps = 1
-                            BLOCK_N = 64
-                else:
-                    num_warps = 1
-                    num_stages = 1
-                    BLOCK_N = 64
-            else:
-                should_modify_warp_and_block = (
-                    Kkv == 128
-                    and Kq == 128
-                    and torch.cuda.get_device_capability() >= (8, 9)
-                )
-                if should_modify_warp_and_block:
-                    if Mq > 1:
-                        num_warps = 4
-                    # Choose minimal round block size which covers M.
-                    if M > 16:
-                        BLOCK_M = 32
-                    if M > 32:
-                        BLOCK_M = 64
-                    if M > 64:
-                        BLOCK_M = 128
-            extra_args = {
-                "BLOCK_M": BLOCK_M,
-                "BLOCK_N": BLOCK_N,
-                "num_warps": num_warps,
-                "num_stages": num_stages,
-            }
+        extra_args = cls.get_extra_args(
+            is_paged=is_paged,
+            B=B,
+            M=M,
+            Kkv=Kkv,
+            Kq=Kq,
+            Mq=Mq,
+            split_k=split_k,
+            attn_bias=attn_bias,
+            k_fp8_scale_shift=k_fp8_scale_shift,
+        )
+
         if _is_triton_available():
             # Triton 3.3.1+fb is required for AMD specific changes to
             # improve performance.
@@ -923,7 +963,6 @@ class FwOp(AttentionFwOpBase):
         assert lse_splitk is not None
         output_lse = None
         if needs_gradient:
-            lse_dtype = torch.float64 if output_f64_lse else torch.float32
             if attn_bias is None or variable_q:
                 output_lse = torch.empty(
                     (Bqq, G, Hq, Mq), device=q.device, dtype=lse_dtype

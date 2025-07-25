@@ -3,7 +3,7 @@
 
 # Example requirement, can be anything that pip knows
 # install with `pip install -r requirements.txt`, and make sure that CI does the same
-tqdm == 4.59.0
+tqdm >= 4.66.3
 pandas == 2.2.2
 seaborn == 0.13.2
 pytorch-lightning >= 1.3
