@@ -511,7 +511,7 @@ def get_extensions():
         if cuda_version >= 1102:
             nvcc_flags += [
                 "--threads",
-                os.getenv("NVCC_THREADS", "4"),
+                os.getenv("NVCC_THREADS", "5"),
                 "--ptxas-options=-v",
             ]
         if sys.platform == "win32":
