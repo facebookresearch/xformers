@@ -77,7 +77,10 @@ def sort_nccl_events(
     ]
 
 
-def parse_one_file(profile_trace_path):
+def read_one_file(profile_trace_path: str) -> pd.DataFrame:
+    if profile_trace_path.endswith(".csv"):
+        return pd.read_csv(profile_trace_path, names=["name", "dur"])
+
     jq_pipe = '.traceEvents[] | select(.cat == "kernel") | [.name, .dur] | @csv'
     if profile_trace_path.endswith(".gz"):
         cmd = (
@@ -97,6 +100,11 @@ def parse_one_file(profile_trace_path):
     finally:
         assert subp.wait() == 0
 
+    return kernel_events
+
+
+def parse_one_file(profile_trace_path: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    kernel_events = read_one_file(profile_trace_path)
     kernel_events["log_name"] = os.path.basename(profile_trace_path)
 
     communication_kernels = kernel_events[kernel_events.name.str.startswith("nccl")]
@@ -106,8 +114,12 @@ def parse_one_file(profile_trace_path):
 
 
 def print_profiling_info(cuda_profile_dir: str):
-    cuda_profile_path_name = f"{cuda_profile_dir}/*trace.json.gz"
+    cuda_profile_path_name = f"{cuda_profile_dir}/kernels_*.csv"
     profile_files = glob.glob(cuda_profile_path_name)
+
+    if len(profile_files) == 0:
+        cuda_profile_path_name = f"{cuda_profile_dir}/*.pt.trace.json.gz"
+        profile_files = glob.glob(cuda_profile_path_name)
 
     if len(profile_files) == 0:
         cuda_profile_path_name = f"{cuda_profile_dir}/*.json"
