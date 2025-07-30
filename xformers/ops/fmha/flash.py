@@ -73,14 +73,14 @@ elif importlib.util.find_spec("flash_attn"):
 
     FLASH_VERSION = flash_attn.__version__
     FLASH_VER_MIN = (2, 7, 1)
-    FLASH_VER_LAST = (2, 8, 1)  # last supported, inclusive
+    FLASH_VER_LAST = (2, 8, 1)  # one above last supported, exclusive
     flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
     if (
         flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed >= FLASH_VER_LAST
     ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
             f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
-            f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
+            f"<{'.'.join([str(i) for i in FLASH_VER_LAST])} "
             f"but got {FLASH_VERSION}."
         )
     VARLEN_LSE_PACKED = True
