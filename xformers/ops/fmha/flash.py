@@ -76,7 +76,9 @@ elif importlib.util.find_spec("flash_attn"):
     FLASH_VER_MIN = parse_version("2.7.1")
     FLASH_VER_LAST = parse_version("2.8.0.post2")  # last supported, inclusive
 
-    if (FLASH_VERSION < FLASH_VER_MIN or FLASH_VERSION > FLASH_VER_LAST) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
+    if (
+        FLASH_VERSION < FLASH_VER_MIN or FLASH_VERSION > FLASH_VER_LAST
+    ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
             f"Requires Flash-Attention version >= {FLASH_VER_MIN}, <= {FLASH_VER_LAST}"
             f"but got {FLASH_VERSION}."
