@@ -63,6 +63,7 @@ if importlib.util.find_spec("..._C_flashattention", package=__package__):
     VARLEN_LSE_PACKED = True
 
 elif importlib.util.find_spec("flash_attn"):
+    from packaging.version import parse as parse_version
     import flash_attn
     import flash_attn.flash_attn_interface
 
@@ -71,16 +72,13 @@ elif importlib.util.find_spec("flash_attn"):
     else:
         _C_flashattention = flash_attn.flash_attn_interface.flash_attn_gpu
 
-    FLASH_VERSION = flash_attn.__version__
-    FLASH_VER_MIN = (2, 7, 1)
-    FLASH_VER_LAST = (2, 8, 1)  # one above last supported, exclusive
-    flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
-    if (
-        flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed >= FLASH_VER_LAST
-    ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
+    FLASH_VERSION = parse_version(flash_attn.__version__)
+    FLASH_VER_MIN = parse_version("2.7.1")
+    FLASH_VER_LAST = parse_version("2.8.0.post2")  # last supported, inclusive
+
+    if (FLASH_VER_MIN < FLASH_VERSION or FLASH_VERSION > FLASH_VER_LAST) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
-            f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
-            f"<{'.'.join([str(i) for i in FLASH_VER_LAST])} "
+            f"Requires Flash-Attention version >= {FLASH_VER_MIN} <= {FLASH_VER_LAST}, "
             f"but got {FLASH_VERSION}."
         )
     VARLEN_LSE_PACKED = True
