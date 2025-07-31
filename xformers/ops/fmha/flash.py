@@ -10,6 +10,7 @@ from itertools import zip_longest
 from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from torch._vendor.packaging.version import parse as parse_version
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
@@ -63,7 +64,6 @@ if importlib.util.find_spec("..._C_flashattention", package=__package__):
     VARLEN_LSE_PACKED = True
 
 elif importlib.util.find_spec("flash_attn"):
-    from packaging.version import parse as parse_version
     import flash_attn
     import flash_attn.flash_attn_interface
 
