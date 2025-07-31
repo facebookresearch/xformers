@@ -72,12 +72,12 @@ elif importlib.util.find_spec("flash_attn"):
     else:
         _C_flashattention = flash_attn.flash_attn_interface.flash_attn_gpu
 
-    FLASH_VERSION = parse_version(flash_attn.__version__)
+    FLASH_VERSION = flash_attn.__version__
     FLASH_VER_MIN = parse_version("2.7.1")
     FLASH_VER_LAST = parse_version("2.8.0.post2")  # last supported, inclusive
-
+    flash_ver_parsed = parse_version(FLASH_VERSION)
     if (
-        FLASH_VERSION < FLASH_VER_MIN or FLASH_VERSION > FLASH_VER_LAST
+        flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
     ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
             f"Requires Flash-Attention version >={FLASH_VER_MIN},"
