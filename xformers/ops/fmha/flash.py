@@ -80,7 +80,8 @@ elif importlib.util.find_spec("flash_attn"):
         FLASH_VERSION < FLASH_VER_MIN or FLASH_VERSION > FLASH_VER_LAST
     ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
-            f"Requires Flash-Attention version >= {FLASH_VER_MIN}, <= {FLASH_VER_LAST}"
+            f"Requires Flash-Attention version >= {FLASH_VER_MIN},"
+            f"<= {FLASH_VER_LAST} "
             f"but got {FLASH_VERSION}."
         )
     VARLEN_LSE_PACKED = True
