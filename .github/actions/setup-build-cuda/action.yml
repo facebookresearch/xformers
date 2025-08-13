@@ -52,12 +52,11 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      uses: Jimver/cuda-toolkit@v0.2.26
+      # https://github.com/Jimver/cuda-toolkit/issues/395#issuecomment-2941579978
+      uses: Jimver/cuda-toolkit@v0.2.24
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
-        # https://github.com/Jimver/cuda-toolkit/issues/395#issuecomment-2941579978
-        use-github-cache: false
     - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       shell: bash
       run: |
