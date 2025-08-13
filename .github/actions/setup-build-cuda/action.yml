@@ -24,9 +24,10 @@ runs:
         print(sys.version)
         cushort = "${{ inputs.toolkit_short_version }}"
         # Version uploaded to pypi (rather than PyTorch s3)
-        TORCH_CUDA_DEFAULT = "126"  # since pytorch 2.7.0
+        TORCH_CUDA_DEFAULT = "128"  # since pytorch 2.8.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
+          "129": ("12.9.0", "https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run"),
           "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
           # (Build with nvcc 12.8 on linux even when building for 12.6 to avoid seg fault in Flash3 build)
           "126": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
@@ -35,6 +36,7 @@ runs:
           "6.1": ("6.1.2", "https://repo.radeon.com/amdgpu-install/6.1.3/rhel/8.9/amdgpu-install-6.1.60103-1.el8.noarch.rpm"),
           "6.2.4": ("6.2.4", "https://repo.radeon.com/amdgpu-install/6.2.4/rhel/8.9/amdgpu-install-6.2.60204-1.el8.noarch.rpm"),
           "6.3": ("6.3.1", "https://repo.radeon.com/amdgpu-install/6.3.1/rhel/8.9/amdgpu-install-6.3.60301-1.el8.noarch.rpm"),
+          "6.4": ("6.4.2", "https://repo.radeon.com/amdgpu-install/6.4.2/rhel/8.9/amdgpu-install-6.4.60402-1.el8.noarch.rpm"),
         }[cushort]
         with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
           fp.write("CUDA_VERSION=" + full_version + "\n")
@@ -50,7 +52,7 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      uses: Jimver/cuda-toolkit@v0.2.23
+      uses: Jimver/cuda-toolkit@v0.2.24
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network

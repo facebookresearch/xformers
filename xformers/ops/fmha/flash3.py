@@ -71,7 +71,7 @@ def _flash_attention3_incompatible_reason() -> Optional[str]:
         torch.ops.flash_attn_3, "bwd"
     ):
         return "PyTorch has no `flash_attn_3` - is your Flash-Attention version recent enough?"
-    if not torch.ops.flash_attn_3.fwd.default._schema.is_backward_compatible_with(
+    if not torch.ops.flash_attn_3.fwd.default._schema.is_backward_compatible_with(  # type: ignore
         parse_schema(
             "flash_attn_3::fwd(Tensor q, Tensor k, Tensor v, Tensor(k_new!)? k_new=None, "
             "Tensor(v_new!)? v_new=None, Tensor? q_v=None, Tensor(out!)? out=None, "
@@ -87,7 +87,7 @@ def _flash_attention3_incompatible_reason() -> Optional[str]:
         )
     ):
         return "flash_attn_3::fwd operator is not compatible"
-    if not torch.ops.flash_attn_3.bwd.default._schema.is_backward_compatible_with(
+    if not torch.ops.flash_attn_3.bwd.default._schema.is_backward_compatible_with(  # type: ignore
         parse_schema(
             "flash_attn_3::bwd(Tensor dout, Tensor q, Tensor k, Tensor v, Tensor out, Tensor softmax_lse, "
             "Tensor(dq!)? dq=None, Tensor(dk!)? dk=None, Tensor(dv!)? dv=None, Tensor? cu_seqlens_q=None, "
