@@ -27,7 +27,9 @@ runs:
         TORCH_CUDA_DEFAULT = "128"  # since pytorch 2.8.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
-          "129": ("12.9.1", "https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run"),
+          # https://github.com/Jimver/cuda-toolkit/issues/395#issuecomment-2941579978 prevents the setting
+          # of 12.9.1 for Windows build here, updating this to 12.9.1 once the issue is resolved
+          "129": ("12.9.0", "https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run"),
           "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
           # (Build with nvcc 12.8 on linux even when building for 12.6 to avoid seg fault in Flash3 build)
           "126": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
@@ -52,7 +54,6 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      # https://github.com/Jimver/cuda-toolkit/issues/395#issuecomment-2941579978
       uses: Jimver/cuda-toolkit@v0.2.24
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
