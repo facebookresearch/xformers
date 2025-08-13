@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.32] - 2025-??-??
+## [0.0.33] - 2025-??-??
+Pre-build binary wheels are available for PyTorch 2.8.0 with CUDA 12.6,
+12.8, and 12.9 together with ROCm 6.3, and 6.4
+
+## [0.0.32] - 2025-08-13
 ### Removed
 - Removed autograd backward pass for merge_attentions as it is easy to use incorrectly.
 
