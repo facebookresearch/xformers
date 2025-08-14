@@ -98,6 +98,7 @@ python -m xformers.info
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
 * If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
+* If getting error message `Filename longer than 260 characters` on Windows, make sure long paths are enabled at OS level, and also execute the command `git config --global core.longpaths true`
 
 
 ### License
