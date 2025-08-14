@@ -34,7 +34,7 @@ jobs:
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
         CU_VERSIONS = ['126', '128', '129']
-        ROCM_VERSIONS = ['6.3', '6.4']
+        ROCM_VERSIONS = ['6.4']
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
@@ -102,8 +102,7 @@ jobs:
           - cu126
           - cu128
           - cu129
-          - rocm6.2.4
-          - rocm6.3
+          - rocm6.4
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
