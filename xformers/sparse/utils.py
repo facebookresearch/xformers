@@ -97,12 +97,11 @@ def _dense_to_sparse(matrix, device):
 
 
 def _round_nnz(mask, divisible_by=4):
-    nonzero = torch.where(mask)
-    nnz = nonzero[0].shape[0]
-    nonzero = tuple(n[: (nnz - nnz % divisible_by)] for n in nonzero)
-    nm = torch.zeros_like(mask)
-    nm[nonzero] = True
-    return nm
+    nnz = torch.count_nonzero(mask)
+    cunz = torch.cumsum(~mask.flatten(), dim=0)
+    flip = cunz <= (-nnz) % divisible_by
+
+    return torch.logical_or(mask, flip.reshape_as(mask))
 
 
 def _dense3d_to_sparse(matrix, device):
