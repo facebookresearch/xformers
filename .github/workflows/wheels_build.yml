@@ -32,7 +32,7 @@ env:
   # you need at least cuda 5.0 for some of the stuff compiled here.
   TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && '7.5 8.0+PTX' || '' }}
   HIP_ARCHITECTURES: ${{ contains(inputs.toolkit_type, 'rocm') && 'gfx90a gfx942' || '' }}
-  MAX_JOBS: 2 # (FA3 is memory hungry!)
+  MAX_JOBS: 3 # (FA3 is memory hungry!)
   DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
