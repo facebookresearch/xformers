@@ -178,7 +178,7 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
     DEFAULT_ARCHS_LIST = ""
     if cuda_version >= 1300:
         DEFAULT_ARCHS_LIST = "8.0;8.6;8.9;9.0;10.0;11.0;12.0;12.1"
-    if cuda_version >= 1208:
+    elif cuda_version >= 1208:
         DEFAULT_ARCHS_LIST = "8.0;8.6;8.9;9.0;10.0;12.0"
     elif cuda_version >= 1108:
         DEFAULT_ARCHS_LIST = "8.0;8.6;9.0"
