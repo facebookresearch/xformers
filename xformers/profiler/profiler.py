@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import csv
 import logging
 import os
 import queue
@@ -86,11 +87,28 @@ class PyTorchProfiler:
         os.makedirs(dir_name, exist_ok=True)
         file_name = f"{worker_name}.{time.time_ns()}.pt.trace.json.gz"
         prof.export_chrome_trace(os.path.join(dir_name, file_name))
+        csv_file_name = f"kernels_{worker_name}.{time.time_ns()}.csv"
+        self._preprocess_trace(prof, os.path.join(dir_name, csv_file_name))
         try:
             self._analyze_trace(prof)
         except Exception as exc:
             self.main_profiler.summary.append(("TraceAnalysis", "Error"))
             logger.warning("Exception analyzing kineto trace", exc_info=exc)
+
+    def _preprocess_trace(
+        self, prof: torch.profiler.profiler.profile, file_name: str
+    ) -> None:
+        if prof.profiler is None or prof.profiler.kineto_results is None:
+            return
+        with open(file_name, "w", newline="") as file:
+            writer = csv.writer(file)
+            for e in prof.profiler.kineto_results.events():
+                if (
+                    e.device_type().name == "CUDA"
+                    and not e.is_user_annotation()
+                    and e.duration_ns() > 0
+                ):
+                    writer.writerow([e.name(), f"{e.duration_ns() / 1_000}"])
 
     def _analyze_trace(self, prof: torch.profiler.profiler.profile) -> None:
         if prof.profiler is None or prof.profiler.kineto_results is None:

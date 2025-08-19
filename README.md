@@ -25,17 +25,17 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.7.0](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.8.0](https://pytorch.org/get-started/locally/)
 
 ```bash
 # [linux only] cuda 11.8 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu118
-# [linux & win] cuda 12.6 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu126
-# [linux & win] cuda 12.8 version
+# [linux & win] cuda 12.6 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu128
-# [linux only] (EXPERIMENTAL) rocm 6.3 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.3
+# [linux & win] cuda 12.8 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu129
+# [linux only] (EXPERIMENTAL) rocm 6.4 version
+pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm6.4
 ```
 
 * **Development binaries**:
@@ -98,6 +98,7 @@ python -m xformers.info
 * the version of GCC that you're using matches the current NVCC capabilities
 * the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
 * If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
+* If getting error message `Filename longer than 260 characters` on Windows, make sure long paths are enabled at OS level, and also execute the command `git config --global core.longpaths true`
 
 
 ### License

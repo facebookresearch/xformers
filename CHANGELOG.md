@@ -4,9 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.32] - 2025-??-??
+## [0.0.33] - 2025-??-??
+
+## [0.0.32] - 2025-08-13
+Pre-built binary wheels are available for PyTorch 2.8.0.
+
+### Added
+- Support flash-attention package up to 2.8.2
+- Speed improvements to `python -m xformers.profiler.find_slowest`
+
 ### Removed
 - Removed autograd backward pass for merge_attentions as it is easy to use incorrectly.
+- Attention biases are no longer `torch.Tensor` subclasses. This is no longer
+necessary for torch.compile to work, and was adding more complexity
+
 
 ## [0.0.31] - 2025-06-25
 Pre-built binary wheels are available for PyTorch 2.7.1.

@@ -27,7 +27,7 @@ def is_pt_cutlass_compatible(force: bool = False) -> bool:
     expected_fwd_schema = parse_schema(fwd_schema_str)
 
     current_schema = torch.ops.aten._efficient_attention_forward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_fwd_schema):
+    if not current_schema.is_backward_compatible_with(expected_fwd_schema):  # type: ignore
         compatible = False
 
         if force:
@@ -48,7 +48,7 @@ def is_pt_cutlass_compatible(force: bool = False) -> bool:
     expected_bwd_schema = parse_schema(bwd_schema_str)
 
     current_schema = torch.ops.aten._efficient_attention_backward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_bwd_schema):
+    if not current_schema.is_backward_compatible_with(expected_bwd_schema):  # type: ignore
         compatible = False
 
         if force:
@@ -108,8 +108,8 @@ def is_pt_flash_old(force: bool) -> Optional[bool]:
     expected_old_fwd_schema = parse_schema(old_fwd_schema_str)
 
     current_schema = torch.ops.aten._flash_attention_forward.default._schema
-    old = current_schema.is_backward_compatible_with(expected_old_fwd_schema)
-    if not old and not current_schema.is_backward_compatible_with(expected_fwd_schema):
+    old = current_schema.is_backward_compatible_with(expected_old_fwd_schema)  # type: ignore
+    if not old and not current_schema.is_backward_compatible_with(expected_fwd_schema):  # type: ignore
         compatible = False
 
         if force:
@@ -136,7 +136,7 @@ def is_pt_flash_old(force: bool) -> Optional[bool]:
     expected_bwd_schema = parse_schema(bwd_schema_old_str if old else bwd_schema_str)
 
     current_schema = torch.ops.aten._flash_attention_backward.default._schema
-    if not current_schema.is_backward_compatible_with(expected_bwd_schema):
+    if not current_schema.is_backward_compatible_with(expected_bwd_schema):  # type: ignore
         compatible = False
 
         if force:

@@ -10,6 +10,7 @@ from itertools import zip_longest
 from typing import Any, Iterable, List, Optional, Set, Tuple, Union
 
 import torch
+from torch._vendor.packaging.version import parse as parse_version
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
@@ -72,15 +73,15 @@ elif importlib.util.find_spec("flash_attn"):
         _C_flashattention = flash_attn.flash_attn_interface.flash_attn_gpu
 
     FLASH_VERSION = flash_attn.__version__
-    FLASH_VER_MIN = (2, 7, 1)
-    FLASH_VER_LAST = (2, 8, 2)  # last supported, inclusive
-    flash_ver_parsed = tuple(int(s) for s in FLASH_VERSION.split(".")[:3])
+    FLASH_VER_MIN = parse_version("2.7.1")
+    FLASH_VER_LAST = parse_version("2.8.3")  # last supported, inclusive
+    flash_ver_parsed = parse_version(FLASH_VERSION)
     if (
         flash_ver_parsed < FLASH_VER_MIN or flash_ver_parsed > FLASH_VER_LAST
     ) and os.environ.get("XFORMERS_IGNORE_FLASH_VERSION_CHECK", "0") != "1":
         raise ImportError(
-            f"Requires Flash-Attention version >={'.'.join([str(i) for i in FLASH_VER_MIN])},"
-            f"<={'.'.join([str(i) for i in FLASH_VER_LAST])} "
+            f"Requires Flash-Attention version >={FLASH_VER_MIN},"
+            f"<={FLASH_VER_LAST} "
             f"but got {FLASH_VERSION}."
         )
     VARLEN_LSE_PACKED = True
