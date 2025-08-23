@@ -28,7 +28,7 @@ xFormers is:
 * **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.8.0](https://pytorch.org/get-started/locally/)
 
 ```bash
-# [linux only] cuda 12.6 version
+# [linux & win] cuda 12.6 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu126
 # [linux & win] cuda 12.8 version
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu128
