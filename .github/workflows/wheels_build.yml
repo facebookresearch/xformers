@@ -56,6 +56,9 @@ jobs:
       - if: contains(inputs.toolkit_type, 'cuda') && fromJSON(inputs.toolkit_short_version) >= 120
         run: |
           echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST 9.0a" >> ${GITHUB_ENV}
+      - if: contains(inputs.toolkit_type, 'cuda') && fromJSON(inputs.toolkit_short_version) >= 128
+        run: |
+          echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST 10.0 12.0" >> ${GITHUB_ENV}
 
       - if: runner.os == 'Windows'
         run: git config --system core.longpaths true
