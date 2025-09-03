@@ -10,7 +10,7 @@ from typing import Any, List, Optional, Sequence, Tuple, Type, TypeVar
 
 import torch
 
-from . import attn_bias, ck, cutlass, flash, flash3, triton_splitk
+from . import attn_bias, ck, cutlass, flash, flash3, mps, triton_splitk
 from .common import AttentionBwOpBase, AttentionFwOpBase, Inputs
 
 T = TypeVar("T", Type[AttentionFwOpBase], Type[AttentionBwOpBase])
@@ -95,6 +95,9 @@ def _dispatch_fw_priority_list(
                 cutlass.FwOp,
             ]
         )
+    elif torch.backends.mps.is_available() and inp.query.device.type == "mps":
+        # MPS-specific priority list
+        priority_list_ops = deque([mps.FwOp])
     else:
         priority_list_ops = deque(
             [
@@ -156,6 +159,9 @@ def _dispatch_bw(
         ]
         if _get_use_fa3():
             priority_list_ops = [flash3.BwOp] + priority_list_ops
+    elif torch.backends.mps.is_available() and inp.query.device.type == "mps":
+        # MPS-specific backward ops
+        priority_list_ops = [mps.BwOp]
     else:
         priority_list_ops = [
             ck.BwOp,
