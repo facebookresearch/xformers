@@ -1,0 +1,6 @@
+✓ MPS operators imported successfully
+✓ MPS device available
+✓ Created tensors: torch.Size([1, 8, 2, 32]) on mps
+Testing forward operator...
+✓ Forward pass successful: torch.Size([1, 8, 2, 32])
+🎉 MPS operators working!

@@ -4,8 +4,8 @@ requires = ["setuptools >= 64", "torch >= 2.7"]
 build-backend = "setuptools.build_meta"
 
 [tool.black]
-target-version = ["py310"]
-line-length = 88
+target-version = ["py313"]
+line-length = 140
 
 [tool.usort]
 first_party_detection = false

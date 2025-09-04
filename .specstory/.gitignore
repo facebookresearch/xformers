@@ -1,0 +1,6 @@
+# SpecStory project identity file
+/.project.json
+# SpecStory explanation file
+/.what-is-this.md
+# SpecStory copilot-instructions.md backup files
+/ai_rules_backups/*

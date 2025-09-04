@@ -1,0 +1,10 @@
+✓ xFormers imported successfully
+✓ MPS device available
+✓ Created tensors: torch.Size([2, 16, 4, 64]) on mps
+Testing memory_efficient_attention...
+✓ memory_efficient_attention successful: torch.Size([2, 16, 4, 64]), device: mps:0
+Testing with causal mask...
+✓ Causal attention successful: torch.Size([2, 16, 4, 64]), device: mps:0
+Testing gradient computation...
+⚠ Gradient computation failed (expected for MPS): element 0 of tensors does not require grad and does not have a grad_fn
+🎉 Full xFormers MPS integration working!

@@ -470,7 +470,10 @@ def get_extensions():
             ["/MP", "/Zc:lambda", "/Zc:preprocessor", "/Zc:__cplusplus"]
         )
     elif "OpenMP not found" not in torch.__config__.parallel_info():
-        extra_compile_args["cxx"].append("-fopenmp")
+        if sys.platform == "darwin":
+            extra_compile_args["cxx"].extend(["-Xpreprocessor", "-fopenmp", "-lomp"])
+        else:
+            extra_compile_args["cxx"].append("-fopenmp")
 
     include_dirs = [extensions_dir]
     ext_modules = []
@@ -804,10 +807,8 @@ if __name__ == "__main__":
         + "defined as compatible and combined building blocks as opposed to monolithic models",
         long_description_content_type="text/markdown",
         classifiers=[
-            "Programming Language :: Python :: 3.9",
-            "Programming Language :: Python :: 3.10",
-            "Programming Language :: Python :: 3.11",
-            "Programming Language :: Python :: 3.12",
+            "Programming Language :: Python :: 3.13",
+            "Programming Language :: Python :: 3.14",
             "License :: OSI Approved :: BSD License",
             "Topic :: Scientific/Engineering :: Artificial Intelligence",
             "Operating System :: OS Independent",
