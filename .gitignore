@@ -72,4 +72,6 @@ xformers/csrc/attention/hip_decoder/*.cu
 xformers/csrc/attention/hip_decoder/*.hip
 xformers/csrc/attention/hip_decoder/*_hip.h
 
-
+# specstory
+.specstory
+.specstory/*

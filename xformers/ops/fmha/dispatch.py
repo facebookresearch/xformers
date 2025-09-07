@@ -99,11 +99,9 @@ def _dispatch_fw_priority_list(
         # MPS-specific priority list
         priority_list_ops = deque([mps.FwOp])
     else:
-        priority_list_ops = deque(
-            [
-                ck.FwOp,
-            ]
-        )
+        # For CPU and other devices, try MPS operator first (supports CPU fallback)
+        # then fall back to ck for CUDA-only operations
+        priority_list_ops = deque([mps.FwOp, ck.FwOp])
     if not needs_gradient:
         mqa_or_gqa = (
             inp.key.ndim > 3 and inp.key.stride(-2) == 0 and inp.key.shape[-2] > 1
@@ -163,9 +161,9 @@ def _dispatch_bw(
         # MPS-specific backward ops
         priority_list_ops = [mps.BwOp]
     else:
-        priority_list_ops = [
-            ck.BwOp,
-        ]
+        # For CPU and other devices, try MPS operator first (supports CPU fallback)
+        # then fall back to ck for CUDA-only operations
+        priority_list_ops = [mps.BwOp, ck.BwOp]
 
     # NOTE: If we have a variable seqlen `attn_bias`, we need to get a BW pass
     # that supports the LSE format
