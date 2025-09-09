@@ -47,7 +47,7 @@ def _convert_input_format(
     int,
     Optional[torch.Tensor],
 ]:
-    assert inp.query.ndim == 4
+    assert inp.query.ndim in (4, 5)
     query, key, value = inp.query, inp.key, inp.value
 
     attn_bias = inp.attn_bias
@@ -64,6 +64,27 @@ def _convert_input_format(
         seqused_k = None
         max_seqlen_q = None
         max_seqlen_k = None
+
+    if query.ndim == 5:  # GQA
+        # Fold the group/head_in_group dimensions together
+        def fold(x):
+            # Either the head is replicated
+            if x.stride(3) == 0:
+                return x[:, :, :, 0]
+
+            # Or we reshape
+            return x.reshape(
+                [
+                    x.shape[0],
+                    x.shape[1],
+                    -1,
+                    x.shape[4],
+                ]
+            )
+
+        query = fold(query)
+        key = fold(key)
+        value = fold(value)
 
     if cu_seqlen_k is not None and query.ndim == 4:
         # Fold to 3D when using varlen
@@ -175,7 +196,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTS_DROPOUT = False
     SUPPORTS_CUSTOM_SCALE = False
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
-    SUPPORTS_BMGHK = False
+    SUPPORTS_BMGHK = True
     VARLEN_LSE_PACKED = True
     SUPPORTS_PARTIAL = False
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (10, 0)
@@ -201,8 +222,8 @@ class FwOp(AttentionFwOpBase):
             ):
                 reasons.append("seqlens_k must be >= seqlens_q")
 
-        if d.query.ndim != 4 or d.key.ndim != 4 or d.value.ndim != 4:
-            reasons.append("Only supports BMHK format")
+        if d.query.ndim < 4 or d.key.ndim < 4 or d.value.ndim < 4:
+            reasons.append("Only supports BMHK or BMGHK")
 
         return reasons
 
@@ -221,7 +242,6 @@ class FwOp(AttentionFwOpBase):
     def apply(
         cls, inp: Inputs, needs_gradient: bool
     ) -> Tuple[torch.Tensor, Optional[Context]]:
-        assert inp.query.ndim == 4
         q_shape = inp.query.shape
         (
             inp,
@@ -292,6 +312,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = False
+    SUPPORTS_BMGHK = False
     VARLEN_LSE_PACKED = True
     SUPPORTS_PARTIAL = False
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (10, 0)
@@ -335,6 +356,7 @@ class BwOp(AttentionBwOpBase):
 
     @classmethod
     def apply(cls, ctx: Context, inp: Inputs, grad: torch.Tensor) -> Gradients:
+        assert inp.query.ndim == 4
         dq_shape, dk_shape, dv_shape = inp.query.shape, inp.key.shape, inp.value.shape
         (
             inp,
