@@ -63,8 +63,16 @@ sm80_or_better_only = pytest.mark.skipif(
     reason="requires sm80+",
 )
 sm90_or_better_only = pytest.mark.skipif(
-    compute_capability < (9, 0), reason="requires sm90+"
+    compute_capability < (9, 0),
+    reason="requires sm90+",
 )
+sm100_or_better_only = pytest.mark.skipif(
+    compute_capability < (10, 0), reason="requires sm100+"
+)
+skip_if_sm100_or_better = pytest.mark.skipif(
+    compute_capability >= (10, 0), reason="not supported on Blackwell"
+)
+
 skip_if_rocm = pytest.mark.skipif(
     torch.version.hip is not None, reason="not supported on ROCm"
 )
@@ -95,7 +103,13 @@ def _filter_unsupported_ops(ops: Sequence[T]) -> List[T]:
         if (
             "cpu" in op.SUPPORTED_DEVICES
             or "mtia" in op.SUPPORTED_DEVICES
-            or op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
+            or (
+                op.CUDA_MINIMUM_COMPUTE_CAPABILITY <= compute_capability
+                and (
+                    op.CUDA_MAXIMUM_COMPUTE_CAPABILITY is None
+                    or op.CUDA_MAXIMUM_COMPUTE_CAPABILITY >= compute_capability
+                )
+            )
         )
         and op.is_available()
     ]
@@ -110,6 +124,8 @@ def sample_random_supported_fw(
 ) -> Type[fmha.common.AttentionFwOpBase]:
     r = random.Random(seed)
     fw_ops = list(ALL_FW_OPS)
+    if op_bw == fmha.cutlass_blackwell.BwOp:
+        fw_ops = [fmha.cutlass_blackwell.FwOp, fmha.flash.FwOp]
     if (
         isinstance(inp.attn_bias, fmha.attn_bias.VARLEN_BIASES)
         and inp.attn_bias.q_seqinfo.seqstart.shape[0] > 2
@@ -170,6 +186,8 @@ def generate_test_shapes_B_Mq_Mkv_H_K_Kv(op):
     if op in [
         fmha.cutlass.FwOp,
         fmha.cutlass.BwOp,
+        fmha.cutlass_blackwell.FwOp,
+        fmha.cutlass_blackwell.BwOp,
         fmha.flash.BwOp,
         fmha.ck.FwOp,
     ]:
@@ -675,7 +693,16 @@ def test_logsumexp(opFW_device_dtype_biasT_B_Mq_Mkv_H_K_Kv):
 
 
 @cuda_or_mtia_only
-@pytest.mark.parametrize("op", [fmha.cutlass.FwOp, fmha.flash.FwOp])
+@pytest.mark.parametrize(
+    "op",
+    _filter_unsupported_ops(
+        [
+            fmha.cutlass.FwOp,
+            fmha.cutlass_blackwell.FwOp,
+            fmha.flash.FwOp,
+        ]
+    ),
+)
 def test_logsumexp_mqa(op):
     device = torch._C._get_accelerator().type
 
@@ -1889,6 +1916,7 @@ class TestAttnBias:
         pad_count = align_to - (bias.shape[-1] % align_to)
         return torch.nn.functional.pad(bias, [0, pad_count])[:, :, :, : bias.shape[-1]]
 
+    @skip_if_sm100_or_better
     def test_f16_biasf32(self) -> None:
         q, k, v, bias = self.create_tensors(torch.float16)
         fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
@@ -1896,6 +1924,7 @@ class TestAttnBias:
         with pytest.raises((ValueError, RuntimeError)):
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
+    @skip_if_sm100_or_better
     @disable_on_rocm
     def test_f32_biasf16(self) -> None:
         q, k, v, bias = self.create_tensors(torch.float32)
@@ -1904,6 +1933,7 @@ class TestAttnBias:
         with pytest.raises((ValueError, RuntimeError)):
             fmha.memory_efficient_attention(q, k, v, attn_bias=bias)
 
+    @skip_if_sm100_or_better
     @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
     def test_wrong_alignment(self, dtype) -> None:
         op = fmha.cutlass.FwOp if torch.version.cuda else fmha.ck.FwOp
@@ -2038,6 +2068,7 @@ def test_forward_gqa(opFW_biasT, Mq: int):
     [
         fmha.flash.BwOp,
         fmha.ck.BwOp if torch.version.hip else fmha.cutlass.BwOp,
+        fmha.cutlass_blackwell.BwOp,
     ],
 )
 def test_backward_gqa(opBW):
@@ -2436,9 +2467,12 @@ def test_paged_attention_flash(B, MAX_T: int, page_size: int):
     paged_attention_run_inner(B, MAX_T, num_quant_groups, page_size, op, bench=False)
 
 
+@skip_if_sm100_or_better
 @sm90_or_better_only
 @disable_on_rocm
-@pytest.mark.parametrize("op", [fmha.flash3.FwOp, fmha.flash3.FwOp_KVSplit])
+@pytest.mark.parametrize(
+    "op", _filter_unsupported_ops([fmha.flash3.FwOp, fmha.flash3.FwOp_KVSplit])
+)
 @pytest.mark.parametrize("B", [1, 5, 128])
 @pytest.mark.parametrize("MAX_T", [64, 128, 2048, 4096, 8192])
 @pytest.mark.parametrize("page_size", [256])
@@ -2710,7 +2744,12 @@ def paged_attention_run_inner(
 @pytest.mark.parametrize("create_bias_inside_compiled", [False, True])
 @pytest.mark.parametrize(
     "op",
-    [None, (fmha.flash.FwOp, fmha.flash.BwOp), (fmha.flash3.FwOp, fmha.flash3.BwOp)],
+    [
+        None,
+        (fmha.flash.FwOp, fmha.flash.BwOp),
+        (fmha.flash3.FwOp, fmha.flash3.BwOp),
+        (fmha.cutlass_blackwell.FwOp, fmha.cutlass_blackwell.BwOp),
+    ],
 )
 def test_memeff_compile(bias_t, create_bias_inside_compiled: bool, op) -> None:
     torch.manual_seed(0)
@@ -2995,12 +3034,19 @@ def test_fav3_kvsplit_attn(
 @sm90_or_better_only
 @pytest.mark.parametrize(
     "op",
-    (
-        [fmha.flash.FwOp, fmha.cutlass.FwOp, fmha.flash3.FwOp, fmha.flash3.FwOp_KVSplit]
-        if not torch.version.hip
-        else [fmha.ck.FwOp]
-    )
-    + [fmha.triton_splitk.FwOp],
+    _filter_unsupported_ops(
+        (
+            [
+                fmha.flash.FwOp,
+                fmha.cutlass.FwOp,
+                fmha.flash3.FwOp,
+                fmha.flash3.FwOp_KVSplit,
+            ]
+            if not torch.version.hip
+            else [fmha.ck.FwOp]
+        )
+        + [fmha.triton_splitk.FwOp]
+    ),
 )
 def test_nans_in_padding(op):
     """

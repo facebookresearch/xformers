@@ -7,7 +7,16 @@ from typing import Any, cast, List, Optional, Sequence, Tuple, Type, Union
 
 import torch
 
-from . import attn_bias, ck, ck_splitk, cutlass, flash, flash3, triton_splitk
+from . import (
+    attn_bias,
+    ck,
+    ck_splitk,
+    cutlass,
+    cutlass_blackwell,
+    flash,
+    flash3,
+    triton_splitk,
+)
 from .attn_bias import (
     AttentionBias,
     BlockDiagonalMask,
@@ -33,6 +42,10 @@ from .dispatch import (
 )
 
 MemoryEfficientAttentionCutlassOp = (cutlass.FwOp, cutlass.BwOp)
+MemoryEfficientAttentionCutlassBlackwellOp = (
+    cutlass_blackwell.FwOp,
+    cutlass_blackwell.BwOp,
+)
 MemoryEfficientAttentionCutlassFwdFlashBwOp = (cutlass.FwOp, flash.BwOp)
 MemoryEfficientAttentionFlashAttentionOp = (flash.FwOp, flash.BwOp)
 MemoryEfficientAttentionCkOp = (ck.FwOp, ck.BwOp)
@@ -793,6 +806,7 @@ def merge_attentions(
 
 ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
     cutlass.FwOp if torch.version.cuda else ck.FwOp,
+    cutlass_blackwell.FwOp,
     flash.FwOp,
     flash3.FwOp,
     triton_splitk.FwOp,
@@ -800,6 +814,7 @@ ALL_FW_OPS: List[Type[AttentionFwOpBase]] = [
 
 ALL_BW_OPS: List[Type[AttentionBwOpBase]] = [
     cutlass.BwOp if torch.version.cuda else ck.BwOp,
+    cutlass_blackwell.BwOp,
     flash.BwOp,
     flash3.BwOp,
 ]
