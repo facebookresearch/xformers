@@ -48,9 +48,9 @@ def _convert_input_format(
 ) -> Tuple[
     Inputs,
     Optional[torch.Tensor],
-    int,
+    Optional[int],
     Optional[torch.Tensor],
-    int,
+    Optional[int],
     Optional[torch.Tensor],
 ]:
     assert inp.query.ndim in (4, 5)
@@ -127,10 +127,10 @@ def _is_seqlen_q_le_seqlen_k(
     cu_seqlens_k = torch.as_tensor(cu_seqlens_k_py, dtype=torch.int, device="cpu")
     seqlens_q = cu_seqlens_q[1:] - cu_seqlens_q[:-1]
     seqlens_k = cu_seqlens_k[1:] - cu_seqlens_k[:-1]
-    return torch.all(seqlens_k >= seqlens_q).item()
+    return bool(torch.all(seqlens_k >= seqlens_q).item())
 
 
-def _is_causal(attn_bias: AttentionBias) -> bool:
+def _is_causal(attn_bias: Union[Tensor, AttentionBias, None]) -> bool:
     return isinstance(
         attn_bias,
         (
@@ -145,7 +145,7 @@ def _is_causal(attn_bias: AttentionBias) -> bool:
     )
 
 
-def _is_bottom_right(attn_bias: AttentionBias) -> bool:
+def _is_bottom_right(attn_bias: Union[Tensor, AttentionBias, None]) -> bool:
     return isinstance(
         attn_bias,
         (
