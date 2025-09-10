@@ -130,7 +130,7 @@ def _is_seqlen_q_le_seqlen_k(
     return bool(torch.all(seqlens_k >= seqlens_q).item())
 
 
-def _is_causal(attn_bias: Union[Tensor, AttentionBias, None]) -> bool:
+def _is_causal(attn_bias: Union[torch.Tensor, AttentionBias, None]) -> bool:
     return isinstance(
         attn_bias,
         (
@@ -145,7 +145,7 @@ def _is_causal(attn_bias: Union[Tensor, AttentionBias, None]) -> bool:
     )
 
 
-def _is_bottom_right(attn_bias: Union[Tensor, AttentionBias, None]) -> bool:
+def _is_bottom_right(attn_bias: Union[torch.Tensor, AttentionBias, None]) -> bool:
     return isinstance(
         attn_bias,
         (
