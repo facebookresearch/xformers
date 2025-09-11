@@ -382,6 +382,7 @@
         <span class="k">if</span> <span class="n">is_pt_cutlass_compatible</span><span class="p">()</span>
         <span class="k">else</span> <span class="kc">None</span>
     <span class="p">)</span>
+    <span class="n">CUDA_MAXIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="p">(</span><span class="mi">9</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
     <span class="n">SUPPORTED_DEVICES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;cuda&quot;</span><span class="p">}</span>
     <span class="n">SUPPORTED_DTYPES</span><span class="p">:</span> <span class="n">Set</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">dtype</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="n">torch</span><span class="o">.</span><span class="n">float</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">half</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">bfloat16</span><span class="p">}</span>
     <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="mi">65536</span>
@@ -546,7 +547,7 @@
         <span class="k">if</span> <span class="n">is_pt_cutlass_compatible</span><span class="p">()</span>
         <span class="k">else</span> <span class="kc">None</span>
     <span class="p">)</span>
-
+    <span class="n">CUDA_MAXIMUM_COMPUTE_CAPABILITY</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">CUDA_MAXIMUM_COMPUTE_CAPABILITY</span>
     <span class="n">SUPPORTED_DEVICES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DEVICES</span>
     <span class="n">SUPPORTED_DTYPES</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_DTYPES</span>
     <span class="n">SUPPORTED_MAX_K</span> <span class="o">=</span> <span class="n">FwOp</span><span class="o">.</span><span class="n">SUPPORTED_MAX_K</span>

@@ -220,7 +220,16 @@
 
 <span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">attn_bias</span><span class="p">,</span> <span class="n">ck</span><span class="p">,</span> <span class="n">ck_splitk</span><span class="p">,</span> <span class="n">cutlass</span><span class="p">,</span> <span class="n">flash</span><span class="p">,</span> <span class="n">flash3</span><span class="p">,</span> <span class="n">triton_splitk</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">attn_bias</span><span class="p">,</span>
+    <span class="n">ck</span><span class="p">,</span>
+    <span class="n">ck_splitk</span><span class="p">,</span>
+    <span class="n">cutlass</span><span class="p">,</span>
+    <span class="n">cutlass_blackwell</span><span class="p">,</span>
+    <span class="n">flash</span><span class="p">,</span>
+    <span class="n">flash3</span><span class="p">,</span>
+    <span class="n">triton_splitk</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">.attn_bias</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">AttentionBias</span><span class="p">,</span>
     <span class="n">BlockDiagonalMask</span><span class="p">,</span>
@@ -246,6 +255,10 @@
 <span class="p">)</span>
 
 <span class="n">MemoryEfficientAttentionCutlassOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
+<span class="n">MemoryEfficientAttentionCutlassBlackwellOp</span> <span class="o">=</span> <span class="p">(</span>
+    <span class="n">cutlass_blackwell</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">cutlass_blackwell</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+<span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCutlassFwdFlashBwOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionFlashAttentionOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
 <span class="n">MemoryEfficientAttentionCkOp</span> <span class="o">=</span> <span class="p">(</span><span class="n">ck</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">)</span>
@@ -1006,6 +1019,7 @@
 
 <span class="n">ALL_FW_OPS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionFwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
     <span class="n">cutlass</span><span class="o">.</span><span class="n">FwOp</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span> <span class="k">else</span> <span class="n">ck</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
+    <span class="n">cutlass_blackwell</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">flash</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">flash3</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
     <span class="n">triton_splitk</span><span class="o">.</span><span class="n">FwOp</span><span class="p">,</span>
@@ -1013,6 +1027,7 @@
 
 <span class="n">ALL_BW_OPS</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="n">Type</span><span class="p">[</span><span class="n">AttentionBwOpBase</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[</span>
     <span class="n">cutlass</span><span class="o">.</span><span class="n">BwOp</span> <span class="k">if</span> <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">cuda</span> <span class="k">else</span> <span class="n">ck</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
+    <span class="n">cutlass_blackwell</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
     <span class="n">flash</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
     <span class="n">flash3</span><span class="o">.</span><span class="n">BwOp</span><span class="p">,</span>
 <span class="p">]</span>
