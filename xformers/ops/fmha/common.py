@@ -389,6 +389,7 @@ class AttentionOpBase(BaseOperator):
     OPERATOR: Any
     SUPPORTED_DEVICES: Set[str]
     CUDA_MINIMUM_COMPUTE_CAPABILITY: Tuple[int, int] = (5, 0)
+    CUDA_MAXIMUM_COMPUTE_CAPABILITY: Optional[Tuple[int, int]] = None
     SUPPORTED_DTYPES: Set[torch.dtype]
     SUPPORTED_MAX_K: float
     SUPPORTED_MIN_K: int = 0
@@ -461,6 +462,14 @@ class AttentionOpBase(BaseOperator):
                 reasons.append(
                     f"requires device with capability > {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
                     f"but your GPU has capability {device_capability} (too old)"
+                )
+            elif (
+                cls.CUDA_MAXIMUM_COMPUTE_CAPABILITY is not None
+                and device_capability > cls.CUDA_MAXIMUM_COMPUTE_CAPABILITY
+            ):
+                reasons.append(
+                    f"requires device with capability < {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+                    f"but your GPU has capability {device_capability} (too new)"
                 )
         if dtype not in cls.SUPPORTED_DTYPES:
             reasons.append(f"dtype={dtype} (supported: {cls.SUPPORTED_DTYPES})")
