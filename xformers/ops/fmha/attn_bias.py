@@ -150,6 +150,9 @@ class LowerTriangularMask(AttentionBias):
     of queries is not equal to the number of keys/values.
     """
 
+    def __init__(self, device: Union[torch.device, None] = None) -> None:
+        """not used, only here for backward compatibility"""
+
     def to(self, device: torch.device) -> "LowerTriangularMask":
         assert type(self) is LowerTriangularMask, "Please implement in subclass"
         return self
