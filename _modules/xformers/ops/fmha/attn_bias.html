@@ -365,6 +365,9 @@
 <span class="sd">    of queries is not equal to the number of keys/values.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
+<div class="viewcode-block" id="LowerTriangularMask.__init__"><a class="viewcode-back" href="../../../../components/ops.html#xformers.ops.fmha.attn_bias.LowerTriangularMask.__init__">[docs]</a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;not used, only here for backward compatibility&quot;&quot;&quot;</span></div>
+
     <span class="k">def</span><span class="w"> </span><span class="nf">to</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;LowerTriangularMask&quot;</span><span class="p">:</span>
         <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="ow">is</span> <span class="n">LowerTriangularMask</span><span class="p">,</span> <span class="s2">&quot;Please implement in subclass&quot;</span>
         <span class="k">return</span> <span class="bp">self</span>
