@@ -330,6 +330,12 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
     # for explicit values hence causing us to build these kernels twice.
     sources = [s for s in sources if ("hdimall" not in s and "softcapall" not in s)]
 
+    # Avoid duplicate pybind module definitions (PyInit__C)
+    # Keep the stable ABI entrypoint when building with py_limited_api,
+    # and exclude the non-stable one.
+    if any(s.endswith("hopper/flash_api_stable.cpp") for s in sources):
+        sources = [s for s in sources if not s.endswith("hopper/flash_api.cpp")]
+
     # We don't care/expose softcap and fp8 and paged attention,
     # hence we disable them for faster builds.
     DISABLED_CAPABILITIES = (
