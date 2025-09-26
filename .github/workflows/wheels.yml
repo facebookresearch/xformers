@@ -88,7 +88,7 @@ jobs:
     uses: ./.github/workflows/wheels_upload_pip.yml
     with:
       twine_username: __token__
-      filter: "*torch2.9.0+cu128*"
+      filter: "*torch2.9.0+cu130*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
