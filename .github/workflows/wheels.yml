@@ -33,12 +33,12 @@ jobs:
         PYTHON_VERSION = "3.9"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['126', '128', '129']
+        CU_VERSIONS = ['126', '128', '130']
         ROCM_VERSIONS = ['6.4']
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
-          for torch_version in ['2.8.0']:
+          for torch_version in ['2.9.0']:
             # CUDA builds
             for cuda_short_version in CU_VERSIONS:
               if cuda_short_version < "124" and "windows" in os:
@@ -88,7 +88,7 @@ jobs:
     uses: ./.github/workflows/wheels_upload_pip.yml
     with:
       twine_username: __token__
-      filter: "*torch2.8.0+cu128*"
+      filter: "*torch2.9.0+cu128*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
@@ -101,7 +101,7 @@ jobs:
         suffix:
           - cu126
           - cu128
-          - cu129
+          - cu130
           - rocm6.4
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
