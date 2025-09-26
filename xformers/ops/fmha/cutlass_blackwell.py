@@ -14,8 +14,14 @@ from .attn_bias import (
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
+    BlockDiagonalCausalLocalAttentionPaddedKeysMask,
     BlockDiagonalCausalMask,
+    BlockDiagonalCausalWithOffsetGappyKeysMask,
+    BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    BlockDiagonalGappyKeysMask,
+    BlockDiagonalLocalAttentionPaddedKeysMask,
     BlockDiagonalMask,
+    BlockDiagonalPaddedKeysMask,
     LocalAttentionFromBottomRightMask,
     LowerTriangularFromBottomRightLocalAttentionMask,
     LowerTriangularFromBottomRightMask,
@@ -64,6 +70,25 @@ def _convert_input_format(
         max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
         max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
         seqused_k = None
+    elif isinstance(
+        attn_bias,
+        (
+            BlockDiagonalPaddedKeysMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalGappyKeysMask,
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
+            BlockDiagonalLocalAttentionPaddedKeysMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
+        ),
+    ):
+        assert attn_bias.k_seqinfo.seqstart.device == inp.query.device
+        cu_seqlen_k = attn_bias.k_seqinfo.seqstart
+        cu_seqlen_q = attn_bias.q_seqinfo.seqstart
+        max_seqlen_q = attn_bias.q_seqinfo.max_seqlen
+        max_seqlen_k = attn_bias.k_seqinfo.max_seqlen
+        # All these mask types inherit from classes that have seqlen attribute
+        seqused_k = attn_bias.k_seqinfo.seqlen
+        assert seqused_k is not None
     else:
         cu_seqlen_k = None
         cu_seqlen_q = None
@@ -141,6 +166,9 @@ def _is_causal(attn_bias: Union[torch.Tensor, AttentionBias, None]) -> bool:
             LowerTriangularFromBottomRightLocalAttentionMask,
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
         ),
     )
 
@@ -153,6 +181,10 @@ def _is_bottom_right(attn_bias: Union[torch.Tensor, AttentionBias, None]) -> boo
             BlockDiagonalCausalFromBottomRightMask,
             LocalAttentionFromBottomRightMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            BlockDiagonalCausalWithOffsetPaddedKeysMask,
+            BlockDiagonalLocalAttentionPaddedKeysMask,
+            BlockDiagonalCausalWithOffsetGappyKeysMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         ),
     )
 
@@ -168,12 +200,16 @@ def _window_size(
             BlockDiagonalCausalLocalAttentionMask,
             BlockDiagonalCausalLocalAttentionFromBottomRightMask,
             LowerTriangularFromBottomRightLocalAttentionMask,
+            BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         ),
     ):
         win_left = attn_bias._window_size - 1
     if isinstance(
         attn_bias,
-        LocalAttentionFromBottomRightMask,
+        (
+            BlockDiagonalLocalAttentionPaddedKeysMask,
+            LocalAttentionFromBottomRightMask,
+        ),
     ):
         win_left = attn_bias.window_left
         win_right = attn_bias.window_right
@@ -194,6 +230,12 @@ class FwOp(AttentionFwOpBase):
         BlockDiagonalCausalFromBottomRightMask,
         BlockDiagonalMask,
         BlockDiagonalCausalMask,
+        BlockDiagonalPaddedKeysMask,
+        BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        BlockDiagonalGappyKeysMask,
+        BlockDiagonalCausalWithOffsetGappyKeysMask,
+        BlockDiagonalLocalAttentionPaddedKeysMask,
+        BlockDiagonalCausalLocalAttentionPaddedKeysMask,
         LocalAttentionFromBottomRightMask,
         LowerTriangularFromBottomRightLocalAttentionMask,
         BlockDiagonalCausalLocalAttentionMask,
@@ -255,7 +297,7 @@ class FwOp(AttentionFwOpBase):
             max_seq_len_q,
             cu_seqlens_k,
             max_seq_len_k,
-            _,
+            seqused_k,
         ) = _convert_input_format(inp)
 
         window_left, window_right = _window_size(inp.attn_bias)
@@ -267,6 +309,7 @@ class FwOp(AttentionFwOpBase):
                 v=inp.value,
                 cu_seqlens_q=cu_seqlens_q,
                 cu_seqlens_k=cu_seqlens_k,
+                seqlen_kv=seqused_k,
                 max_seq_len_q=max_seq_len_q,
                 max_seq_len_k=max_seq_len_k,
                 softmax_scale=inp.scale,
