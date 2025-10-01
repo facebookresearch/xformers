@@ -762,9 +762,7 @@ class FwOp(AttentionFwOpBase):
             return out, None
         ctx = Context(
             out=out,
-            lse=_post_process_lse(
-                softmax_lse, inp, tuple(original_query_shape), varlen_lse_packed=True
-            ),
+            lse=_post_process_lse(softmax_lse, inp, tuple(original_query_shape)),
         )
         return (out, ctx)
 
