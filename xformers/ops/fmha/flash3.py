@@ -103,6 +103,7 @@ def _flash_attention3_incompatible_reason() -> Optional[str]:
 
 FLASH3_HAS_PAGED_ATTENTION = True
 FLASH3_HAS_FLOAT8 = False
+FLASH3_HAS_DETERMINISTIC_MODE = False
 _C_flashattention3 = None
 if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
     from ..._cpp_lib import _build_metadata
@@ -110,6 +111,7 @@ if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
 
     if _build_metadata is not None:
         FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+    FLASH3_HAS_DETERMINISTIC_MODE = True
     _C_flashattention3 = torch.ops.flash_attn_3
 
 elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
@@ -461,7 +463,10 @@ if _C_flashattention3 is not None:
         window_right: int,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
-        is_deterministic = False
+        is_deterministic = (
+            torch.are_deterministic_algorithms_enabled()
+            and FLASH3_HAS_DETERMINISTIC_MODE
+        )
         if cu_seqlens_q is None:
             assert cu_seqlens_k is None
 
@@ -787,7 +792,7 @@ class BwOp(AttentionBwOpBase):
     SUPPORTS_DROPOUT = FwOp.SUPPORTS_DROPOUT
     SUPPORTS_CUSTOM_SCALE = FwOp.SUPPORTS_CUSTOM_SCALE
     SUPPORTS_DIFFERENT_VALUE_EMBED = FwOp.SUPPORTS_DIFFERENT_VALUE_EMBED
-    IS_DETERMINISTIC = False
+    IS_DETERMINISTIC = FLASH3_HAS_DETERMINISTIC_MODE
     SUPPORTS_BMGHK = False
     SUPPORTS_LSE_FORMATS: Sequence[str] = ["", "varlen_flat"]
     NAME = f"fa3B@{FLASH_VERSION}"

@@ -321,12 +321,13 @@ def get_flash_attention3_extensions(cuda_version: int, extra_compile_args):
     sources = [
         str(Path(f).relative_to(flash_root))
         for f in glob.glob(os.path.join(flash_root, "hopper", "*.cu"))
-        + glob.glob(os.path.join(flash_root, "hopper", "*.cpp"))
         + glob.glob(os.path.join(flash_root, "hopper", "instantiations", "*.cu"))
     ]
     # hdimall and softcapall are .cu files which include all the other .cu files
     # for explicit values hence causing us to build these kernels twice.
     sources = [s for s in sources if ("hdimall" not in s and "softcapall" not in s)]
+    # use non-stable API for now
+    sources += [os.path.join("hopper", "flash_api.cpp")]
 
     # We don't care/expose softcap and fp8 and paged attention,
     # hence we disable them for faster builds.
