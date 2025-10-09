@@ -24,7 +24,7 @@ runs:
         print(sys.version)
         cushort = "${{ inputs.toolkit_short_version }}"
         # Version uploaded to pypi (rather than PyTorch s3)
-        TORCH_CUDA_DEFAULT = "129"  # since pytorch 2.8.0
+        TORCH_CUDA_DEFAULT = "130"  # since pytorch 2.8.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
           "130": ("13.0.1", "https://developer.download.nvidia.com/compute/cuda/13.0.1/local_installers/cuda_13.0.1_580.82.07_linux.run"),
