@@ -53,7 +53,7 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      uses: Jimver/cuda-toolkit@v0.2.27
+      uses: Jimver/cuda-toolkit@v0.2.28
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
