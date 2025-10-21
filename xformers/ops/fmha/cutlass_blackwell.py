@@ -222,7 +222,7 @@ class FwOp(AttentionFwOpBase):
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.bfloat16, torch.float16}
     SUPPORTED_MAX_K = 128
-    SUPPORTED_MIN_K = 128
+    SUPPORTED_MIN_K = 64
     SUPPORTED_ATTN_BIAS_TYPES: Iterable[Any] = (
         type(None),
         LowerTriangularMask,
@@ -250,7 +250,7 @@ class FwOp(AttentionFwOpBase):
     CUDA_MINIMUM_COMPUTE_CAPABILITY = (10, 0)
     NAME = "cutlassF-blackwell"
 
-    _TEST_K: List[int] = [128]
+    _TEST_K: List[int] = [64, 128]
 
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
@@ -280,7 +280,7 @@ class FwOp(AttentionFwOpBase):
         cls, Mq: int, Mkv: int, K: int, Kv: int
     ) -> List[str]:
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if K != 128 or Kv != 128:
+        if K not in [64, 128] or Kv not in [64, 128]:
             reasons.append(f"Embed dim {K} not supported")
         elif Mkv != 0 and Mq > Mkv:
             reasons.append(f"Only support Mq ({Mq}) <= Mk ({Mkv})")
@@ -395,7 +395,7 @@ class BwOp(AttentionBwOpBase):
         cls, Mq: int, Mkv: int, K: int, Kv: int
     ) -> List[str]:
         reasons = super().shape_not_supported_reasons(Mq, Mkv, K, Kv)
-        if K != 128:
+        if K not in [64, 128]:
             reasons.append(f"Embed dim {K} not supported")
         elif Mkv != 0 and Mq > Mkv:
             reasons.append(f"Only support Mq ({Mq}) <= Mk ({Mkv})")
