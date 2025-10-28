@@ -492,6 +492,12 @@ def get_extensions():
         cuda_version = get_cuda_version(CUDA_HOME)
         extension = CUDAExtension
         sources += source_cuda
+        if cuda_version < 1205:
+            # swiglu_fairinternal.cu uses cuda::ptx::cp_async_bulk which requires
+            # CUDA 12.5
+            sources.remove(
+                os.path.join(extensions_dir, "swiglu_fairinternal.cu")
+            )
         include_dirs += [
             sputnik_dir,
             cutlass_dir,
