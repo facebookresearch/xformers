@@ -36,14 +36,14 @@ set_target_properties(${exe_name} ${splitk_exe_name} PROPERTIES LINKER_LANGUAGE 
 set_target_properties(${exe_name} ${splitk_exe_name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set_target_properties(${exe_name} ${splitk_exe_name} PROPERTIES HIP_ARCHITECTURES ${GPU_TARGETS})
 
-target_compile_options(${exe_name} PUBLIC 
+target_compile_options(${exe_name} PUBLIC
   -fno-gpu-rdc
   $<$<CONFIG:Debug>:
   --save-temps
   >
 )
 
-target_compile_options(${splitk_exe_name} PUBLIC 
+target_compile_options(${splitk_exe_name} PUBLIC
   -fno-gpu-rdc
   $<$<CONFIG:Debug>:
   --save-temps
@@ -52,13 +52,13 @@ target_compile_options(${splitk_exe_name} PUBLIC
   >
 )
 
-target_include_directories(${exe_name} PUBLIC 
+target_include_directories(${exe_name} PUBLIC
   ${ck_include}                           # ck includes
   ${torch_include}                        # aten includes
   ${torch_include}/torch/csrc/api/include # torch includes
 )
 
-target_include_directories(${splitk_exe_name} PUBLIC 
+target_include_directories(${splitk_exe_name} PUBLIC
   ${ck_include}                           # ck includes
   ${torch_include}                        # aten includes
   ${torch_include}/torch/csrc/api/include # torch includes
@@ -93,14 +93,14 @@ target_link_libraries(${splitk_exe_name} PUBLIC
   amdhip64
 )
 
-target_compile_definitions(${exe_name} PUBLIC 
+target_compile_definitions(${exe_name} PUBLIC
   ATTN_FWD_DECODER_MAIN=1
   GLIBCXX_USE_CXX11_ABI=1
   __HIP_PLATFORM_HCC__=1
   USE_ROCM=1
 )
 
-target_compile_definitions(${splitk_exe_name} PUBLIC 
+target_compile_definitions(${splitk_exe_name} PUBLIC
   ATTN_FWD_SPLITK_DECODER_MAIN=1
   GLIBCXX_USE_CXX11_ABI=1
   __HIP_PLATFORM_HCC__=1
@@ -108,11 +108,11 @@ target_compile_definitions(${splitk_exe_name} PUBLIC
 )
 
 include(CMakePrintHelpers)
-cmake_print_properties(TARGETS ${exe_name} ${splitk_exe_name} PROPERTIES 
-  LINK_LIBRARIES 
-  LINK_DIRECTORIES 
-  INCLUDE_DIRECTORIES 
-  COMPILE_DEFINITIONS 
+cmake_print_properties(TARGETS ${exe_name} ${splitk_exe_name} PROPERTIES
+  LINK_LIBRARIES
+  LINK_DIRECTORIES
+  INCLUDE_DIRECTORIES
+  COMPILE_DEFINITIONS
   COMPILE_OPTIONS
   SOURCES
   HIP_ARCHITECTURES)

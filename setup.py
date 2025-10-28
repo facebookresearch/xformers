@@ -285,7 +285,10 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
-        if torch.cuda.get_device_capability("cuda") != (9, 0) and torch.cuda.get_device_capability("cuda") != (8, 0):
+        if torch.cuda.get_device_capability("cuda") != (
+            9,
+            0,
+        ) and torch.cuda.get_device_capability("cuda") != (8, 0):
             return []
         archs_list = "8.0 9.0a"
     nvcc_archs_flags = []

@@ -71,5 +71,3 @@ xformers/csrc/attention/hip_fmha/instances/*_hip.h
 xformers/csrc/attention/hip_decoder/*.cu
 xformers/csrc/attention/hip_decoder/*.hip
 xformers/csrc/attention/hip_decoder/*_hip.h
-
-

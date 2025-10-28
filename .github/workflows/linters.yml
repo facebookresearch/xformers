@@ -7,4 +7,3 @@ on:
 jobs:
   repo:
     uses: ./.github/workflows/linters_reusable.yml
-
