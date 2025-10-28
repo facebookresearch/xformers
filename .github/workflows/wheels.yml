@@ -29,8 +29,8 @@ jobs:
         environ = os.environ
 
         # All builds are python-version agnostic,
-        # and built with python 3.9
-        PYTHON_VERSION = "3.9"
+        # and built with python 3.10
+        PYTHON_VERSION = "3.10"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
         CU_VERSIONS = ['126', '129', '130']
