@@ -57,6 +57,7 @@ runs:
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
+        use-github-cache: false
     - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       shell: bash
       run: |
