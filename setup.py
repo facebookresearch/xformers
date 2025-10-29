@@ -162,12 +162,15 @@ def get_hip_version(rocm_dir) -> Optional[str]:
 
 def detect_hipify_v2():
     try:
-        from torch.utils.hipify import __version__
         from packaging.version import Version
+        from torch.utils.hipify import __version__
+
         if Version(__version__) >= Version("2.0.0"):
             return True
     except Exception as e:
-        print("failed to detect pytorch hipify version, defaulting to version 1.0.0 behavior")
+        print(
+            "failed to detect pytorch hipify version, defaulting to version 1.0.0 behavior"
+        )
         print(e)
     return False
 
@@ -515,9 +518,7 @@ def get_extensions():
         if cuda_version < 1205:
             # swiglu_fairinternal.cu uses cuda::ptx::cp_async_bulk which requires
             # CUDA 12.5
-            sources.remove(
-                os.path.join(extensions_dir, "swiglu_fairinternal.cu")
-            )
+            sources.remove(os.path.join(extensions_dir, "swiglu_fairinternal.cu"))
         include_dirs += [
             sputnik_dir,
             cutlass_dir,
