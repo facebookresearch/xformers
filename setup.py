@@ -175,7 +175,6 @@ def get_flash_attention2_nvcc_archs_flags(cuda_version: int):
     if platform.system() != "Linux" and cuda_version < 1200:
         return []
     # Figure out default archs to target
-    DEFAULT_ARCHS_LIST = ""
     if cuda_version >= 1208:
         DEFAULT_ARCHS_LIST = "8.0;8.6;9.0;10.0;12.0"
     elif cuda_version >= 1108:
@@ -283,7 +282,7 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
-        if torch.cuda.get_device_capability("cuda") != (9, 0):
+        if torch.cuda.get_device_capability("cuda") != (9, 0) and torch.cuda.get_device_capability("cuda") != (8, 0):
             return []
         archs_list = "8.0 9.0a"
     nvcc_archs_flags = []
@@ -519,7 +518,7 @@ def get_extensions():
         if cuda_version >= 1102:
             nvcc_flags += [
                 "--threads",
-                "4",
+                os.getenv("NVCC_THREADS", "5"),
                 "--ptxas-options=-v",
             ]
         if sys.platform == "win32":
