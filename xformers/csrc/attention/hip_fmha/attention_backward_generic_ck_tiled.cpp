@@ -112,7 +112,11 @@ efficient_attention_backward_ck(
     TORCH_CHECK(max_seqlen_k_.has_value());
   }
 
+#ifdef HIPIFY_V2
+  hipStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
+#else
   hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
+#endif
 
   int64_t B = query.size(0);
   int64_t M = query.size(1);

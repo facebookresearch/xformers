@@ -160,6 +160,18 @@ def get_hip_version(rocm_dir) -> Optional[str]:
     return None
 
 
+def detect_hipify_v2():
+    try:
+        from torch.utils.hipify import __version__
+        from packaging.version import Version
+        if Version(__version__) >= Version("2.0.0"):
+            return True
+    except Exception as e:
+        print("failed to detect pytorch hipify version, defaulting to version 1.0.0 behavior")
+        print(e)
+    return False
+
+
 ######################################
 # FLASH-ATTENTION v2
 ######################################
@@ -605,6 +617,8 @@ def get_extensions():
         use_rtn_bf16_convert = os.getenv("ENABLE_HIP_FMHA_RTN_BF16_CONVERT", "0")
         if use_rtn_bf16_convert == "1":
             cc_flag += ["-DCK_TILE_FLOAT_TO_BFLOAT16_DEFAULT=3"]
+        if detect_hipify_v2():
+            cc_flag += ["-DHIPIFY_V2"]
 
         arch_list = os.getenv("HIP_ARCHITECTURES", "native").split()
 
