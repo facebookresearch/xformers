@@ -171,6 +171,8 @@ def _rope_padded_kernel(
     for offset in range(0, dim // 2, BLOCK_SIZE // 2):
         c = tl.arange(0, BLOCK_SIZE // 2)
         powers = (offset + c) * 2.0
+        if internal_dtype == "f64":
+            powers = powers.to(tl.float64)
         if adjacents:
             cols_re = (offset + c) * 2
             cols_im = cols_re + 1
