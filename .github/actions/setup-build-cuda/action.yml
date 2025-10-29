@@ -53,11 +53,11 @@ runs:
     - name: Install cuda
       if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       id: cuda-toolkit
-      uses: Jimver/cuda-toolkit@v0.2.28
+      # Using N-Storm fork until https://github.com/Jimver/cuda-toolkit/issues/395 is resolved
+      uses: N-Storm/cuda-toolkit@v0.2.28
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
-        use-github-cache: false
     - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
       shell: bash
       run: |
