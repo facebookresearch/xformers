@@ -1076,6 +1076,7 @@ def merge_attentions(
 
     num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
     splitK_pow2 = triton.next_power_of_2(split_k)
+    head_dim = attn_out.shape[-1]
     grid = (M, B * G * H, 1)
     _splitK_reduce[grid](
         attn_split,
@@ -1088,7 +1089,8 @@ def merge_attentions(
         **_strides(lse_split, "lsek_z", "lsek_g", "lsek_h", "lsek_s", "lsek_m"),
         **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
         **_strides(lse_out, "lse_z", "lse_g", "lse_h", "lse_m"),
-        BLOCK_SIZE=attn_out.shape[-1],
+        head_dim=head_dim,
+        head_dim_pow_2=triton.next_power_of_2(head_dim),
         G=G,
         H=H,
         WRITE_LSE=lse_out is not None,
@@ -1112,6 +1114,8 @@ def merge_attentions_varargs(
     H: int,
     Kq: int,
 ) -> List[torch.Tensor]:
+    import triton
+
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
@@ -1133,13 +1137,15 @@ def merge_attentions_varargs(
         attn_out, lse_out, attn_split, lse_split
     )
     reduce_kernel = unroll_varargs(_splitK_reduce_varargs, N=len(attn_split))
+    head_dim = attn_out.shape[-1]
     reduce_kernel[grid](
         *attn_split,
         *lse_split,
         Out=attn_out,
         LSE=lse_out,
         **kernel_args,
-        BLOCK_SIZE=attn_out.shape[-1],
+        head_dim=head_dim,
+        head_dim_pow_2=triton.next_power_of_2(head_dim),
         WRITE_LSE=lse_out is not None,
     )
     if write_lse:

@@ -89,7 +89,9 @@ def test_merge_attentions_nobias(
     """
     if op is fmha.flash3.FwOp and not op.is_available():
         pytest.skip("Flash3 not available")
-    B, Mq, K = 13, 3, 128
+    B, Mq, K = 13, 3, 192
+    if op is fmha.triton_splitk.FwOp:
+        K = 128
     case_name = str((write_lse, G, H, stack_inputs)).encode("ascii")
     many_keys = hashlib.md5(case_name).digest()[0] % 2
     M = [5, 100000][many_keys]

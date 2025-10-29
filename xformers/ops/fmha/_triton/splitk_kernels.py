@@ -932,7 +932,8 @@ def _splitK_reduce(
     stride_lse_g: tl.constexpr,
     stride_lse_h: tl.constexpr,
     stride_lse_m: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
+    head_dim: tl.constexpr,
+    head_dim_pow_2: tl.constexpr,
     H: tl.constexpr,
     G: tl.constexpr,
     WRITE_LSE: tl.constexpr,
@@ -944,13 +945,15 @@ def _splitK_reduce(
     off_h = (off_zhg // G) % H
     off_g = off_zhg % G
 
+    head_dim_mask = tl.arange(0, head_dim_pow_2) < head_dim
+
     Out_splitK_ptr = (
         Out_splitK
         + stride_osk_z * off_z
         + stride_osk_g * off_g
         + stride_osk_h * off_h
         + stride_osk_m * off_m
-        + tl.arange(0, BLOCK_SIZE)[None, :]
+        + tl.arange(0, head_dim_pow_2)[None, :]
         + stride_osk_s * tl.arange(0, splitK_pow2)[:, None]
     )
 
@@ -965,12 +968,12 @@ def _splitK_reduce(
 
     if splitK_pow2 > split_k:
         mask_1d = tl.arange(0, splitK_pow2) < split_k
-        mask_2d = mask_1d[:, None]
+        mask_2d = mask_1d[:, None] & head_dim_mask[None, :]
         lse_splitk = tl.load(LSE_splitK_ptr0, mask=mask_1d, other=float("-inf"))
         lse_max = tl.max(lse_splitk)
         out_splitk = tl.load(
             Out_splitK_ptr, mask=mask_2d, other=0
-        )  # (split_k, BLOCK_SIZE)
+        )  # (split_k, head_dim_pow_2)
         lse_splitk = tl.load(
             LSE_splitK_ptr0, mask=mask_1d, other=float("-inf")
         )  # (split_k,)
@@ -997,12 +1000,12 @@ def _splitK_reduce(
         + stride_oh * off_h
         + stride_og * off_g
         + stride_om * off_m
-        + tl.arange(0, BLOCK_SIZE)
+        + tl.arange(0, head_dim_pow_2)
     )
     if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
         # must avoid direct cast f64->f16
         acc = acc.to(tl.float32)
-    tl.store(Out_ptr, acc)
+    tl.store(Out_ptr, acc, mask=head_dim_mask)
 
     if WRITE_LSE:
         l_ptrs = (
@@ -1041,7 +1044,8 @@ def _splitK_reduce_varargs(
     stride_lse_g,
     stride_lse_h,
     stride_lse_m,
-    BLOCK_SIZE: tl.constexpr,
+    head_dim: tl.constexpr,
+    head_dim_pow_2: tl.constexpr,
     H: tl.constexpr,
     G: tl.constexpr,
     WRITE_LSE: tl.constexpr,
@@ -1056,6 +1060,7 @@ def _splitK_reduce_varargs(
     off_z = off_zhg // (H * G)
     off_h = (off_zhg // G) % H
     off_g = off_zhg % G
+    head_dim_mask = tl.arange(0, head_dim_pow_2) < head_dim
 
     out_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
     for i in range(len(Out_splitK)):
@@ -1064,7 +1069,7 @@ def _splitK_reduce_varargs(
             + stride_osk_g[i] * off_g
             + stride_osk_h[i] * off_h
             + stride_osk_m[i] * off_m
-            + tl.arange(0, BLOCK_SIZE)
+            + tl.arange(0, head_dim_pow_2)
         )
     lse_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
     for i in range(len(Out_splitK)):
@@ -1082,10 +1087,12 @@ def _splitK_reduce_varargs(
         lse_max = tl.maximum(lse_max, lse_splitk)
 
     sumexp_normalized = 0.0
-    numerator_normalized = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+    numerator_normalized = tl.zeros([head_dim_pow_2], dtype=tl.float32)
 
     for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
-        out_splitk = tl.load(Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
+        out_splitk = tl.load(
+            Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx], mask=head_dim_mask  # type: ignore # noqa: F821
+        )
         lse_splitk = tl.load(LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
         # Compute denominator
         sumexp_normalized_splitk = tl.math.exp2(
@@ -1105,12 +1112,12 @@ def _splitK_reduce_varargs(
         + stride_oh * off_h
         + stride_og * off_g
         + stride_om * off_m
-        + tl.arange(0, BLOCK_SIZE)
+        + tl.arange(0, head_dim_pow_2)
     )
     if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
         # must avoid direct cast f64->f16
         acc = acc.to(tl.float32)
-    tl.store(Out_ptr, acc)
+    tl.store(Out_ptr, acc, mask=head_dim_mask)
 
     if WRITE_LSE:
         l_ptrs = (
