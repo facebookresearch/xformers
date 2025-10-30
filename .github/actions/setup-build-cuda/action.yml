@@ -27,7 +27,7 @@ runs:
         TORCH_CUDA_DEFAULT = "130"  # since pytorch 2.9.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
-          "130": ("13.0.2", "https://developer.download.nvidia.com/compute/cuda/13.0.2/local_installers/cuda_13.0.2_580.95.05_linux.run"),
+          "130": ("13.0.1", "https://developer.download.nvidia.com/compute/cuda/13.0.1/local_installers/cuda_13.0.1_580.82.07_linux.run"),
           "129": ("12.9.0", "https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run"),
           "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
           # (Build with nvcc 12.8 on linux even when building for 12.6 to avoid seg fault in Flash3 build)
