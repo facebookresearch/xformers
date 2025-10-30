@@ -283,6 +283,8 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         return []
     if cuda_version < 1203:
         return []
+    if cuda_version >= 1300:
+        return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
         if torch.cuda.get_device_capability("cuda") != (
@@ -299,20 +301,9 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         if num not in [80, 90]:  # only support Sm80/Sm90
             continue
         suffix = match.group("suffix")
-        # On Windows, avoid assembling SASS for sm_90a due to nvcc/ptxas instability.
-        # Emit PTX for 90a and let the driver JIT at runtime.
-        if (
-            (sys.platform == "win32" or platform.system() == "Windows")
-            and num == 90
-            and suffix == "a"
-        ):
-            nvcc_archs_flags.append(
-                f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
-            )
-        else:
-            nvcc_archs_flags.append(
-                f"-gencode=arch=compute_{num}{suffix},code=sm_{num}{suffix}"
-            )
+        nvcc_archs_flags.append(
+            f"-gencode=arch=compute_{num}{suffix},code=sm_{num}{suffix}"
+        )
         if match.group("ptx") is not None:
             nvcc_archs_flags.append(
                 f"-gencode=arch=compute_{num}{suffix},code=compute_{num}{suffix}"
