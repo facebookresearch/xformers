@@ -283,7 +283,8 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         return []
     if cuda_version < 1203:
         return []
-    if cuda_version >= 1300:
+if ((sys.platform == "win32" or platform.system() == "Windows")
+    and cuda_version >= 1300):
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
