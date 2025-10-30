@@ -61,8 +61,8 @@ jobs:
         uses: ./.github/actions/setup-build-cuda
         with:
           toolkit_type: "cuda"
-          toolkit_short_version: "128"
-          python: "3.9"
+          toolkit_short_version: "130"
+          python: "3.10"
 
       - name: Remove internal code
         run: |
@@ -73,7 +73,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.8.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu126
+          $PY -m pip install wheel setuptools ninja torch==2.9.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"

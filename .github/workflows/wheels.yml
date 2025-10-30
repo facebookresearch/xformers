@@ -29,16 +29,16 @@ jobs:
         environ = os.environ
 
         # All builds are python-version agnostic,
-        # and built with python 3.9
-        PYTHON_VERSION = "3.9"
+        # and built with python 3.10
+        PYTHON_VERSION = "3.10"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['126', '128', '129']
+        CU_VERSIONS = ['126', '129', '130']
         ROCM_VERSIONS = ['6.4']
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
-          for torch_version in ['2.8.0']:
+          for torch_version in ['2.9.0']:
             # CUDA builds
             for cuda_short_version in CU_VERSIONS:
               if cuda_short_version < "124" and "windows" in os:
@@ -88,7 +88,7 @@ jobs:
     uses: ./.github/workflows/wheels_upload_pip.yml
     with:
       twine_username: __token__
-      filter: "*torch2.8.0+cu128*"
+      filter: "*torch2.9.0+cu130*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
@@ -100,13 +100,13 @@ jobs:
       matrix:
         suffix:
           - cu126
-          - cu128
           - cu129
+          - cu130
           - rocm6.4
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
       s3_path: s3://pytorch/whl/${{ matrix.suffix }}/
       aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.8.0+${{ matrix.suffix }}*"
+      filter: "*torch2.9.0+${{ matrix.suffix }}*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}

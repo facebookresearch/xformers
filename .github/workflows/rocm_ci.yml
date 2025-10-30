@@ -1,6 +1,6 @@
 name: rocm-ci
 
-on: 
+on:
   pull_request:
     types: [labeled, synchronize, reopened]
   workflow_dispatch: {}
@@ -43,23 +43,23 @@ jobs:
 
         export GIT_BRANCH=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
         echo GIT_BRANCH        = $GIT_BRANCH
-        
+
         export ROCM_PATH=/opt/rocm
         echo ROCM_PATH         = $ROCM_PATH
 
         hipcc --version
         rocm-smi
         rocminfo | grep "gfx"
-        
+
     - name: Setup build env
       run: |
         conda create -n xformers python=3.11
         export PATH=/opt/conda/envs/xformers/bin:$PATH
         python -VV
-        
+
         python -m pip install -U torch --index-url=https://download.pytorch.org/whl/rocm6.2
         python -c "import torch; print(f'PyTorch version {torch.__version__}')"
-        
+
         python -m pip install ninja scipy pytest pytest-html
 
     - name: Pre-build clean
@@ -72,16 +72,16 @@ jobs:
       run: |
         export PATH=/opt/conda/envs/xformers/bin:$PATH
         export MAX_JOBS=20
-        
+
         python -m pip install -e ./_xformers --verbose
         python -m xformers.info
 
     - name: Run python tests
       run: |
         export PATH=/opt/conda/envs/xformers/bin:$PATH
-        
+
         python -m pytest --html=test_mem_eff_attention.html --self-contained-html -rpfs ./_xformers/tests/test_mem_eff_attention.py
-    
+
     - name: Archive logs
       if: '!cancelled()'
       uses: actions/upload-artifact@v4
