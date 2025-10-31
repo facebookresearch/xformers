@@ -82,6 +82,9 @@ def _get_seqlen_info(
 
     if isinstance(attn_bias, PagedBlockDiagonalGappyKeysMask):
         seqstart_k = attn_bias.k_seqinfo.seqstart[:-1]
+        assert (
+            seqlen is not None
+        ), "seqlen must not be None for PagedBlockDiagonalGappyKeysMask"
         seqlen = seqlen - seqstart_k
 
     return seqstart_k, seqstart_q, seqlen, max_seqlen_q, max_seqlen_k

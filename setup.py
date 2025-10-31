@@ -283,8 +283,9 @@ def get_flash_attention3_nvcc_archs_flags(cuda_version: int):
         return []
     if cuda_version < 1203:
         return []
-    if ((sys.platform == "win32" or platform.system() == "Windows")
-        and cuda_version >= 1300):
+    if (
+        sys.platform == "win32" or platform.system() == "Windows"
+    ) and cuda_version >= 1300:
         return []
     archs_list = os.environ.get("TORCH_CUDA_ARCH_LIST")
     if archs_list is None:
@@ -503,9 +504,7 @@ def get_extensions():
         if cuda_version < 1205:
             # swiglu_fairinternal.cu uses cuda::ptx::cp_async_bulk which requires
             # CUDA 12.5
-            sources.remove(
-                os.path.join(extensions_dir, "swiglu_fairinternal.cu")
-            )
+            sources.remove(os.path.join(extensions_dir, "swiglu_fairinternal.cu"))
         include_dirs += [
             sputnik_dir,
             cutlass_dir,
