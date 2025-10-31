@@ -82,7 +82,7 @@ def _get_seqlen_info(
 
     if isinstance(attn_bias, PagedBlockDiagonalGappyKeysMask):
         seqstart_k = attn_bias.k_seqinfo.seqstart[:-1]
-        seqlen = seqlen - seqstart_k
+        seqlen = seqlen - seqstart_k  # type: ignore
 
     return seqstart_k, seqstart_q, seqlen, max_seqlen_q, max_seqlen_k
 
