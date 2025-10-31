@@ -407,6 +407,19 @@ def rename_cpp_cu(cpp_files):
         shutil.copy(entry, os.path.splitext(entry)[0] + ".cu")
 
 
+def should_use_pt_flash(xformers_pt_flash_attn: Optional[str]) -> bool:
+    if xformers_pt_flash_attn is None:
+        try:
+            attn_compat_module.ensure_pt_flash_ok()
+            return True
+        except ImportError:
+            return False
+    if xformers_pt_flash_attn == "1":
+        attn_compat_module.ensure_pt_flash_ok()
+        return True
+    return False
+
+
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
@@ -554,12 +567,9 @@ def get_extensions():
         else:
             # By default, we try to link to torch internal flash attention implementation
             # and silently switch to local flash attention build if no compatibility
-            # If we force 'torch FA switch' then setup will fail when no compatibility
-            if (
-                xformers_pt_flash_attn is None or xformers_pt_flash_attn == "1"
-            ) and attn_compat_module.is_pt_flash_old(
-                force=xformers_pt_flash_attn == "1"
-            ) is not None:
+            # If XFORMERS_PT_FLASH_ATTN set to 1 then fail when no compatibility
+            # If XFORMERS_PT_FLASH_ATTN set to 0 then we will only try local build
+            if should_use_pt_flash(xformers_pt_flash_attn):
                 use_pt_flash = True
             else:
                 ext_modules += get_flash_attention2_extensions(
