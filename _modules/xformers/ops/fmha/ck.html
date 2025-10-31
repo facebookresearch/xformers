@@ -297,7 +297,7 @@
 
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">attn_bias</span><span class="p">,</span> <span class="n">PagedBlockDiagonalGappyKeysMask</span><span class="p">):</span>
         <span class="n">seqstart_k</span> <span class="o">=</span> <span class="n">attn_bias</span><span class="o">.</span><span class="n">k_seqinfo</span><span class="o">.</span><span class="n">seqstart</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">seqlen</span> <span class="o">-</span> <span class="n">seqstart_k</span>
+        <span class="n">seqlen</span> <span class="o">=</span> <span class="n">seqlen</span> <span class="o">-</span> <span class="n">seqstart_k</span>  <span class="c1"># type: ignore</span>
 
     <span class="k">return</span> <span class="n">seqstart_k</span><span class="p">,</span> <span class="n">seqstart_q</span><span class="p">,</span> <span class="n">seqlen</span><span class="p">,</span> <span class="n">max_seqlen_q</span><span class="p">,</span> <span class="n">max_seqlen_k</span>
 
