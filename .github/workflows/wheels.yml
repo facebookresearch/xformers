@@ -33,7 +33,7 @@ jobs:
         PYTHON_VERSION = "3.10"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['126', '129', '130']
+        CU_VERSIONS = ['126', '128', '130']
         ROCM_VERSIONS = ['6.4']
 
         include = []
@@ -100,7 +100,7 @@ jobs:
       matrix:
         suffix:
           - cu126
-          - cu129
+          - cu128
           - cu130
           - rocm6.4
     uses: ./.github/workflows/wheels_upload_s3.yml
