@@ -25,7 +25,7 @@ xFormers is:
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.8.0](https://pytorch.org/get-started/locally/)
+* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.9.0](https://pytorch.org/get-started/locally/)
 
 ```bash
 # [linux & win] cuda 12.6 version

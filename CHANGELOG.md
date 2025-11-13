@@ -4,7 +4,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.33] - 2025-??-??
+## [0.0.34] - 2025-??-??
+
+
+## [0.0.33] - 2025-11-12
+Pre-built binary wheels are available for PyTorch 2.9.0.
+
+### Added
+- cutlass fmha Op for Blackwell GPUs
+- Support flash-attention package up to 2.8.3
+- expose FA3 deterministic mode
+- FW+BW pass overlap for DeepSeek-like comms/compute overlap
+
+### Improved
+- merge_attentions support for irregular head dimension
+
 
 ## [0.0.32] - 2025-08-13
 Pre-built binary wheels are available for PyTorch 2.8.0.
