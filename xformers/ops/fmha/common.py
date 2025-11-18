@@ -460,7 +460,7 @@ class AttentionOpBase(BaseOperator):
             device_capability = torch.cuda.get_device_capability(d.device)
             if device_capability < cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
                 reasons.append(
-                    f"requires device with capability > {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+                    f"requires device with capability >= {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
                     f"but your GPU has capability {device_capability} (too old)"
                 )
             elif (
@@ -468,7 +468,7 @@ class AttentionOpBase(BaseOperator):
                 and device_capability > cls.CUDA_MAXIMUM_COMPUTE_CAPABILITY
             ):
                 reasons.append(
-                    f"requires device with capability < {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
+                    f"requires device with capability <= {cls.CUDA_MAXIMUM_COMPUTE_CAPABILITY} "
                     f"but your GPU has capability {device_capability} (too new)"
                 )
         if dtype not in cls.SUPPORTED_DTYPES:
