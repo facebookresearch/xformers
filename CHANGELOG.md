@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.34] - 2025-??-??
 
+### Removed
+- Removed optimized fast-path of SwiGLU (which was only available for A100 GPUs)
 
 ## [0.0.33] - 2025-11-12
 Pre-built binary wheels are available for PyTorch 2.9.0.

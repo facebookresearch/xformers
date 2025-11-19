@@ -79,16 +79,6 @@ COMPONENTS = [
             "xformers/ops/sequence_parallel_fused_ops.py",
         ],
     ),
-    ComponentInfo(
-        name="swiglu",
-        files=[
-            "tests/test_swiglu.py",
-            "xformers/csrc/swiglu/*",
-        ],
-        dependencies=[
-            "xformers/ops/swiglu_op.py",
-        ],
-    ),
 ]
 
 repo_root_path = Path(__file__).parent.parent.parent.resolve().absolute()

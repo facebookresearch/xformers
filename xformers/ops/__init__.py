@@ -33,15 +33,7 @@ from .sequence_parallel_fused_ops import (
     fused_linear_and_reducescatter,
 )
 from .sp24 import Sparse24Tensor, sparsify24, sparsify24_like
-from .swiglu_op import (
-    SwiGLU,
-    swiglu,
-    SwiGLUEagerOp,
-    SwiGLUFusedOp,
-    SwiGLUOp,
-    SwiGLUOpDispatch,
-    SwiGLUPackedFusedOp,
-)
+from .swiglu_op import SwiGLU, swiglu, SwiGLUEagerOp, SwiGLUOp, SwiGLUOpDispatch
 from .tiled_matmul import tiled_matmul
 from .unbind import get_stack_strides, stack_or_none, unbind
 
@@ -108,10 +100,8 @@ __all__ = [
     # swiglu_op
     "SwiGLU",
     "SwiGLUEagerOp",
-    "SwiGLUFusedOp",
     "SwiGLUOp",
     "SwiGLUOpDispatch",
-    "SwiGLUPackedFusedOp",
     "swiglu",
     # tiled_matmul
     "tiled_matmul",
