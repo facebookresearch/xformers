@@ -145,8 +145,8 @@ class Partial:
         fn must expect tensors of shape BMGHK or BMHK, but cannot actually
         manipulate the K dimension (because the LSE doesn't have one).
 
-        slice and pad are examples of how to use this. See also an undilation in
-        a test case.
+        For example, to slice on the sequence dimension, you might apply
+        `lambda x: x[:, start:end]`.
         """
         attn = fn(self._attn)
         if self.is_bmghk():
@@ -160,19 +160,6 @@ class Partial:
 
     def _tuple(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         return self._attn, self._lse, self._placeholder
-
-    def do_slice(self, start: int, end: int) -> "Partial":
-        """
-        slice on sequence dim
-        """
-        return self.apply(lambda x: x[:, start:end])
-
-    def pad(self, left: int, right: int) -> "Partial":
-        """
-        pad on sequence dim
-        """
-        pad2 = (0, 0) * (3 if self.is_bmghk() else 2) + (left, right)
-        return self.apply(lambda x: torch.nn.functional.pad(x, pad2))
 
 
 def memory_efficient_attention_partial_autograd(

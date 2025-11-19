@@ -14,6 +14,7 @@ from xformers.ops.fmha.common import AttentionFwOpBase
 from xformers.ops.fmha.merge_training import (
     memory_efficient_attention_partial_autograd,
     merge_attentions_autograd,
+    Partial,
 )
 
 from .utils import assert_allclose, disable_on_rocm
@@ -624,6 +625,15 @@ def test_merge_training():
     assert_allclose(v_grad_, v_grad, rtol=0.1, atol=0.9, msg="dv")
 
 
+def _pad_seqdim(partial: Partial, left: int, right: int) -> Partial:
+    padding = (0, 0) * (3 if partial.is_bmghk() else 2) + (left, right)
+    return partial.apply(lambda x: torch.nn.functional.pad(x, padding))
+
+
+def _slice(partial: Partial, a: int, b: int) -> Partial:
+    return partial.apply(lambda x: x[:, a:b])
+
+
 @sm80_or_better_only
 def test_merge_training_compile():
     torch.manual_seed(1)
@@ -644,8 +654,8 @@ def test_merge_training_compile():
         v2 = v[:, M // 2 :]
         partial1 = memory_efficient_attention_partial_autograd(q, k1, v1)
         partial2 = memory_efficient_attention_partial_autograd(q, k2, v2)
-        partial2 = partial2.pad(2, 3).pad(-2, -3)
-        partial2 = partial2.pad(2, 3).do_slice(2, -3)
+        partial2 = _pad_seqdim(_pad_seqdim(partial2, 2, 3), -2, -3)
+        partial2 = _slice(_pad_seqdim(partial2, 2, 3), 2, -3)
         merged = merge_attentions_autograd(partial1, partial2)
         return merged.sum()
 
