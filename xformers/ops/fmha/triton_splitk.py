@@ -335,7 +335,15 @@ class FwOp(AttentionFwOpBase):
 
     @classmethod
     def get_split_k(
-        cls, B: int, G: int, H: int, Mk: int, Mq: int, page_size: int, is_paged=False
+        cls,
+        B: int,
+        G: int,
+        H: int,
+        Mk: int,
+        Mq: int,
+        page_size: int,
+        is_paged=False,
+        is_fp8=False,
     ) -> int:
         """Heuristic for the number of splits"""
         bh = max(B * H, 1)  # NOTE: Handle B*h=0 case
@@ -352,7 +360,7 @@ class FwOp(AttentionFwOpBase):
             split_size = (Mk + split_k - 1) // max(split_k, 1)
 
             chunk_size = split_size // max_chunk_size * max_chunk_size
-            if chunk_size < split_size:
+            if chunk_size < split_size and (not is_fp8):
                 split_k += 1
 
             split_k_upper_bound = 512
@@ -402,14 +410,23 @@ class FwOp(AttentionFwOpBase):
         v_fp8_scale_shift = inp_.v_fp8_scale_shift
         assert k_fp8_scale_shift is not None
         assert v_fp8_scale_shift is not None
-        if k_fp8_scale_shift.ndim == 3:
-            return k_fp8_scale_shift.unsqueeze(2), v_fp8_scale_shift.unsqueeze(2)
-        if k_fp8_scale_shift.ndim == 4:
+
+        if k_fp8_scale_shift.dtype == torch.int32:
+            if k_fp8_scale_shift.ndim == 3:
+                return k_fp8_scale_shift.unsqueeze(2), v_fp8_scale_shift.unsqueeze(2)
+            if k_fp8_scale_shift.ndim == 4:
+                return k_fp8_scale_shift, v_fp8_scale_shift
+            raise ValueError(
+                "FP8 scales have to be provided in BMH or BMGH format, "
+                f"but got {k_fp8_scale_shift.shape=}"
+            )
+        elif k_fp8_scale_shift is not None and k_fp8_scale_shift.dtype == torch.float16:
             return k_fp8_scale_shift, v_fp8_scale_shift
-        raise ValueError(
-            "FP8 scales have to be provided in BMH or BMGH format, "
-            f"but got {k_fp8_scale_shift.shape=}"
-        )
+        else:
+            raise ValueError(
+                "FP8 scales needs to be either data type fp16 or int32 (packed)"
+            )
+
 
     @classmethod
     def get_extra_args(
@@ -526,13 +543,13 @@ class FwOp(AttentionFwOpBase):
                             # Note: This isn't benchmarked, but fp8 seems to scale well.
                             BLOCK_N = 64
                             num_warps = 1
-                            num_stages = 1
+                            num_stages = 2
                         else:
                             BLOCK_N = 128
                             num_warps = 1
                             num_stages = 1
                 elif B <= 128 and use_fp8_path:
-                    num_stages = 1
+                    num_stages = 2
                     if is_paged:
                         if mkv <= 256:
                             num_warps = 4
@@ -576,8 +593,8 @@ class FwOp(AttentionFwOpBase):
                             BLOCK_N = 64
                 else:
                     num_warps = 1
-                    num_stages = 1
-                    BLOCK_N = 64
+                    num_stages = 2
+                    BLOCK_N = 16
             else:
                 should_modify_warp_and_block = (
                     Kkv == 128
@@ -599,6 +616,7 @@ class FwOp(AttentionFwOpBase):
                 "BLOCK_N": BLOCK_N,
                 "num_warps": num_warps,
                 "num_stages": num_stages,
+                "schedule_hint": "iterative-ilp-scheduler",
             }
         return extra_args
 
@@ -634,6 +652,9 @@ class FwOp(AttentionFwOpBase):
             return out, None
 
         k_fp8_scale_shift, v_fp8_scale_shift = cls.get_fp8_scale_shift(inp)
+        IS_PACKED = (k_fp8_scale_shift is not None) and (
+            k_fp8_scale_shift.dtype == torch.int32
+        )
 
         if not isinstance(inp.attn_bias, torch.Tensor):
             attn_bias_tensor = None
@@ -707,13 +728,28 @@ class FwOp(AttentionFwOpBase):
             k = k.view(kv_shape)
             v = v.view(kv_shape)
             if k_fp8_scale_shift is not None and v_fp8_scale_shift is not None:
-                k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
-                v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+                if IS_PACKED:
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+                else:
+                    kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
 
             Mq = q.shape[1]
             NUM_QUERIES_CAUSAL = Mq
         else:
             B, Mq, G, Hq, Kq = q.shape
+            if k_fp8_scale_shift is not None and k_fp8_scale_shift.dtype == torch.float16:
+                if IS_PACKED:
+                    Kkv = v.shape[-1]
+                    kv_shape = (1 if is_paged or is_gappy else B, -1, G, Hq, Kkv)
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
+                else:
+                    kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
+                    v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
 
         if attn_bias_tensor is not None and attn_bias_tensor.ndim == 4:
             # (B, H, Mq, Mkv) -> (B, G, H, Mq, Mkv)
@@ -779,8 +815,9 @@ class FwOp(AttentionFwOpBase):
             split_k = cls.SPLIT_K
         else:
             # Use heuristics
+            use_fp8_path = k_fp8_scale_shift is not None
             split_k = (
-                cls.get_split_k(B, G, H, Mk, Mq, page_size, is_paged)
+                cls.get_split_k(B, G, H, Mk, Mq, page_size, is_paged, use_fp8_path)
                 if attn_bias_tensor is None
                 else 1
             )
@@ -834,9 +871,17 @@ class FwOp(AttentionFwOpBase):
         def grid(META):
             import triton
 
-            return triton.cdiv(M, META["BLOCK_M"]), B * G * H, split_k
+            return split_k, B * G * H, triton.cdiv(M, META["BLOCK_M"])
+
+        def is_ocp_fp8():
+            import triton
+
+            target = triton.runtime.driver.active.get_current_target()
+            return not (target.backend == 'hip' and target.arch == 'gfx942')        
+
 
         split_size = (Mk + split_k - 1) // split_k
+
         use_seq_len = seq_len is not None
 
         kernel = cls.get_kernel()
@@ -852,16 +897,11 @@ class FwOp(AttentionFwOpBase):
             k_fp8_scale_shift=k_fp8_scale_shift,
         )
 
-        if _is_triton_available():
-            # Triton 3.3.1+fb is required for AMD specific changes to
-            # improve performance.
-            # TODO: Remove once the triton update lands everywhere.
-            import triton
+        IS_HIP = torch.version.hip is not None
+        USE_TL_SWIZZLE = ((B * G * H) % split_k) == 0
+        IS_OCP_FP8 = is_ocp_fp8()
+        print(f"split_k = {split_k}, B = {B}, G = {G}, H = {H}, USE_TL_SWIZZLE = {USE_TL_SWIZZLE}")
 
-            IS_TRITON_UPGRADE = triton.__version__ == "3.3.1+fb"
-        else:
-            IS_TRITON_UPGRADE = False
-        IS_HIP = IS_TRITON_UPGRADE and torch.version.hip is not None
         kernel[grid](
             Q=q,
             K=k,
@@ -915,6 +955,7 @@ class FwOp(AttentionFwOpBase):
             IS_LOCAL=IS_LOCAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
+            IS_PACKED = IS_PACKED,
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
@@ -924,6 +965,8 @@ class FwOp(AttentionFwOpBase):
             HAS_ADDITIVE_BIAS=attn_bias_tensor is not None,
             NUM_PROGRAMS_DIM2_CONST=split_k,
             IS_HIP=IS_HIP,
+            USE_TL_SWIZZLE=USE_TL_SWIZZLE,
+            IS_OCP_FP8 = IS_OCP_FP8,
             **extra_args,
         )
         if not IS_SPLITK:
@@ -1076,7 +1119,6 @@ def merge_attentions(
 
     num_warps = 4 if B * G * H < 32 or torch.version.hip else 2
     splitK_pow2 = triton.next_power_of_2(split_k)
-    head_dim = attn_out.shape[-1]
     grid = (M, B * G * H, 1)
     _splitK_reduce[grid](
         attn_split,
@@ -1089,8 +1131,7 @@ def merge_attentions(
         **_strides(lse_split, "lsek_z", "lsek_g", "lsek_h", "lsek_s", "lsek_m"),
         **_strides(attn_out, "oz", "om", "og", "oh", "ok"),
         **_strides(lse_out, "lse_z", "lse_g", "lse_h", "lse_m"),
-        head_dim=head_dim,
-        head_dim_pow_2=triton.next_power_of_2(head_dim),
+        BLOCK_SIZE=attn_out.shape[-1],
         G=G,
         H=H,
         WRITE_LSE=lse_out is not None,
@@ -1114,8 +1155,6 @@ def merge_attentions_varargs(
     H: int,
     Kq: int,
 ) -> List[torch.Tensor]:
-    import triton
-
     from xformers.triton.vararg_kernel import unroll_varargs
 
     from ._triton.splitk_kernels import _splitK_reduce_varargs
@@ -1137,15 +1176,13 @@ def merge_attentions_varargs(
         attn_out, lse_out, attn_split, lse_split
     )
     reduce_kernel = unroll_varargs(_splitK_reduce_varargs, N=len(attn_split))
-    head_dim = attn_out.shape[-1]
     reduce_kernel[grid](
         *attn_split,
         *lse_split,
         Out=attn_out,
         LSE=lse_out,
         **kernel_args,
-        head_dim=head_dim,
-        head_dim_pow_2=triton.next_power_of_2(head_dim),
+        BLOCK_SIZE=attn_out.shape[-1],
         WRITE_LSE=lse_out is not None,
     )
     if write_lse:

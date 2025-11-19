@@ -102,6 +102,7 @@ def _fwd_kernel_splitK(
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     IS_SPLITK: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     SPLIT_K_EARLY_EXIT: tl.constexpr,
     IS_CAUSAL: tl.constexpr,
     IS_LOCAL: tl.constexpr,
@@ -114,7 +115,36 @@ def _fwd_kernel_splitK(
     HAS_ADDITIVE_BIAS: tl.constexpr,
     NUM_PROGRAMS_DIM2_CONST: tl.constexpr,
     IS_HIP: tl.constexpr,
+    USE_TL_SWIZZLE: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
 ):
+    tl.assume(stride_qz > 0)
+    tl.assume(stride_qm > 0)
+    tl.assume(stride_qg > 0)
+    tl.assume(stride_qh > 0)
+    tl.assume(stride_qk > 0)
+    tl.assume(stride_kz > 0)
+    tl.assume(stride_kn > 0)
+    tl.assume(stride_kg > 0)
+    tl.assume(stride_kh > 0)
+    tl.assume(stride_kk > 0)
+    tl.assume(stride_vz > 0)
+    tl.assume(stride_vn > 0)
+    tl.assume(stride_vg > 0)
+    tl.assume(stride_vh > 0)
+    tl.assume(stride_vk > 0)
+    tl.assume(stride_osk_z > 0)
+    tl.assume(stride_osk_g > 0)
+    tl.assume(stride_osk_h > 0)
+    tl.assume(stride_osk_s > 0)
+    tl.assume(stride_osk_m > 0)
+    tl.assume(stride_osk_k > 0)
+    tl.assume(stride_lsek_z > 0)
+    tl.assume(stride_lsek_g > 0)
+    tl.assume(stride_lsek_h > 0)
+    tl.assume(stride_lsek_s > 0)
+    tl.assume(stride_lsek_m > 0)
+
     """This kernel can accept non-quantized or int4-quantized keys/values.
     PACKED_PER_VAL determines the quantization type:
         - PACKED_PER_VAL == 1 means no quantization
@@ -160,13 +190,17 @@ def _fwd_kernel_splitK(
     PACKED_D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // PACKED_PER_VAL // N_GROUPS
     D_PER_GROUP: tl.constexpr = BLOCK_DMODEL // N_GROUPS
 
-    start_m = tl.program_id(0)
+    splitk_idx = tl.program_id(0)
     off_zhg = tl.program_id(1)
+    start_m = tl.program_id(2)
+
+    if USE_TL_SWIZZLE:
+        splitk_idx, off_zhg = tl.swizzle2d(splitk_idx, off_zhg, tl.num_programs(1), tl.num_programs(1), tl.num_programs(0))
+
     off_z = off_zhg // (H * G)
     off_hg = off_zhg % (H * G)
     off_h = off_hg // G
     off_g = off_hg % G
-    splitk_idx = tl.program_id(2)
 
     if USE_SEQ_LEN:
         kv_len = tl.load(Seq_len + off_z)
@@ -283,7 +317,7 @@ def _fwd_kernel_splitK(
                 block_shape=(BLOCK_N, 1),
                 order=(1, 0),
             )
-        elif FP8_QUANTIZED:
+        elif FP8_QUANTIZED and IS_PACKED:
             if Seq_starts_k is not None:
                 k_fp8_scale_shift_base += start_kv_idx * stride_k_fp8_scale_shift_n
                 v_fp8_scale_shift_base += start_kv_idx * stride_v_fp8_scale_shift_n
@@ -304,6 +338,31 @@ def _fwd_kernel_splitK(
                 strides=(stride_v_fp8_scale_shift_n, 1),
                 offsets=(lo, 0),
                 block_shape=(BLOCK_N, 1),
+                order=(1, 0),
+            )
+        # use fp8 data type as input directly
+        elif FP8_QUANTIZED:
+            if Seq_starts_k is not None:
+                k_fp8_scale_shift_base += start_kv_idx * stride_k_fp8_scale_shift_n
+                v_fp8_scale_shift_base += start_kv_idx * stride_v_fp8_scale_shift_n
+            else:
+                k_fp8_scale_shift_base += off_z * stride_k_fp8_scale_shift_z
+                v_fp8_scale_shift_base += off_z * stride_v_fp8_scale_shift_z
+            K_scale_shift_block_ptr = tl.make_block_ptr(
+                base=k_fp8_scale_shift_base,
+                shape=(2, hi),
+                strides=(1, stride_k_fp8_scale_shift_n),
+                offsets=(0, lo),
+                block_shape=(2, BLOCK_N),
+                order=(0, 1),
+            )
+
+            V_scale_shift_block_ptr = tl.make_block_ptr(
+                base=v_fp8_scale_shift_base,
+                shape=(hi, 2),
+                strides=(stride_v_fp8_scale_shift_n, 1),
+                offsets=(lo, 0),
+                block_shape=(BLOCK_N, 2),
                 order=(1, 0),
             )
         else:
@@ -432,7 +491,7 @@ def _fwd_kernel_splitK(
                     block_shape=(BLOCK_N, 1),
                     order=(1, 0),
                 )
-            elif FP8_QUANTIZED:
+            elif FP8_QUANTIZED and IS_PACKED:
                 K_scale_shift_block_ptr = tl.make_block_ptr(
                     base=k_fp8_scale_shift_base,
                     shape=(1, offset + current_block_size),
@@ -449,6 +508,25 @@ def _fwd_kernel_splitK(
                     block_shape=(BLOCK_N, 1),
                     order=(1, 0),
                 )
+            # use fp8 directly as input
+            elif FP8_QUANTIZED:
+                K_scale_shift_block_ptr = tl.make_block_ptr(
+                    base=k_fp8_scale_shift_base,
+                    shape=(2, offset + current_block_size),
+                    strides=(1, stride_k_fp8_scale_shift_n),
+                    offsets=(0, offset),
+                    block_shape=(2, BLOCK_N),
+                    order=(0, 1),
+                )
+
+                V_scale_shift_block_ptr = tl.make_block_ptr(
+                    base=v_fp8_scale_shift_base,
+                    shape=(offset + current_block_size, 2),
+                    strides=(stride_v_fp8_scale_shift_n, 1),
+                    offsets=(offset, 0),
+                    block_shape=(BLOCK_N, 2),
+                    order=(1, 0),
+                )
             else:
                 K_scale_shift_block_ptr = None
                 V_scale_shift_block_ptr = None
@@ -457,24 +535,41 @@ def _fwd_kernel_splitK(
         k: "VAR_ARGS_ARRAY"  # noqa: F821
         v: "VAR_ARGS_ARRAY"  # noqa: F821
         for i in range(len(acc)):  # noqa: F821
-            k[i], v[i] = load_dequantize_k_v_group(  # noqa: F821
+            k[i] = load_dequantize_k_group(  # noqa: F821
                 K_block_ptr,
-                V_block_ptr,
                 K_scale_shift_block_ptr,
-                V_scale_shift_block_ptr,
                 BOUNDS_CHECKS_N,
                 PACKED_PER_VAL,
                 PACKED_D_PER_GROUP,
                 FP8_QUANTIZED,
+                IS_PACKED,
                 Q.dtype.element_ty,
                 i,
                 IS_HIP,
+                NON_TEMPORAL_LOAD,
             )
+
 
         # -- compute qk ---
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         for i in range(len(acc)):  # noqa: F821
             qk += tl.dot(q[i], k[i])  # noqa: F821
+
+        for i in range(len(acc)):  # noqa: F821
+            v[i] = load_dequantize_v_group(  # noqa: F821
+                V_block_ptr,
+                V_scale_shift_block_ptr,
+                BOUNDS_CHECKS_N,
+                PACKED_PER_VAL,
+                PACKED_D_PER_GROUP,
+                FP8_QUANTIZED,
+                IS_PACKED,
+                Q.dtype.element_ty,
+                i,
+                IS_HIP,
+                NON_TEMPORAL_LOAD,
+            )
+
         qk *= qk_scale
 
         if start_n == lo and ignore_in_first_block > 0:
@@ -535,7 +630,7 @@ def _fwd_kernel_splitK(
             # update pointers
             K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_N))
             V_block_ptr = tl.advance(V_block_ptr, (BLOCK_N, 0))
-            if PACKED_PER_VAL > 1:
+            if PACKED_PER_VAL > 1 or (FP8_QUANTIZED and (not IS_PACKED)):
                 K_scale_shift_block_ptr = tl.advance(
                     K_scale_shift_block_ptr, (0, BLOCK_N)
                 )
@@ -705,9 +800,11 @@ def load_dequantize_k_v_group(
     PACKED_PER_VAL: tl.constexpr,
     PACKED_D_PER_GROUP: tl.constexpr,
     FP8_QUANTIZED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
     dtype: tl.constexpr,
     group_id: tl.constexpr,
     IS_HIP: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
 ):
     """Load K/V for a given block. In case of int4/fp8-quantized K/V, dequantize them after loading.
     If quantization is group-wise, use group_id to advance the pointers to the current group.
@@ -721,7 +818,7 @@ def load_dequantize_k_v_group(
     v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
 
     # If K/V are quantized, load quantization coefficients and dequantize.
-    if FP8_QUANTIZED:
+    if FP8_QUANTIZED and IS_PACKED:
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
         )
@@ -731,7 +828,7 @@ def load_dequantize_k_v_group(
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
         else:
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
+        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
 
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
@@ -747,8 +844,23 @@ def load_dequantize_k_v_group(
                 tl.trans(k_shift),
                 PACKED_PER_VAL,
                 IS_HIP,
+                IS_OCP_FP8,
             ).to(dtype)
             k = tl.trans(k_t)
+    elif FP8_QUANTIZED:
+        k_scale_shift = tl.load(
+            K_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        k_scale, k_shift = k_scale_shift.to(tl.float32).split()
+        k = k.to(tl.float32) * k_scale + k_shift
+        k = k.to(dtype)
+
+        v_scale_shift = tl.load(
+            V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        v_scale, v_shift = v_scale_shift.to(tl.float32).split()
+        v = v.to(tl.float32) * v_scale[:, None] + v_shift[:, None]
+        v = v.to(dtype)
     elif PACKED_PER_VAL > 1:
         # Int4 quantization.
         K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
@@ -763,22 +875,154 @@ def load_dequantize_k_v_group(
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
             k_t = dequantize(
                 tl.trans(k),
                 tl.trans(k_scale),
                 tl.trans(k_shift),
                 PACKED_PER_VAL,
                 IS_HIP,
+                IS_OCP_FP8,
             ).to(dtype)
             k = tl.trans(k_t)
     return k, v
 
+
+@triton.jit
+def load_dequantize_k_group(
+    K_block_ptr,
+    K_scale_shift_block_ptr,
+    BOUNDS_CHECKS_N: tl.constexpr,
+    PACKED_PER_VAL: tl.constexpr,
+    PACKED_D_PER_GROUP: tl.constexpr,
+    FP8_QUANTIZED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
+    dtype: tl.constexpr,
+    group_id: tl.constexpr,
+    IS_HIP: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
+):
+    """Load K/V for a given block. In case of int4/fp8-quantized K/V, dequantize them after loading.
+    If quantization is group-wise, use group_id to advance the pointers to the current group.
+    """
+    # Advance to the current quantization group
+    K_block_ptr = tl.advance(K_block_ptr, (PACKED_D_PER_GROUP * group_id, 0))
+
+    # -- load k, v --
+    k = tl.load(K_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ())
+
+    # If K/V are quantized, load quantization coefficients and dequantize.
+    if FP8_QUANTIZED and IS_PACKED:
+        k_scale_shift = tl.load(
+            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
+        )
+        if IS_HIP:
+            k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        else:
+            k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
+            k_t = dequantize(
+                tl.trans(k),
+                tl.trans(k_scale),
+                tl.trans(k_shift),
+                PACKED_PER_VAL,
+                IS_HIP,
+                IS_OCP_FP8,
+            ).to(dtype)
+            k = tl.trans(k_t)
+    elif FP8_QUANTIZED:
+        k_scale_shift = tl.load(
+            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
+        )
+        k_scale, k_shift = k_scale_shift.to(tl.float32).trans().split()
+        k = k.to(tl.float32) * k_scale + k_shift
+        k = k.to(dtype)
+
+    elif PACKED_PER_VAL > 1:
+        # Int4 quantization.
+        K_scale_shift_block_ptr = tl.advance(K_scale_shift_block_ptr, (group_id, 0))
+
+        k_scale_shift = tl.load(
+            K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
+        )
+        if IS_HIP:
+            k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+        else:
+            k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
+            k_t = dequantize(
+                tl.trans(k),
+                tl.trans(k_scale),
+                tl.trans(k_shift),
+                PACKED_PER_VAL,
+                IS_HIP,
+                IS_OCP_FP8,
+            ).to(dtype)
+            k = tl.trans(k_t)
+    return k
+
+
+@triton.jit
+def load_dequantize_v_group(
+    V_block_ptr,
+    V_scale_shift_block_ptr,
+    BOUNDS_CHECKS_N: tl.constexpr,
+    PACKED_PER_VAL: tl.constexpr,
+    PACKED_D_PER_GROUP: tl.constexpr,
+    FP8_QUANTIZED: tl.constexpr,
+    IS_PACKED: tl.constexpr,
+    dtype: tl.constexpr,
+    group_id: tl.constexpr,
+    IS_HIP: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
+):
+    """Load K/V for a given block. In case of int4/fp8-quantized K/V, dequantize them after loading.
+    If quantization is group-wise, use group_id to advance the pointers to the current group.
+    """
+    # Advance to the current quantization group
+    V_block_ptr = tl.advance(V_block_ptr, (0, PACKED_D_PER_GROUP * group_id))
+
+    # -- load k, v --
+    v = tl.load(V_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ())
+
+    # If K/V are quantized, load quantization coefficients and dequantize.
+    if FP8_QUANTIZED and IS_PACKED:
+        v_scale_shift = tl.load(
+            V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        if IS_HIP:
+            # MI300 doesn't have builtin casting instructions for fp8 -> bf16,
+            # so casting to f32 is actually more performant on this workload.
+            v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
+        else:
+            v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
+        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+    elif FP8_QUANTIZED:
+        v_scale_shift = tl.load(
+            V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        v_scale, v_shift = v_scale_shift.to(tl.float32).split()
+        v = v.to(tl.float32) * v_scale[:, None] + v_shift[:, None]
+        v = v.to(dtype)
+    elif PACKED_PER_VAL > 1:
+        # Int4 quantization.
+        V_scale_shift_block_ptr = tl.advance(V_scale_shift_block_ptr, (0, group_id))
+
+        v_scale_shift = tl.load(
+            V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
+        )
+        if IS_HIP:
+            v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+        else:
+            v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+    return v
 
 @triton.jit
 def cast_uint32_to_half2(scale_shift):
@@ -806,6 +1050,7 @@ def dequantize_k_hip(
     scale,
     shift,
     PACKED_PER_VAL: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
 ):
     """PACKED_PER_VAL is the number of values packed into each element x_.
     For example, for int4 quantization and x_ of type int32, PACKED_PER_VAL is 8.
@@ -826,7 +1071,7 @@ def dequantize_k_hip(
 
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+        fp8_type = (tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8)
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
@@ -855,6 +1100,7 @@ def dequantize(
     shift,
     PACKED_PER_VAL: tl.constexpr,
     IS_HIP: tl.constexpr,
+    IS_OCP_FP8: tl.constexpr,
 ):
     """PACKED_PER_VAL is the number of values packed into each element x_.
     For example, for int4 quantization and x_ of type int32, PACKED_PER_VAL is 8.
@@ -874,7 +1120,7 @@ def dequantize(
     )
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = tl.float8e4b8 if torch.version.hip is not None else tl.float8e4nv
+        fp8_type = (tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8)
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
@@ -932,8 +1178,7 @@ def _splitK_reduce(
     stride_lse_g: tl.constexpr,
     stride_lse_h: tl.constexpr,
     stride_lse_m: tl.constexpr,
-    head_dim: tl.constexpr,
-    head_dim_pow_2: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
     H: tl.constexpr,
     G: tl.constexpr,
     WRITE_LSE: tl.constexpr,
@@ -945,15 +1190,13 @@ def _splitK_reduce(
     off_h = (off_zhg // G) % H
     off_g = off_zhg % G
 
-    head_dim_mask = tl.arange(0, head_dim_pow_2) < head_dim
-
     Out_splitK_ptr = (
         Out_splitK
         + stride_osk_z * off_z
         + stride_osk_g * off_g
         + stride_osk_h * off_h
         + stride_osk_m * off_m
-        + tl.arange(0, head_dim_pow_2)[None, :]
+        + tl.arange(0, BLOCK_SIZE)[None, :]
         + stride_osk_s * tl.arange(0, splitK_pow2)[:, None]
     )
 
@@ -968,12 +1211,12 @@ def _splitK_reduce(
 
     if splitK_pow2 > split_k:
         mask_1d = tl.arange(0, splitK_pow2) < split_k
-        mask_2d = mask_1d[:, None] & head_dim_mask[None, :]
+        mask_2d = mask_1d[:, None]
         lse_splitk = tl.load(LSE_splitK_ptr0, mask=mask_1d, other=float("-inf"))
         lse_max = tl.max(lse_splitk)
         out_splitk = tl.load(
             Out_splitK_ptr, mask=mask_2d, other=0
-        )  # (split_k, head_dim_pow_2)
+        )  # (split_k, BLOCK_SIZE)
         lse_splitk = tl.load(
             LSE_splitK_ptr0, mask=mask_1d, other=float("-inf")
         )  # (split_k,)
@@ -1000,12 +1243,12 @@ def _splitK_reduce(
         + stride_oh * off_h
         + stride_og * off_g
         + stride_om * off_m
-        + tl.arange(0, head_dim_pow_2)
+        + tl.arange(0, BLOCK_SIZE)
     )
     if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
         # must avoid direct cast f64->f16
         acc = acc.to(tl.float32)
-    tl.store(Out_ptr, acc, mask=head_dim_mask)
+    tl.store(Out_ptr, acc)
 
     if WRITE_LSE:
         l_ptrs = (
@@ -1044,8 +1287,7 @@ def _splitK_reduce_varargs(
     stride_lse_g,
     stride_lse_h,
     stride_lse_m,
-    head_dim: tl.constexpr,
-    head_dim_pow_2: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
     H: tl.constexpr,
     G: tl.constexpr,
     WRITE_LSE: tl.constexpr,
@@ -1060,7 +1302,6 @@ def _splitK_reduce_varargs(
     off_z = off_zhg // (H * G)
     off_h = (off_zhg // G) % H
     off_g = off_zhg % G
-    head_dim_mask = tl.arange(0, head_dim_pow_2) < head_dim
 
     out_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
     for i in range(len(Out_splitK)):
@@ -1069,7 +1310,7 @@ def _splitK_reduce_varargs(
             + stride_osk_g[i] * off_g
             + stride_osk_h[i] * off_h
             + stride_osk_m[i] * off_m
-            + tl.arange(0, head_dim_pow_2)
+            + tl.arange(0, BLOCK_SIZE)
         )
     lse_splitk_offset: "VAR_ARGS_ARRAY"  # noqa: F821
     for i in range(len(Out_splitK)):
@@ -1087,12 +1328,10 @@ def _splitK_reduce_varargs(
         lse_max = tl.maximum(lse_max, lse_splitk)
 
     sumexp_normalized = 0.0
-    numerator_normalized = tl.zeros([head_dim_pow_2], dtype=tl.float32)
+    numerator_normalized = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
 
     for split_k_idx in range(len(Out_splitK)):  # type: ignore # noqa: F821
-        out_splitk = tl.load(
-            Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx], mask=head_dim_mask  # type: ignore # noqa: F821
-        )
+        out_splitk = tl.load(Out_splitK[split_k_idx] + out_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
         lse_splitk = tl.load(LSE_splitK[split_k_idx] + lse_splitk_offset[split_k_idx])  # type: ignore # noqa: F821
         # Compute denominator
         sumexp_normalized_splitk = tl.math.exp2(
@@ -1112,12 +1351,12 @@ def _splitK_reduce_varargs(
         + stride_oh * off_h
         + stride_og * off_g
         + stride_om * off_m
-        + tl.arange(0, head_dim_pow_2)
+        + tl.arange(0, BLOCK_SIZE)
     )
     if acc.dtype is tl.float64 and Out.dtype.element_ty is not tl.float64:
         # must avoid direct cast f64->f16
         acc = acc.to(tl.float32)
-    tl.store(Out_ptr, acc, mask=head_dim_mask)
+    tl.store(Out_ptr, acc)
 
     if WRITE_LSE:
         l_ptrs = (
