@@ -8,7 +8,6 @@ import functools
 import pytest
 import torch
 
-from xformers.components.attention._sputnik_sparse import SparseCS
 from xformers.components.attention.core import scaled_dot_product_attention
 
 
@@ -114,22 +113,6 @@ def test_amp_attention_sparse(device):
     a = torch.rand(b, s, d, device=device)
     m = torch.rand(s, s, device=device) > prob
     m = m.to_sparse()
-
-    with torch.amp.autocast("cuda"):
-        r = scaled_dot_product_attention(a, a, a, m)
-
-    expected_device = torch.float32
-    assert r.dtype == expected_device
-
-
-@pytest.mark.parametrize("device", _devices)
-def test_amp_attention_sparsecs(device):
-    b, s, d = 8, 64, 32
-    prob = 0.9
-
-    a = torch.rand(b, s, d, device=device)
-    m = torch.rand(s, s, device=device) > prob
-    m = SparseCS(m, device)
 
     with torch.amp.autocast("cuda"):
         r = scaled_dot_product_attention(a, a, a, m)

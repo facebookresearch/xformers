@@ -39,7 +39,6 @@ COMPONENTS = [
             "tests/test_mem_eff_attention.py",
             "tests/test_find_sparse_locations*.py",
             "tests/test_block_sparse_mem_eff_attention*.py",
-            "tests/test_sparse_mem_eff_attention*.py",
             "tests/test_attention_patterns.py",
             "tests/test_rope_padded.py",
             "tests/test_tree_attention*.py",

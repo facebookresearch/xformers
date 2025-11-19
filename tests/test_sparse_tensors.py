@@ -9,7 +9,7 @@ import torch
 # needed to register custom ops
 import xformers  # noqa: F401
 from xformers.ops import masked_matmul
-from xformers.sparse import BlockSparseTensor, SparseCSRTensor
+from xformers.sparse import BlockSparseTensor
 
 from .utils import disable_tf32
 
@@ -17,7 +17,7 @@ cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires C
 _devices = (
     ["cpu", "cuda:0"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
 )
-_tensor_types = [BlockSparseTensor, SparseCSRTensor]
+_tensor_types = [BlockSparseTensor]
 
 
 def _create_blocksparse_tensor(
@@ -33,30 +33,11 @@ def _create_blocksparse_tensor(
     return BlockSparseTensor(values, layout)
 
 
-def _create_csr_tensor(device, dtype, shape, sparsity, divisible_by=4):
-    matrix = torch.rand(shape, dtype=torch.float32, device=device).to(dtype)
-    assert matrix.ndim == 3
-    keep = torch.rand_like(matrix[0], dtype=torch.float32) > sparsity
-    nonzero = torch.nonzero(keep)
-    nnz = nonzero.shape[0]
-    # NOTE: need to make it a multiple of 4 for sputnik
-    nonzero = nonzero[: (nnz - nnz % divisible_by)]
-    i, j = nonzero.unbind(1)
-    output = torch.zeros_like(matrix)
-    bdim = torch.arange(matrix.shape[0], device=matrix.device)[:, None]
-    output[bdim, i, j] = matrix[bdim, i, j]
-    return SparseCSRTensor.from_dense(output)
-
-
 def _create_tensor(tensor_type, device, dtype, shape, sparsity):
     if tensor_type == BlockSparseTensor:
         block_size = 16
         return _create_blocksparse_tensor(
             device=device, dtype=dtype, block_size=block_size
-        )
-    elif tensor_type == SparseCSRTensor:
-        return _create_csr_tensor(
-            device=device, dtype=dtype, shape=shape, sparsity=sparsity
         )
 
 
@@ -81,28 +62,6 @@ def _get_dtype_atol(tensor_type, device: str):
     torch.backends.cudnn.allow_tf32 = False  # type: ignore
 
     return torch.float32, 1e-5
-
-
-@pytest.mark.parametrize("device", _devices)
-@pytest.mark.parametrize("func", [torch.add, torch.mul])
-def test_sparse_binary_ops(func, device):
-    # TODO: add for BlockSparseTensor as well
-    N, H, W = 8, 64, 64
-    sparsity = 0.5
-    shape = (N, H, W)
-
-    a_sparse = _create_tensor(
-        SparseCSRTensor, device, dtype=torch.float32, shape=shape, sparsity=sparsity
-    )
-    a = a_sparse.to_dense()
-
-    b = a
-    b_sparse = a_sparse
-
-    res = func(a_sparse, b_sparse).to_dense()
-    res_gt = func(a, b)
-
-    assert torch.allclose(res, res_gt)
 
 
 @disable_tf32

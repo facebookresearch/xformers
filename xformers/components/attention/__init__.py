@@ -15,7 +15,6 @@ from xformers.utils import (
     import_all_modules,
 )
 
-from ._sputnik_sparse import SparseCS
 from .attention_mask import AttentionMask
 from .base import Attention, AttentionConfig  # noqa
 
@@ -30,7 +29,6 @@ ATTENTION_CLASS_NAMES: Set[str] = set()
 # Arbitrary threshold for now,
 # in between dense and sparse matrix algorithms for the attention mechanism
 _DENSITY_THRESHOLD = 0.30  # noqa # from the sputnik paper, vs.
-_USE_SPUTNIK = True
 
 
 def build_attention(config: Union[Dict[str, Any], AttentionConfig]):
@@ -91,8 +89,6 @@ def maybe_sparsify(matrix) -> Any:
 
 
 def sparsify(matrix):
-    if _USE_SPUTNIK:
-        return SparseCS(matrix)
     return matrix.to_sparse()
 
 

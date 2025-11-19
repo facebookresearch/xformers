@@ -449,8 +449,6 @@ def get_extensions():
     source_cuda = list(set(source_cuda) - set(source_hip_generated))
     sources = list(set(sources) - set(source_hip))
 
-    sputnik_dir = os.path.join(this_dir, "third_party", "sputnik")
-
     xformers_pt_cutlass_attn = os.getenv("XFORMERS_PT_CUTLASS_ATTN")
     # By default, we try to link to torch internal CUTLASS attention implementation
     # and silently switch to local CUTLASS attention build if no compatibility
@@ -519,7 +517,6 @@ def get_extensions():
             # CUDA 12.5
             sources.remove(os.path.join(extensions_dir, "swiglu_fairinternal.cu"))
         include_dirs += [
-            sputnik_dir,
             cutlass_dir,
             cutlass_util_dir,
             cutlass_examples_dir,
