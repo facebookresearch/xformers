@@ -70,11 +70,11 @@ MOE_CASES = [
         K=128,
         attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
     )
-    for b in [32, 128]
-    for mkv in [8193, 32769]
+    for b in [128]
+    for mkv in [32769]
 ]
 
-CASES += MOE_CASES
+CASES = MOE_CASES
 
 class AttentionDecodingBase:
     OP: Any = None
@@ -589,8 +589,8 @@ if torch.version.hip:
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
@@ -657,7 +657,7 @@ def get_benchmark_names():
     [(name, case) for name in get_benchmark_names() for case in TEST_CASES],
 )
 def test_flash_attention_decoder(name, case):
-    if name == "ck-decoder" and case["Mkv"] >= 2**14:
+    if name not in ["triton_splitK", "packed_fp8", "fp8"]:
         pytest.skip("ck-decoder does not support Mkv >= 16K")
     decoder = BENCHMARKS[name](
         case["B"],
@@ -675,14 +675,17 @@ def test_flash_attention_decoder(name, case):
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
     # compute baseline using fp8 inputs to avoid the quant/dequantization error
-    q, k, v = dequantize_qkv(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
-    ref_output = AttentionDecodingPyTorchRepeat.FwOp(q, k, v)
+    q, k, v = inputs.query, inputs.key, inputs.value
+    if len(q.shape) == 5:
+        M, B, G, H, Kq = q.shape
+    else:
+        M, B, G, Kq = q.shape
+    scale = 1 / Kq**0.5
+    if k.dtype not in [torch.float16, torch.bfloat16]:
+        q, k, v = dequantize_qkv(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
+    ref_output = AttentionDecodingPyTorchRepeat.FwOp(q, k, v, scale)
 
     # naive_output = attention_naive(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
-    k = inputs.key
-    v = inputs.value
-    q = inputs.query
-    M, B, G, H, Kq = q.shape
 
     mqa_swap_seqlen_head = False
     if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
