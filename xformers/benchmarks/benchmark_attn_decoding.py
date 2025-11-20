@@ -637,12 +637,9 @@ def dequantize_qkv(inp, B, Mq, Mkv, Hq, Hkv, K, is_packed = False):
 
 
 # def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
-
 #     q, k, v = dequantization(inp, B, Mq, Mkv, Hq, Hkv, K)
-
 #     scale = 1 / K**0.5
 #     attn = (q.to(torch.float32) @ k.transpose(-1, -2) * scale).softmax(-1)
-
 #     return (attn @ v).to(q.dtype)
 
 
