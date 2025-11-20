@@ -576,7 +576,13 @@ BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
 if torch.version.cuda:
     BENCHMARKS["cutlass"] = AttentionDecodingCUTLASS
 
-
+if torch.version.hip:
+    BENCHMARKS.update(
+        {
+            "ck": AttentionDecodingCK,
+            "ck_splitK": AttentionDecodingCKSplitKV,
+        }
+    )
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
@@ -646,28 +652,7 @@ def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
     return (attn @ v).to(q.dtype)
 
 
-TEST_CASES = [
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=32769,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        # attn_bias_type=None,
-    ),
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=8193,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        # attn_bias_type=None,
-    ),
-]
+TEST_CASES = CASES
 
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
