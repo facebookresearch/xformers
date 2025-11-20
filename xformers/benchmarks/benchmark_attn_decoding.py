@@ -559,14 +559,17 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
+    def FwOp(q, k, v, scale):
+        attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
+        return attn @ v
+
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
         q = self.q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3)
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-        attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
-        return attn @ v
+        return self.FwOp(q, k, v, scale)
 
 
 BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
@@ -611,45 +614,36 @@ except ImportError:
     pass
 
 
-def dequantization(inp, B, Mq, Mkv, Hq, Hkv, K):
+def dequantize_to_f32(t_fp8, scale_shift, B, M, K, is_packed = False):
+    t_fp8 = t_fp8.reshape([B, M, -1, K]).permute(0, 2, 1, 3)
+    t_f32 = t_fp8.to(torch.float32).contiguous()
+
+    scale_f32 = scale_shift[:,:,:,:,0].to(torch.float32)
+    scale_f32 = scale_f32.reshape([B, M, -1, 1]).permute(0, 2, 1, 3).contiguous()
+    shift_f32 = scale_shift[:,:,:,:,1].to(torch.float32)
+    shift_f32 = shift_f32.reshape([B, M, -1, 1]).permute(0, 2, 1, 3).contiguous()
+    t_f32 = t_f32 * scale_f32 + shift_f32
+
+    return t_f32
+
+
+def dequantize_qkv(inp, B, Mq, Mkv, Hq, Hkv, K, is_packed = False):
     q = inp.query
-    k_fp8 = inp.key
-    v_fp8 = inp.value
     q = q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3).contiguous()
-
-    k_fp8 = k_fp8.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-    k_f32 = k_fp8.to(torch.float32).contiguous()
-
-    k_fp8_scale_shift = inp.k_fp8_scale_shift
-    k_scale_f32 = k_fp8_scale_shift[:,:,:,:,0].to(torch.float32)
-    k_scale_f32 = k_scale_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
-    k_shift_f32 = k_fp8_scale_shift[:,:,:,:,1].to(torch.float32)
-    k_shift_f32 = k_shift_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
-    k = k_f32 * k_scale_f32 + k_shift_f32
-
-    v_fp8_scale_shift = inp.v_fp8_scale_shift
-    v_scale_f32 = v_fp8_scale_shift[:,:,:,:,0].to(torch.float32)
-    v_scale_f32 = v_scale_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3)
-
-    v_shift_f32 = v_fp8_scale_shift[:,:,:,:,1].to(torch.float32)
-    v_shift_f32 = v_shift_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3)
-
-    v_fp8 = v_fp8.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-    v_f32 = v_fp8.to(torch.float32).contiguous()
-
-    v = v_f32 * v_scale_f32 + v_shift_f32
+    k = dequantize_to_f32(inp.key, inp.k_fp8_scale_shift, B, Mkv, K, is_packed)
+    v = dequantize_to_f32(inp.value, inp.v_fp8_scale_shift, B, Mkv, K, is_packed)
 
     return q, k, v
 
 
-def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
+# def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
 
-    q, k, v = dequantization(inp, B, Mq, Mkv, Hq, Hkv, K)
+#     q, k, v = dequantization(inp, B, Mq, Mkv, Hq, Hkv, K)
 
-    scale = 1 / K**0.5
-    attn = (q.to(torch.float32) @ k.transpose(-1, -2) * scale).softmax(-1)
+#     scale = 1 / K**0.5
+#     attn = (q.to(torch.float32) @ k.transpose(-1, -2) * scale).softmax(-1)
 
-    return (attn @ v).to(q.dtype)
+#     return (attn @ v).to(q.dtype)
 
 
 TEST_CASES = CASES
@@ -683,8 +677,11 @@ def test_flash_attention_decoder(name, case):
     assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV", "packed_fp8", "fp8"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
-    # compute baseline using fp8 inputs to avoid the quanti/dequatnization error
-    naive_output = attention_naive(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
+    # compute baseline using fp8 inputs to avoid the quant/dequantization error
+    q, k, v = dequantize_qkv(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
+    ref_output = AttentionDecodingPyTorchRepeat.FwOp(q, k, v)
+
+    # naive_output = attention_naive(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
     k = inputs.key
     v = inputs.value
     q = inputs.query
@@ -700,7 +697,7 @@ def test_flash_attention_decoder(name, case):
     else:
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-    torch.testing.assert_close(decoder_output, naive_output, atol=5e-4, rtol=0.000)
+    torch.testing.assert_close(decoder_output, ref_output, atol=5e-4, rtol=0.000)
 
 
 def main() -> None:
