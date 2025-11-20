@@ -546,7 +546,7 @@ def _fwd_kernel_splitK(
                 Q.dtype.element_ty,
                 i,
                 IS_HIP,
-                NON_TEMPORAL_LOAD,
+                IS_OCP_FP8,
             )
 
 
@@ -567,7 +567,7 @@ def _fwd_kernel_splitK(
                 Q.dtype.element_ty,
                 i,
                 IS_HIP,
-                NON_TEMPORAL_LOAD,
+                IS_OCP_FP8,
             )
 
         qk *= qk_scale
@@ -923,7 +923,7 @@ def load_dequantize_k_group(
         )
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             k_t = dequantize(
@@ -952,7 +952,7 @@ def load_dequantize_k_group(
         )
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             k_t = dequantize(

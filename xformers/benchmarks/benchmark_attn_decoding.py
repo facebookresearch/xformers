@@ -37,6 +37,44 @@ CASES = [
     for hkv in (1, 2)
 ]
 
+CASES = [
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=32769,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
+    dict(
+        B=128,
+        Mq=1,
+        Mkv=8193,
+        Hq=8,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+        # attn_bias_type=None,
+    ),
+]
+
+MOE_CASES = [
+    dict(
+        B=b,
+        Mq=1,
+        Mkv=mkv,
+        Hq=15,
+        Hkv=1,
+        K=128,
+        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
+    )
+    for b in [32, 128]
+    for mkv in [8193, 32769]
+]
+
+CASES += MOE_CASES
 
 class AttentionDecodingBase:
     OP: Any = None
@@ -52,7 +90,7 @@ class AttentionDecodingBase:
         bw: bool,
         attn_bias_type,
     ) -> None:
-        dtype = torch.float16
+        dtype = torch.bfloat16
         torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
@@ -319,7 +357,7 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
             f"{((B * Mkv * Hkv * K * 2) + ((B * Mq * Hq * K) + (B * Mq * Hq * K)) * 2)}"
         )
-        self.label = "attn_decoding(fp8)"
+        self.label = "attn_decoding"
         self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
 
         G = Hq // Hkv
@@ -431,7 +469,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
             f"{((B * Mkv * Hkv * K * 2) + ((B * Mq * Hq * K) + (B * Mq * Hq * K)) * 2)}"
         )
-        self.label = "attn_decoding(packed fp8)"
+        self.label = "attn_decoding"
         self.shapes = (B, Mq, Mkv, Hq, Hkv, K)
 
         G = Hq // Hkv
@@ -541,8 +579,8 @@ if torch.version.cuda:
 
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
-    # BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
+    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
     BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
     # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
@@ -581,9 +619,7 @@ def dequantization(inp, B, Mq, Mkv, Hq, Hkv, K):
     k_scale_f32 = k_scale_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
     k_shift_f32 = k_fp8_scale_shift[:,:,:,:,1].to(torch.float32)
     k_shift_f32 = k_shift_f32.reshape([B, Mkv, -1, 1]).permute(0, 2, 1, 3).contiguous()
-
     k = k_f32 * k_scale_f32 + k_shift_f32
-    # k = k.to(q.dtype)
 
     v_fp8_scale_shift = inp.v_fp8_scale_shift
     v_scale_f32 = v_fp8_scale_shift[:,:,:,:,0].to(torch.float32)
@@ -596,7 +632,6 @@ def dequantization(inp, B, Mq, Mkv, Hq, Hkv, K):
     v_f32 = v_fp8.to(torch.float32).contiguous()
 
     v = v_f32 * v_scale_f32 + v_shift_f32
-    # v = v.to(q.dtype)
 
     return q, k, v
 
