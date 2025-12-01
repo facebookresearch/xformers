@@ -83,6 +83,7 @@ struct MetadataCuSparseLtSm80 {
     // TODO: Cast metadata to Short
     static_assert(kBytesPerScalar == 2, "or modify the last dim below");
     metadata = metadata.view({rows / 128, cols / 32, 256});
+    storage = storage.view({rows, -1});
     return std::make_tuple(storage, packed, metadata);
   }
   MetadataCuSparseLtSm80(
