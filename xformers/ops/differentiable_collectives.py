@@ -97,8 +97,10 @@ class _CopyToModelParallelRegion(torch.autograd.Function):
 
 
 def copy_to_model_parallel_region(
-    x: torch.Tensor, process_group: torch.distributed.ProcessGroup
+    x: torch.Tensor, process_group: Optional[torch.distributed.ProcessGroup]
 ) -> torch.Tensor:
+    if process_group is None:
+        return x
     return _CopyToModelParallelRegion.apply(x, process_group)
 
 
@@ -119,8 +121,10 @@ class _ReduceFromModelParallelRegion(torch.autograd.Function):
 
 
 def reduce_from_model_parallel_region(
-    x: torch.Tensor, process_group: torch.distributed.ProcessGroup
+    x: torch.Tensor, process_group: Optional[torch.distributed.ProcessGroup]
 ) -> torch.Tensor:
+    if process_group is None:
+        return x
     return _ReduceFromModelParallelRegion.apply(x, process_group)
 
 
@@ -145,8 +149,10 @@ class _GatherFromSequenceParallelRegion(torch.autograd.Function):
 
 
 def gather_from_sequence_parallel_region(
-    x: torch.Tensor, process_group: torch.distributed.ProcessGroup
+    x: torch.Tensor, process_group: Optional[torch.distributed.ProcessGroup]
 ) -> torch.Tensor:
+    if process_group is None:
+        return x
     return _GatherFromSequenceParallelRegion.apply(x, process_group)
 
 
@@ -169,6 +175,8 @@ class _ScatterToSequenceParallelRegion(torch.autograd.Function):
 
 
 def scatter_to_sequence_parallel_region(
-    x: torch.Tensor, process_group: torch.distributed.ProcessGroup
+    x: torch.Tensor, process_group: Optional[torch.distributed.ProcessGroup]
 ) -> torch.Tensor:
+    if process_group is None:
+        return x
     return _ScatterToSequenceParallelRegion.apply(x, process_group)
