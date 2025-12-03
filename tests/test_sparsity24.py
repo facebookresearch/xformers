@@ -79,28 +79,6 @@ def test_sparse24_largest_mask_2d() -> None:
 
 @requires_sp24_gemm
 @parametrize_dtype
-@parametrize_backend
-def test_autocast(dtype, backend: str) -> None:
-    N = 128
-    inp = torch.randn([N, N], dtype=torch.float32, device="cuda")
-    W = torch.randn([N, N], dtype=torch.float32, device="cuda")
-    sInp = sp24.sparsify24(inp.to(dtype=dtype), backend=backend)
-    y = sInp @ W.to(dtype=dtype)
-    with torch.autocast("cuda", dtype=dtype):
-        sInp_ac = sp24.sparsify24(inp, backend=backend)
-        y_ac = sInp_ac @ W
-
-    assert_allclose(
-        sInp._sp24_to_dense(),
-        sInp_ac._sp24_to_dense(),
-        "sparse24",
-        **atol_rtol_kw[dtype],
-    )
-    assert_allclose(y, y_ac, "gemm", **atol_rtol_kw[dtype])
-
-
-@requires_sp24_gemm
-@parametrize_dtype
 def test_sparse24_causal1122(dtype) -> None:
     inp = torch.tensor(
         [[4, 3, 2, 1], [-1, -3, 0.6, 0.5], [1, 2, 3, 4], [10, 2, -1, 5]],
@@ -828,7 +806,7 @@ def _workaround_cusparselt_internal_error() -> None:
 @pytest.mark.skipif(not sp24._has_cusparseLt(), reason="requires cusparselt")
 @pytest.mark.parametrize("bias", [False, True], ids=["", "bias"])
 @pytest.mark.parametrize("aligned", [False, True], ids=["misaligned", ""])
-@pytest.mark.parametrize("amp", [False, True], ids=["", "amp"])
+@pytest.mark.parametrize("amp", [False], ids=[""])
 def test_linearw24(dtype, bias: bool, aligned: bool, amp: bool) -> None:
     _workaround_cusparselt_internal_error()
 

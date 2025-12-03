@@ -1,6 +1,5 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
-#include <ATen/autocast_mode.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 #include "compute_sparse_tile.h"
@@ -207,17 +206,6 @@ at::Tensor sparse24_apply_dense_output(
         input, threads_masks, mul0, mul1);
   }
 }
-
-at::Tensor sparse24_apply_dense_output_autocast(
-    at::Tensor input,
-    at::Tensor threads_masks,
-    double mul0,
-    double mul1) {
-  c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
-  return sparse24_apply_dense_output(
-      at::autocast::cached_cast(exec_type, input), threads_masks, mul0, mul1);
-}
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
@@ -230,10 +218,4 @@ TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::sparse24_apply_dense_output"),
       TORCH_FN(sparse24_apply_dense_output<true>));
-}
-
-TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_apply_dense_output"),
-      TORCH_FN(sparse24_apply_dense_output_autocast));
 }
