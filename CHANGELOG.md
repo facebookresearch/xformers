@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.34] - 2025-??-??
 
 
+## [0.0.33.post2] - 2025-12-03
+Pre-built binary wheels are available for PyTorch 2.9.1.
+
+
 ## [0.0.33] - 2025-11-12
 Pre-built binary wheels are available for PyTorch 2.9.0.
 
