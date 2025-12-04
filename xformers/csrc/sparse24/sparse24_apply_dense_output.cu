@@ -1,8 +1,12 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
 #include "compute_sparse_tile.h"
+#include "pt_stable_utils.h"
 #include "sparse24_pack.h"
 
 using namespace xformers::sp24;
@@ -123,12 +127,12 @@ __global__ void __launch_bounds__(32 /* num_threads */)
 }
 
 template <typename T, bool kIsMeta = false>
-at::Tensor sparse24_apply_dense_output_typed(
-    at::Tensor input,
-    at::Tensor threads_masks,
+torch::stable::Tensor sparse24_apply_dense_output_typed(
+    torch::stable::Tensor input,
+    torch::stable::Tensor threads_masks,
     float mul0,
     float mul1) {
-  TORCH_CHECK(
+  STD_TORCH_CHECK(
       input.stride(0) == 1 || input.stride(1) == 1,
       "`input` should be either RowMajor or ColMajor. Invalid memory layout - try .contiguous()?");
 
@@ -143,18 +147,20 @@ at::Tensor sparse24_apply_dense_output_typed(
     p.threads_masks = (uint64_t const*)threads_masks.data_ptr();
   }
 
-  TORCH_CHECK(threads_masks.dim() == 3);
-  TORCH_CHECK(
+  STD_TORCH_CHECK(threads_masks.dim() == 3);
+  STD_TORCH_CHECK(
       threads_masks.size(0) == p.getBlocksGrid().x * p.getThreadsGrid().x);
-  TORCH_CHECK(
+  STD_TORCH_CHECK(
       threads_masks.size(1) == p.getBlocksGrid().y * p.getThreadsGrid().y);
-  TORCH_CHECK(threads_masks.stride(1) == sizeof(p.threads_masks[0]));
-  TORCH_CHECK(threads_masks.size(2) == sizeof(p.threads_masks[0]));
-  TORCH_CHECK(threads_masks.stride(2) == 1);
-  TORCH_CHECK(threads_masks.scalar_type() == at::ScalarType::Byte);
+  STD_TORCH_CHECK(threads_masks.stride(1) == sizeof(p.threads_masks[0]));
+  STD_TORCH_CHECK(threads_masks.size(2) == sizeof(p.threads_masks[0]));
+  STD_TORCH_CHECK(threads_masks.stride(2) == 1);
+  STD_TORCH_CHECK(
+      threads_masks.scalar_type() == torch::headeronly::ScalarType::Byte);
 
-  at::Tensor output = at::empty({p.input_dim0, p.input_dim1}, input.options());
-  TORCH_INTERNAL_ASSERT(output.stride(-1) == 1, "expected RowMajor?");
+  torch::stable::Tensor output =
+      torch::stable::new_empty(input, {input.size(0), input.size(1)});
+  STD_TORCH_CHECK(output.stride(-1) == 1, "expected RowMajor?");
   if (kIsMeta) {
     return output;
   }
@@ -166,9 +172,9 @@ at::Tensor sparse24_apply_dense_output_typed(
   bool outputRowMajor = output.stride(-1) == 1;
   p.input_stride = input.stride(inputRowMajor ? 0 : 1);
   p.output_stride = output.stride(outputRowMajor ? 0 : 1);
-  at::cuda::CUDAGuard device_guard(input.device());
+  torch::stable::accelerator::DeviceGuard device_guard(input.device().index());
 
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  cudaStream_t stream = xf_getCurrentCUDAStream();
   size_t smem_bytes = 0;
   if (inputRowMajor && outputRowMajor) {
     sparse24_apply_dense_output_k<T, true, true>
@@ -177,28 +183,28 @@ at::Tensor sparse24_apply_dense_output_typed(
     sparse24_apply_dense_output_k<T, false, true>
         <<<p.getBlocksGrid(), p.getThreadsGrid(), smem_bytes, stream>>>(p);
   } else {
-    TORCH_CHECK(
+    STD_TORCH_CHECK(
         false,
         "Unsupported configuration: `input` is ",
         inputRowMajor ? "RowMajor" : "ColMajor",
         ", and `output` is ",
         outputRowMajor ? "RowMajor" : "ColMajor");
   }
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  XF_CUDA_KERNEL_LAUNCH_CHECK();
   return output;
 }
 
 template <bool kIsMeta = false>
-at::Tensor sparse24_apply_dense_output(
-    at::Tensor input,
-    at::Tensor threads_masks,
+torch::stable::Tensor sparse24_apply_dense_output(
+    torch::stable::Tensor input,
+    torch::stable::Tensor threads_masks,
     double mul0,
     double mul1) {
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
+  STD_TORCH_CHECK(
+      input.scalar_type() == torch::headeronly::ScalarType::Half ||
+          input.scalar_type() == torch::headeronly::ScalarType::BFloat16,
       "Unsupported `input` dtype");
-  if (input.scalar_type() == at::ScalarType::Half) {
+  if (input.scalar_type() == torch::headeronly::ScalarType::Half) {
     return sparse24_apply_dense_output_typed<cutlass::half_t, kIsMeta>(
         input, threads_masks, mul0, mul1);
   } else {
@@ -208,14 +214,14 @@ at::Tensor sparse24_apply_dense_output(
 }
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_apply_dense_output"),
-      TORCH_FN(sparse24_apply_dense_output<false>));
+      "sparse24_apply_dense_output",
+      XF_BOXED_FN(sparse24_apply_dense_output<false>));
 }
 
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_apply_dense_output"),
-      TORCH_FN(sparse24_apply_dense_output<true>));
+      "sparse24_apply_dense_output",
+      XF_BOXED_FN(sparse24_apply_dense_output<true>));
 }

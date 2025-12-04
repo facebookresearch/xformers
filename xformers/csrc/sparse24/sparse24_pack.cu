@@ -1,9 +1,11 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
-#include <torch/types.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+
 #include "compute_sparse_tile.h"
+#include "pt_stable_utils.h"
 #include "sparse24_metadata.h"
 #include "sparse24_pack.h"
 
@@ -22,23 +24,23 @@ __global__ void __launch_bounds__(32 /* num_threads */, 20)
 template <typename Element, typename MetadataFormat, bool kIsMeta>
 std::
     tuple<
-        at::Tensor, // packed
-        at::Tensor, // packed_meta_reordered
-        at::Tensor, // packed_trans
-        at::Tensor, // packed_trans_meta_reordered
-        at::Tensor // threads_masks
+        torch::stable::Tensor, // packed
+        torch::stable::Tensor, // packed_meta_reordered
+        torch::stable::Tensor, // packed_trans
+        torch::stable::Tensor, // packed_trans_meta_reordered
+        torch::stable::Tensor // threads_masks
         >
     sparse24_sparsify_both_ways_typed(
-        const at::Tensor input,
+        const torch::stable::Tensor input,
         std::string algorithm) {
   using KT = KernelTypes<Element>;
-  std::optional<at::cuda::CUDAGuard> device_guard;
+  std::optional<torch::stable::accelerator::DeviceGuard> device_guard;
   if (!kIsMeta) {
-    device_guard.emplace(input.device());
+    device_guard.emplace(input.device().index());
   }
 
-  TORCH_CHECK(input.dim() == 2, "Can only sparsify 2d tensors");
-  TORCH_CHECK(
+  STD_TORCH_CHECK(input.dim() == 2, "Can only sparsify 2d tensors");
+  STD_TORCH_CHECK(
       input.stride(1) == 1,
       "Can only sparsify contiguous tensors. Sparsify the transpose otherwise.");
 
@@ -49,7 +51,7 @@ std::
       MetadataFormat::create_compressed_representation(rows, cols, input, true);
   auto [compressed_trans, packed_trans, packed_trans_meta_reordered] =
       MetadataFormat::create_compressed_representation(cols, rows, input, true);
-  TORCH_CHECK(
+  STD_TORCH_CHECK(
       input.size(1) % 32 == 0, "Number of cols should be multiple of 32");
 
   typename KT::Params p;
@@ -61,11 +63,12 @@ std::
 
   MetadataFormat metadata = MetadataFormat(
       packed_meta_reordered, packed_trans_meta_reordered, rows, cols);
-  at::Tensor threads_masks = at::empty(
+  torch::stable::Tensor threads_masks = torch::stable::new_empty(
+      input,
       {p.getBlocksGrid().x * p.getThreadsGrid().x,
        p.getBlocksGrid().y * p.getThreadsGrid().y,
        sizeof(p.threads_masks[0])},
-      input.options().dtype(at::ScalarType::Byte));
+      torch::headeronly::ScalarType::Byte);
   if (!kIsMeta) {
     p.input = (Element const*)input.data_ptr();
     p.packed = (Element*)packed.data_ptr();
@@ -85,12 +88,12 @@ std::
           <<<p.getBlocksGrid(),
              p.getThreadsGrid(),
              smem_bytes,
-             at::cuda::getCurrentCUDAStream()>>>(p, metadata, algo);
+             xf_getCurrentCUDAStream()>>>(p, metadata, algo);
     }
   };
   named_algorithms(launchKernel);
-  TORCH_CHECK(kernel_launched, "Unknown algorithm \"", algorithm, "\"");
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_TORCH_CHECK(kernel_launched, "Unknown algorithm \"", algorithm, "\"");
+  XF_CUDA_KERNEL_LAUNCH_CHECK();
   return std::make_tuple(
       compressed,
       packed_meta_reordered,
@@ -102,14 +105,14 @@ std::
 template <bool kIsMeta = false>
 std::
     tuple<
-        at::Tensor, // packed
-        at::Tensor, // packed_meta_reordered
-        at::Tensor, // packed_trans
-        at::Tensor, // packed_trans_meta_reordered
-        at::Tensor // threads_masks
+        torch::stable::Tensor, // packed
+        torch::stable::Tensor, // packed_meta_reordered
+        torch::stable::Tensor, // packed_trans
+        torch::stable::Tensor, // packed_trans_meta_reordered
+        torch::stable::Tensor // threads_masks
         >
     sparse24_sparsify_both_ways(
-        const at::Tensor input,
+        const torch::stable::Tensor input,
         std::string algorithm,
         std::string backend) {
   auto runTyped = [&](auto type) {
@@ -120,7 +123,7 @@ std::
           MetadataCuSparseLtSm80,
           kIsMeta>(input, algorithm);
     } else {
-      TORCH_CHECK(
+      STD_TORCH_CHECK(
           backend == "cutlass",
           "backend argument only supports `cutlass` or `cusparselt`");
       return sparse24_sparsify_both_ways_typed<
@@ -130,25 +133,25 @@ std::
     }
   };
 
-  if (input.scalar_type() == at::ScalarType::Half) {
+  if (input.scalar_type() == torch::headeronly::ScalarType::Half) {
     return runTyped(cutlass::half_t());
   } else {
-    TORCH_CHECK(
-        input.scalar_type() == at::ScalarType::Half ||
-        input.scalar_type() == at::ScalarType::BFloat16);
+    STD_TORCH_CHECK(
+        input.scalar_type() == torch::headeronly::ScalarType::Half ||
+        input.scalar_type() == torch::headeronly::ScalarType::BFloat16);
     return runTyped(cutlass::bfloat16_t());
   }
 }
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_sparsify_both_ways"),
-      TORCH_FN(sparse24_sparsify_both_ways<false>));
+      "sparse24_sparsify_both_ways",
+      XF_BOXED_FN(sparse24_sparsify_both_ways<false>));
 }
 
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_sparsify_both_ways"),
-      TORCH_FN(sparse24_sparsify_both_ways<true>));
+      "sparse24_sparsify_both_ways",
+      XF_BOXED_FN(sparse24_sparsify_both_ways<true>));
 }

@@ -38,6 +38,8 @@ runs:
           "6.2.4": ("6.2.4", "https://repo.radeon.com/amdgpu-install/6.2.4/rhel/8.9/amdgpu-install-6.2.60204-1.el8.noarch.rpm"),
           "6.3": ("6.3.1", "https://repo.radeon.com/amdgpu-install/6.3.1/rhel/8.9/amdgpu-install-6.3.60301-1.el8.noarch.rpm"),
           "6.4": ("6.4.2", "https://repo.radeon.com/amdgpu-install/6.4.2/rhel/8.9/amdgpu-install-6.4.60402-1.el8.noarch.rpm"),
+          "7.0": ("7.0.3", "https://repo.radeon.com/amdgpu-install/7.0.3/rhel/8/amdgpu-install-7.0.3.70003-1.el8.noarch.rpm"),
+          "7.1": ("7.1.0", "https://repo.radeon.com/amdgpu-install/7.1/rhel/8/amdgpu-install-7.1.70100-1.el8.noarch.rpm"),
         }[cushort]
         with open(os.environ['GITHUB_OUTPUT'], "r+") as fp:
           fp.write("CUDA_VERSION=" + full_version + "\n")

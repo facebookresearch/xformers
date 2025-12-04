@@ -5,7 +5,7 @@
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
-#include <torch/types.h>
+#include <torch/csrc/stable/library.h>
 
 // If we are in a Windows environment, we need to define
 // initialization functions for the _custom_ops extension.
@@ -20,19 +20,18 @@ PyMODINIT_FUNC PyInit__C(void) {
 }
 #endif // defined(_WIN32)
 
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
+STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
 #if defined(USE_ROCM)
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_ck(Tensor query, "
+  m.def(
+      "efficient_attention_forward_ck(Tensor query, "
       "Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, "
       "Tensor? seqstart_k, int? max_seqlen_q, float dropout_p, "
-      "bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k, int? window_size, Tensor? block_tables, int? page_size) -> (Tensor, Tensor?, int, int)"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_forward_decoder_splitk_ck(Tensor query, Tensor key, "
-      " Tensor value, Tensor? seq_positions, float scale, int split_k) -> Tensor"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::efficient_attention_backward_ck(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, int? max_seqlen_q, int? max_seqlen_k, Tensor? seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale, int? window_size) -> (Tensor, Tensor, Tensor, Tensor)"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_ck_rand_uniform(float p, Tensor out) -> Tensor"));
+      "bool compute_logsumexp, int custom_mask_type, float? scale, Tensor? seqlen_k, int? window_size, Tensor? block_tables, int? page_size) -> (Tensor, Tensor?, int, int)");
+  m.def(
+      "efficient_attention_forward_decoder_splitk_ck(Tensor query, Tensor key, "
+      " Tensor value, Tensor? seq_positions, float scale, int split_k) -> Tensor");
+  m.def(
+      "efficient_attention_backward_ck(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor? attn_bias, Tensor? seqstart_q, Tensor? seqstart_k, int? max_seqlen_q, int? max_seqlen_k, Tensor? seqlen_k, Tensor logsumexp, Tensor output, float dropout_p, int rng_seed, int rng_offset, int custom_mask_type, float? scale, int? window_size) -> (Tensor, Tensor, Tensor, Tensor)");
+  m.def("_ck_rand_uniform(float p, Tensor out) -> Tensor");
 #endif
 }

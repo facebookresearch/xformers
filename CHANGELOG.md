@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.34] - 2025-??-??
 
+### Improved
+- Migrated xFormers to the PyTorch stable API/ABI, which means that binary builds targeting PyTorch 2.10+ will be compatible with any later version
+
 ### Removed
 - Removed optimized fast-path of SwiGLU (which was only available for A100 GPUs)
 - Removed legacy component for sparse memory-efficient attention

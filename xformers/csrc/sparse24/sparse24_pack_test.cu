@@ -1,15 +1,21 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/TensorAccessor.h>
+
+#include "pt_stable_utils.h"
 #include "sparse24_pack.h"
 
 using namespace xformers::sp24;
 
 namespace {
 __global__ void meta_shuffle_test_kernel(
-    at::PackedTensorAccessor<int64_t, 3> local_meta,
-    at::PackedTensorAccessor<int64_t, 3> final_meta,
+    torch::headeronly::HeaderOnlyGenericPackedTensorAccessor<int64_t, 3>
+        local_meta,
+    torch::headeronly::HeaderOnlyGenericPackedTensorAccessor<int64_t, 3>
+        final_meta,
     bool transpose) {
   uint32_t meta_ab = 0;
   uint32_t meta_cd = 0;
@@ -25,30 +31,35 @@ __global__ void meta_shuffle_test_kernel(
       warp_shuffle_meta(meta_cd, transpose);
 }
 
-at::Tensor _sparse24_meta_shuffle_test(at::Tensor local_meta, bool transpose) {
+torch::stable::Tensor _sparse24_meta_shuffle_test(
+    torch::stable::Tensor local_meta,
+    bool transpose) {
   auto threads_grid = KernelTypes<cutlass::half_t>::Params::getThreadsGrid();
 
-  TORCH_CHECK(local_meta.scalar_type() == at::ScalarType::Long);
-  TORCH_CHECK(local_meta.dim() == 3);
-  TORCH_CHECK(local_meta.size(0) == threads_grid.x);
-  TORCH_CHECK(local_meta.size(1) == threads_grid.y);
-  TORCH_CHECK(local_meta.size(2) == kThreadY);
-  at::cuda::CUDAGuard device_guard(local_meta.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+  STD_TORCH_CHECK(
+      local_meta.scalar_type() == torch::headeronly::ScalarType::Long);
+  STD_TORCH_CHECK(local_meta.dim() == 3);
+  STD_TORCH_CHECK(local_meta.size(0) == threads_grid.x);
+  STD_TORCH_CHECK(local_meta.size(1) == threads_grid.y);
+  STD_TORCH_CHECK(local_meta.size(2) == kThreadY);
+  torch::stable::accelerator::DeviceGuard device_guard(
+      local_meta.device().index());
+  cudaStream_t stream = xf_getCurrentCUDAStream();
 
-  at::Tensor final_meta =
-      at::zeros({threads_grid.x, threads_grid.y, 2}, local_meta.options());
+  torch::stable::Tensor final_meta = xf_zeros(
+      {threads_grid.x, threads_grid.y, 2},
+      local_meta.scalar_type(),
+      local_meta.device());
   size_t smem_bytes = 0;
   meta_shuffle_test_kernel<<<1, threads_grid, smem_bytes, stream>>>(
-      local_meta.packed_accessor64<int64_t, 3>(),
-      final_meta.packed_accessor64<int64_t, 3>(),
+      xf_packed_accessor<int64_t, 3>(local_meta),
+      xf_packed_accessor<int64_t, 3>(final_meta),
       transpose);
   return final_meta;
 }
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_meta_shuffle_test"),
-      TORCH_FN(_sparse24_meta_shuffle_test));
+      "_sparse24_meta_shuffle_test", XF_BOXED_FN(_sparse24_meta_shuffle_test));
 }

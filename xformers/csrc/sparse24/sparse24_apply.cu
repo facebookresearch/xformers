@@ -1,7 +1,11 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
+#include "pt_stable_utils.h"
 #include "sparse24_metadata.h"
 #include "sparse24_pack.h"
 
@@ -20,14 +24,15 @@ __global__ void __launch_bounds__(32 /* num_threads */)
 template <typename Element, typename MetadataFormat, bool kIsMeta>
 std::
     tuple<
-        at::Tensor, // packed
-        at::Tensor, // packed_meta_reordered
-        at::Tensor, // packed_trans
-        at::Tensor // packed_trans_meta_reordered
+        torch::stable::Tensor, // packed
+        torch::stable::Tensor, // packed_meta_reordered
+        torch::stable::Tensor, // packed_trans
+        torch::stable::Tensor // packed_trans_meta_reordered
         >
     sparse24_apply_typed(
-        at::Tensor input, // Tensor to sparsify
-        at::Tensor threads_masks // Returned by `sparse24_sparsify_both_ways`
+        torch::stable::Tensor input, // Tensor to sparsify
+        torch::stable::Tensor
+            threads_masks // Returned by `sparse24_sparsify_both_ways`
     ) {
   using KT = KernelTypes<Element>;
   // TODO: Technically we should be able to deal with that
@@ -35,17 +40,17 @@ std::
   // `packed` & `packed_t`.
   // This would require to adapt the `threads_masks` a bit tho.
   if (input.stride(1) != 1) {
-    input = input.contiguous();
+    input = xf_contiguous(input);
   }
-  std::optional<at::cuda::CUDAGuard> device_guard;
+  std::optional<torch::stable::accelerator::DeviceGuard> device_guard;
   if (!kIsMeta) {
-    device_guard.emplace(input.device());
+    device_guard.emplace(input.device().index());
   }
 
-  TORCH_CHECK(input.dim() == 2);
-  TORCH_CHECK(input.stride(1) == 1);
-  TORCH_CHECK(input.stride(0) % 8 == 0);
-  TORCH_CHECK(input.size(1) % 32 == 0, "Wrong alignment shape[1]");
+  STD_TORCH_CHECK(input.dim() == 2);
+  STD_TORCH_CHECK(input.stride(1) == 1);
+  STD_TORCH_CHECK(input.stride(0) % 8 == 0);
+  STD_TORCH_CHECK(input.size(1) % 32 == 0, "Wrong alignment shape[1]");
 
   auto rows = input.size(0);
   auto cols = input.size(1);
@@ -72,15 +77,16 @@ std::
     p.threads_masks = (uint64_t*)threads_masks.data_ptr();
   }
 
-  TORCH_CHECK(threads_masks.dim() == 3);
-  TORCH_CHECK(
+  STD_TORCH_CHECK(threads_masks.dim() == 3);
+  STD_TORCH_CHECK(
       threads_masks.size(0) == p.getBlocksGrid().x * p.getThreadsGrid().x);
-  TORCH_CHECK(
+  STD_TORCH_CHECK(
       threads_masks.size(1) == p.getBlocksGrid().y * p.getThreadsGrid().y);
-  TORCH_CHECK(threads_masks.stride(1) == sizeof(p.threads_masks[0]));
-  TORCH_CHECK(threads_masks.size(2) == sizeof(p.threads_masks[0]));
-  TORCH_CHECK(threads_masks.stride(2) == 1);
-  TORCH_CHECK(threads_masks.scalar_type() == at::ScalarType::Byte);
+  STD_TORCH_CHECK(threads_masks.stride(1) == sizeof(p.threads_masks[0]));
+  STD_TORCH_CHECK(threads_masks.size(2) == sizeof(p.threads_masks[0]));
+  STD_TORCH_CHECK(threads_masks.stride(2) == 1);
+  STD_TORCH_CHECK(
+      threads_masks.scalar_type() == torch::headeronly::ScalarType::Byte);
 
   if (!kIsMeta) {
     size_t smem_bytes = 0;
@@ -88,8 +94,8 @@ std::
         <<<p.getBlocksGrid(),
            p.getThreadsGrid(),
            smem_bytes,
-           at::cuda::getCurrentCUDAStream()>>>(p);
-    C10_CUDA_KERNEL_LAUNCH_CHECK();
+           xf_getCurrentCUDAStream()>>>(p);
+    XF_CUDA_KERNEL_LAUNCH_CHECK();
   }
   return std::make_tuple(
       compressed,
@@ -101,14 +107,15 @@ std::
 template <bool kIsMeta>
 std::
     tuple<
-        at::Tensor, // packed
-        at::Tensor, // packed_meta_reordered
-        at::Tensor, // packed_trans
-        at::Tensor // packed_trans_meta_reordered
+        torch::stable::Tensor, // packed
+        torch::stable::Tensor, // packed_meta_reordered
+        torch::stable::Tensor, // packed_trans
+        torch::stable::Tensor // packed_trans_meta_reordered
         >
     sparse24_apply(
-        at::Tensor input, // Tensor to sparsify
-        at::Tensor threads_masks, // Returned by `sparse24_sparsify_both_ways`
+        torch::stable::Tensor input, // Tensor to sparsify
+        torch::stable::Tensor
+            threads_masks, // Returned by `sparse24_sparsify_both_ways`
         std::string backend) {
   auto runTyped = [&](auto type) {
     using ElementT = decltype(type);
@@ -116,7 +123,7 @@ std::
       return sparse24_apply_typed<ElementT, MetadataCuSparseLtSm80, kIsMeta>(
           input, threads_masks);
     } else {
-      TORCH_CHECK(
+      STD_TORCH_CHECK(
           backend == "cutlass",
           "backend argument only supports `cutlass` or `cusparselt`");
       return sparse24_apply_typed<ElementT, MetadataCutlassSm80, kIsMeta>(
@@ -124,26 +131,22 @@ std::
     }
   };
 
-  if (input.scalar_type() == at::ScalarType::Half) {
+  if (input.scalar_type() == torch::headeronly::ScalarType::Half) {
     return runTyped(cutlass::half_t());
   } else {
-    TORCH_CHECK(
-        input.scalar_type() == at::ScalarType::Half ||
-        input.scalar_type() == at::ScalarType::BFloat16);
+    STD_TORCH_CHECK(
+        input.scalar_type() == torch::headeronly::ScalarType::Half ||
+        input.scalar_type() == torch::headeronly::ScalarType::BFloat16);
     return runTyped(cutlass::bfloat16_t());
   }
 }
 
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_apply"),
-      TORCH_FN(sparse24_apply<false>));
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl("sparse24_apply", XF_BOXED_FN(sparse24_apply<false>));
 }
 
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_apply"),
-      TORCH_FN(sparse24_apply<true>));
+STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl("sparse24_apply", XF_BOXED_FN(sparse24_apply<true>));
 }

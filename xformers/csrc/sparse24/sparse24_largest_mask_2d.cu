@@ -1,10 +1,15 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
 #include <cutlass/array.h>
 #include <cutlass/bfloat16.h>
 #include <cutlass/half.h>
-#include <torch/library.h>
+
+#include "pt_stable_utils.h"
 #include "static_sort.h"
 
 template <typename Element, bool kHasRandom>
@@ -178,18 +183,18 @@ __global__ void sparse24_largest_mask_2d_cu(typename Kernel::Params p) {
 }
 
 template <bool kHasRandom>
-at::Tensor sparse24_largest_with_random_mask_2d_impl(
-    const at::Tensor input,
+torch::stable::Tensor sparse24_largest_with_random_mask_2d_impl(
+    const torch::stable::Tensor input,
     int64_t numRandom) {
-  TORCH_CHECK(input.is_cuda(), "must be a CUDA tensor");
-  TORCH_CHECK(!input.is_sparse(), "must be a dense tensor");
-  TORCH_CHECK(input.is_contiguous(), "must be contiguous");
-  TORCH_CHECK(input.dim() == 2, "only works on 2d tensors");
-  TORCH_CHECK(numRandom <= 8, "There are at most 4x2 elements")
+  STD_TORCH_CHECK(input.is_cuda(), "must be a CUDA tensor");
+  STD_TORCH_CHECK(!xf_is_sparse(input), "must be a dense tensor");
+  STD_TORCH_CHECK(input.is_contiguous(), "must be contiguous");
+  STD_TORCH_CHECK(input.dim() == 2, "only works on 2d tensors");
+  STD_TORCH_CHECK(numRandom <= 8, "There are at most 4x2 elements")
 
-  at::cuda::CUDAGuard device_guard(input.device());
-  cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-  at::Tensor output = at::empty_like(input);
+  torch::stable::accelerator::DeviceGuard device_guard(input.device().index());
+  cudaStream_t stream = xf_getCurrentCUDAStream();
+  torch::stable::Tensor output = torch::stable::empty_like(input);
 
   auto runKernel = [&](auto _) {
     using Element = decltype(_);
@@ -201,38 +206,37 @@ at::Tensor sparse24_largest_with_random_mask_2d_impl(
     p.size0 = input.size(0);
     p.size1 = input.size(1);
     p.numRandom = numRandom;
-    TORCH_CHECK((input.size(-1) % Kernel::kNumRows) == 0, "Wrong shape");
-    TORCH_CHECK((input.size(-2) % Kernel::kNumCols) == 0, "Wrong shape");
+    STD_TORCH_CHECK((input.size(-1) % Kernel::kNumRows) == 0, "Wrong shape");
+    STD_TORCH_CHECK((input.size(-2) % Kernel::kNumCols) == 0, "Wrong shape");
 
     sparse24_largest_mask_2d_cu<Kernel>
         <<<p.getBlocksGrid(), p.getThreadsGrid(), 0, stream>>>(p);
   };
-  if (input.scalar_type() == at::ScalarType::Half) {
+  if (input.scalar_type() == torch::headeronly::ScalarType::Half) {
     runKernel(cutlass::half_t(0));
   } else {
-    TORCH_CHECK(
-        input.scalar_type() == at::ScalarType::BFloat16,
+    STD_TORCH_CHECK(
+        input.scalar_type() == torch::headeronly::ScalarType::BFloat16,
         "only f16/bf16 supported");
     runKernel(cutlass::bfloat16_t(0));
   }
   return output;
 }
 
-at::Tensor sparse24_largest_mask_2d(const at::Tensor input) {
+torch::stable::Tensor sparse24_largest_mask_2d(
+    const torch::stable::Tensor input) {
   return sparse24_largest_with_random_mask_2d_impl<false>(input, 0);
 }
 
-at::Tensor sparse24_largest_with_Krandom_mask_2d(
-    const at::Tensor input,
+torch::stable::Tensor sparse24_largest_with_Krandom_mask_2d(
+    const torch::stable::Tensor input,
     int64_t numRandom) {
   return sparse24_largest_with_random_mask_2d_impl<true>(input, numRandom);
 }
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl("sparse24_largest_mask_2d", XF_BOXED_FN(sparse24_largest_mask_2d));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_largest_mask_2d"),
-      TORCH_FN(sparse24_largest_mask_2d));
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_largest_with_Krandom_mask_2d"),
-      TORCH_FN(sparse24_largest_with_Krandom_mask_2d));
+      "sparse24_largest_with_Krandom_mask_2d",
+      XF_BOXED_FN(sparse24_largest_with_Krandom_mask_2d));
 }

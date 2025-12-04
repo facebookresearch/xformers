@@ -124,7 +124,9 @@ jobs:
       - name: Install corresponding PyTorch
         run: |
           PYTORCH_INDEX_URL="https://download.pytorch.org/whl/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
-          $PY -m pip install wheel -r requirements.txt --extra-index-url $PYTORCH_INDEX_URL
+          PYTORCH_TEST_INDEX_URL="https://download.pytorch.org/whl/test/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
+          PYTORCH_NIGHTLY_INDEX_URL="https://download.pytorch.org/whl/nightly/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
+          $PY -m pip install wheel -r requirements.txt --extra-index-url $PYTORCH_NIGHTLY_INDEX_URL
 
       - name: Build wheel
         shell: bash -l {0}

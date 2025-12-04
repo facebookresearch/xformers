@@ -1,5 +1,3 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
 #include <cutlass/array.h>
 #include <cutlass/bfloat16.h>
 #include <cutlass/coord.h>
@@ -8,7 +6,15 @@
 #include <cutlass/layout/matrix.h>
 #include <cutlass/tensor_ref.h>
 #include <cutlass/tensor_view.h>
-#include <torch/library.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+#include <torch/headeronly/core/TensorAccessor.h>
+
+#include "pt_stable_utils.h"
 #include "static_sort.h"
 
 namespace {
@@ -21,20 +27,28 @@ using RefInp = typename cutlass::TensorRef<ElementInputE, LayoutInputE>;
 using RefReordered =
     typename cutlass::TensorRef<ElementInputE, ReorderedLayoutInputE>;
 
-at::Tensor _sparse24_pack_mask(const at::Tensor input) {
-  TORCH_CHECK(input.is_contiguous(), "Expected contiguous tensor");
-  TORCH_CHECK(input.dim() == 2, "Expected 2d tensor");
-  TORCH_CHECK(
+torch::stable::Tensor _sparse24_pack_mask(const torch::stable::Tensor input) {
+  STD_TORCH_CHECK(input.is_contiguous(), "Expected contiguous tensor");
+  STD_TORCH_CHECK(input.dim() == 2, "Expected 2d tensor");
+  STD_TORCH_CHECK(
       input.size(0) % 32 == 0 && input.size(1) % 32 == 0,
       "Wrong dim, should be dividable by 32");
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Bool, "Expected bool Tensor");
+  STD_TORCH_CHECK(
+      input.scalar_type() == torch::headeronly::ScalarType::Bool,
+      "Expected bool Tensor");
 
-  at::Tensor packed = at::empty(
+  torch::stable::Tensor packed = torch::stable::new_empty(
+      input,
       {input.size(0), input.size(1) / 16},
-      input.options().dtype(at::ScalarType::Short));
-  auto input_a = input.accessor<bool, 2>();
-  auto packed_a = packed.accessor<int16_t, 2>();
+      torch::headeronly::ScalarType::Short);
+  auto input_a = torch::headeronly::HeaderOnlyTensorAccessor<bool, 2>(
+      input.mutable_data_ptr<bool>(),
+      input.sizes().data(),
+      input.strides().data());
+  auto packed_a = torch::headeronly::HeaderOnlyTensorAccessor<int16_t, 2>(
+      packed.mutable_data_ptr<int16_t>(),
+      packed.sizes().data(),
+      packed.strides().data());
   for (int row = 0; row < input.size(0); ++row) {
     for (int col_s = 0; col_s < input.size(1); col_s += 16) {
       ElementInputE out = 0;
@@ -48,7 +62,7 @@ at::Tensor _sparse24_pack_mask(const at::Tensor input) {
             } else if (second_pos == -1) {
               second_pos = i;
             } else {
-              TORCH_CHECK(
+              STD_TORCH_CHECK(
                   second_pos != -1,
                   "Invalid mask at (",
                   row,
@@ -58,7 +72,7 @@ at::Tensor _sparse24_pack_mask(const at::Tensor input) {
             }
           }
         }
-        TORCH_CHECK(
+        STD_TORCH_CHECK(
             second_pos != -1,
             "Invalid mask at (",
             row,
@@ -103,43 +117,46 @@ void reorder_meta(
   }
 }
 
-at::Tensor _sparse24_reorder_meta(at::Tensor input) {
-  TORCH_CHECK(input.dim() == 2, "Expected 2d tensor");
-  TORCH_CHECK(input.size(0) % 32 == 0, "Wrong dim0");
-  TORCH_CHECK(input.size(1) % 2 == 0, "Wrong dim1");
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Short, "Expected int16 tensor");
-  input = input.contiguous();
+torch::stable::Tensor _sparse24_reorder_meta(torch::stable::Tensor input) {
+  STD_TORCH_CHECK(input.dim() == 2, "Expected 2d tensor");
+  STD_TORCH_CHECK(input.size(0) % 32 == 0, "Wrong dim0");
+  STD_TORCH_CHECK(input.size(1) % 2 == 0, "Wrong dim1");
+  STD_TORCH_CHECK(
+      input.scalar_type() == torch::headeronly::ScalarType::Short,
+      "Expected int16 tensor");
+  input = xf_contiguous(input);
   cutlass::gemm::GemmCoord problem_size(input.size(0), 0, input.size(1));
 
   cutlass::MatrixCoord meta_dim{input.size(0), input.size(1)};
   auto reordered_layout = ReorderedLayoutInputE::packed(meta_dim);
-  at::Tensor reordered =
-      at::empty({reordered_layout.capacity(meta_dim)}, input.options());
+  torch::stable::Tensor reordered =
+      torch::stable::new_empty(input, {reordered_layout.capacity(meta_dim)});
 
   RefInp ref_inp{(uint16_t*)input.data_ptr(), LayoutInputE(input.stride(0))};
   RefReordered ref_reordered{(uint16_t*)reordered.data_ptr(), reordered_layout};
 
   reorder_meta(ref_reordered, ref_inp, problem_size);
-  return reordered.view({input.size(1) / 2, input.size(0), 2})
-      .permute({1, 2, 0});
+  return xf_permute(
+      torch::stable::view(reordered, {input.size(1) / 2, input.size(0), 2}),
+      {1, 2, 0});
 }
 
-at::Tensor _sparse24_pack_tensor_according_to_mask(
-    at::Tensor a,
-    at::Tensor meta_reordered) {
-  TORCH_CHECK(a.dim() == 2, "Expected 2d tensor");
-  TORCH_CHECK(a.size(0) % 32 == 0, "Wrong dim0");
-  TORCH_CHECK(a.size(1) % 4 == 0, "Wrong dim1");
-  TORCH_CHECK(
+torch::stable::Tensor _sparse24_pack_tensor_according_to_mask(
+    torch::stable::Tensor a,
+    torch::stable::Tensor meta_reordered) {
+  STD_TORCH_CHECK(a.dim() == 2, "Expected 2d tensor");
+  STD_TORCH_CHECK(a.size(0) % 32 == 0, "Wrong dim0");
+  STD_TORCH_CHECK(a.size(1) % 4 == 0, "Wrong dim1");
+  STD_TORCH_CHECK(
       meta_reordered.dim() == 3, "Expected meta to be reordered already");
 
-  at::Tensor a_packed = at::empty({a.size(0), a.size(1) / 2}, a.options());
+  torch::stable::Tensor a_packed =
+      torch::stable::new_empty(a, {a.size(0), a.size(1) / 2});
   cutlass::MatrixCoord meta_dim{
       meta_reordered.size(0), meta_reordered.size(1) * meta_reordered.size(2)};
   auto reordered_layout = ReorderedLayoutInputE::packed(meta_dim);
-  at::Tensor reordered =
-      at::empty({reordered_layout.capacity(meta_dim)}, a.options());
+  torch::stable::Tensor reordered =
+      torch::stable::new_empty(a, {reordered_layout.capacity(meta_dim)});
   RefReordered ref_meta_reordered{
       (uint16_t*)meta_reordered.data_ptr(), reordered_layout};
   RefInp ref_a{(uint16_t*)a.data_ptr(), LayoutInputE(a.stride(0))};
@@ -180,14 +197,10 @@ at::Tensor _sparse24_pack_tensor_according_to_mask(
 }
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CPU, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CPU, m) {
+  m.impl("_sparse24_pack_mask", XF_BOXED_FN(_sparse24_pack_mask));
+  m.impl("_sparse24_reorder_meta", XF_BOXED_FN(_sparse24_reorder_meta));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_pack_mask"),
-      TORCH_FN(_sparse24_pack_mask));
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_reorder_meta"),
-      TORCH_FN(_sparse24_reorder_meta));
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_pack_tensor_according_to_mask"),
-      TORCH_FN(_sparse24_pack_tensor_according_to_mask));
+      "_sparse24_pack_tensor_according_to_mask",
+      XF_BOXED_FN(_sparse24_pack_tensor_according_to_mask));
 }

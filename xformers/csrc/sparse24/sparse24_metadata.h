@@ -1,7 +1,13 @@
 #pragma once
-#include <torch/library.h>
-#include <torch/types.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
 #include "compute_sparse_tile.h"
+#include "pt_stable_utils.h"
 
 namespace xformers {
 namespace sp24 {
@@ -10,31 +16,31 @@ struct CutlassToAt;
 
 template <>
 struct CutlassToAt<cutlass::half_t> {
-  static auto constexpr value = at::ScalarType::Half;
+  static auto constexpr value = torch::headeronly::ScalarType::Half;
 };
 template <>
 struct CutlassToAt<cutlass::bfloat16_t> {
-  static auto constexpr value = at::ScalarType::BFloat16;
+  static auto constexpr value = torch::headeronly::ScalarType::BFloat16;
 };
 template <>
 struct CutlassToAt<cutlass::float_e4m3_t> {
-  static auto constexpr value = at::ScalarType::Float8_e4m3fn;
+  static auto constexpr value = torch::headeronly::ScalarType::Float8_e4m3fn;
 };
 template <>
 struct CutlassToAt<uint16_t> {
-  static auto constexpr value = at::ScalarType::UInt16;
+  static auto constexpr value = torch::headeronly::ScalarType::UInt16;
 };
 template <>
 struct CutlassToAt<int32_t> {
-  static auto constexpr value = at::ScalarType::Int;
+  static auto constexpr value = torch::headeronly::ScalarType::Int;
 };
 template <>
 struct CutlassToAt<uint8_t> {
-  static auto constexpr value = at::ScalarType::Byte;
+  static auto constexpr value = torch::headeronly::ScalarType::Byte;
 };
 template <>
 struct CutlassToAt<float> {
-  static auto constexpr value = at::ScalarType::Float;
+  static auto constexpr value = torch::headeronly::ScalarType::Float;
 };
 
 struct MetadataCuSparseLtSm80 {
@@ -50,45 +56,45 @@ struct MetadataCuSparseLtSm80 {
   int64_t _cols;
 
   static int64_t getMetadataSize(int rows, int cols) {
-    TORCH_CHECK(
+    STD_TORCH_CHECK(
         rows % 128 == 0 && cols % 128 == 0,
         "Only supports rows/cols multiples of 128");
     // 1 bit per dense value
     return (rows * cols) / (8 * sizeof(ElementInputE));
   }
   static std::tuple<
-      at::Tensor, // return value of the function
-      at::Tensor, // packed
-      at::Tensor // packed_meta
+      torch::stable::Tensor, // return value of the function
+      torch::stable::Tensor, // packed
+      torch::stable::Tensor // packed_meta
       >
   create_compressed_representation(
       int rows,
       int cols,
-      at::Tensor const& like,
+      torch::stable::Tensor const& like,
       bool needs_metadata) {
-    TORCH_CHECK(
-        like.scalar_type() == at::ScalarType::Half ||
-        like.scalar_type() == at::ScalarType::BFloat16);
+    STD_TORCH_CHECK(
+        like.scalar_type() == torch::headeronly::ScalarType::Half ||
+        like.scalar_type() == torch::headeronly::ScalarType::BFloat16);
     constexpr int kBytesPerScalar = 2;
     int64_t data_scalars = rows * cutlass::ceil_div(cols, 2);
     int64_t meta_scalars = getMetadataSize(rows, cols);
 
-    at::Tensor storage = at::empty(
-        {(data_scalars + meta_scalars)},
-        at::TensorOptions().device(like.device()).dtype(like.dtype()));
-    using namespace torch::indexing;
-    at::Tensor packed = storage.index({Slice(None, data_scalars)})
-                            .view({rows, cutlass::ceil_div(cols, 2)});
-    at::Tensor metadata = storage.index({Slice(data_scalars, None)});
+    torch::stable::Tensor storage =
+        torch::stable::new_empty(like, {(data_scalars + meta_scalars)});
+    torch::stable::Tensor packed =
+        xf_slice(storage, 0, std::nullopt, data_scalars);
+    packed = torch::stable::view(packed, {rows, cutlass::ceil_div(cols, 2)});
+    torch::stable::Tensor metadata =
+        xf_slice(storage, 0, data_scalars, std::nullopt);
     // TODO: Cast metadata to Short
     static_assert(kBytesPerScalar == 2, "or modify the last dim below");
-    metadata = metadata.view({rows / 128, cols / 32, 256});
-    storage = storage.view({rows, -1});
+    metadata = torch::stable::view(metadata, {rows / 128, cols / 32, 256});
+    storage = torch::stable::view(storage, {rows, -1});
     return std::make_tuple(storage, packed, metadata);
   }
   MetadataCuSparseLtSm80(
-      at::Tensor metaN,
-      at::Tensor metaT,
+      torch::stable::Tensor metaN,
+      torch::stable::Tensor metaT,
       int rows,
       int cols) {
     _meta = (ElementInputE*)metaN.data_ptr();
@@ -149,35 +155,41 @@ struct MetadataCutlassSm80 {
   int64_t _meta_trans_reordered_sx;
 
   static std::tuple<
-      at::Tensor, // return value of the function
-      at::Tensor, // packed
-      at::Tensor // packed_meta
+      torch::stable::Tensor, // return value of the function
+      torch::stable::Tensor, // packed
+      torch::stable::Tensor // packed_meta
       >
   create_compressed_representation(
       int rows,
       int cols,
-      at::Tensor const& like,
+      torch::stable::Tensor const& like,
       bool needs_metadata) {
-    TORCH_CHECK(
-        like.scalar_type() == at::ScalarType::Half ||
-        like.scalar_type() == at::ScalarType::BFloat16);
+    STD_TORCH_CHECK(
+        like.scalar_type() == torch::headeronly::ScalarType::Half ||
+        like.scalar_type() == torch::headeronly::ScalarType::BFloat16);
     auto roundedx = cutlass::round_up(rows, kWarpX);
     auto roundedy = cutlass::round_up(cols, kWarpY);
 
     // NB: Writing to `packed` tensors in transposed manner
-    at::Tensor packed =
-        at::empty({roundedx, cutlass::ceil_div(roundedy, 2)}, like.options());
-    at::Tensor packed_meta;
+    torch::stable::Tensor packed = torch::stable::new_empty(
+        like, {roundedx, cutlass::ceil_div(roundedy, 2)});
+    torch::stable::Tensor packed_meta;
     if (needs_metadata) {
-      packed_meta = at::empty(
-                        {roundedx * roundedy / 16},
-                        like.options().dtype(at::ScalarType::Short))
-                        .view({roundedy / 32, roundedx, 2})
-                        .permute({1, 2, 0});
+      packed_meta = torch::stable::new_empty(
+          like,
+          {roundedx * roundedy / 16},
+          torch::headeronly::ScalarType::Short);
+      packed_meta =
+          torch::stable::view(packed_meta, {roundedy / 32, roundedx, 2});
+      packed_meta = xf_permute(packed_meta, {1, 2, 0});
     }
     return std::make_tuple(packed, packed, packed_meta);
   }
-  MetadataCutlassSm80(at::Tensor metaN, at::Tensor metaT, int rows, int cols) {
+  MetadataCutlassSm80(
+      torch::stable::Tensor metaN,
+      torch::stable::Tensor metaT,
+      int rows,
+      int cols) {
     _meta = (ElementInputE*)metaN.data_ptr();
     _meta_reordered_sy = metaN.stride(2);
     _meta_trans = (ElementInputE*)metaT.data_ptr();
@@ -229,18 +241,20 @@ struct MetadataCutlassSm80 {
 
 struct MetadataCutlass8bitsSm90 {
   template <typename ElementOut>
-  static std::tuple<at::Tensor, at::Tensor> createTensors(at::Tensor input) {
+  static std::tuple<torch::stable::Tensor, torch::stable::Tensor> createTensors(
+      torch::stable::Tensor input) {
     auto n_rows = input.size(0);
     auto n_cols = input.size(1);
-    TORCH_CHECK(n_cols % 128 == 0); // aligned metadata
-    TORCH_CHECK(n_rows % 64 == 0); // aligned metadata
+    STD_TORCH_CHECK(n_cols % 128 == 0); // aligned metadata
+    STD_TORCH_CHECK(n_rows % 64 == 0); // aligned metadata
     int mdata_bytes = n_rows * n_cols / 8;
 
-    at::Tensor packed = at::empty(
+    torch::stable::Tensor packed = torch::stable::new_empty(
+        input,
         {n_rows, n_cols / 2},
-        input.options().dtype(CutlassToAt<ElementOut>::value));
-    at::Tensor mdata =
-        at::empty({mdata_bytes}, input.options().dtype(at::ScalarType::Byte));
+        /*dtype=*/CutlassToAt<ElementOut>::value);
+    torch::stable::Tensor mdata = torch::stable::new_empty(
+        input, {mdata_bytes}, torch::headeronly::ScalarType::Byte);
     return std::make_tuple(packed, mdata);
   }
   static CUTLASS_HOST_DEVICE int64_t
@@ -252,21 +266,22 @@ struct MetadataCutlass8bitsSm90 {
 
 struct MetadataCusparseLt16bitsSm90 {
   template <typename ElementOut>
-  static std::tuple<at::Tensor, at::Tensor> createTensors(at::Tensor input) {
+  static std::tuple<torch::stable::Tensor, torch::stable::Tensor> createTensors(
+      torch::stable::Tensor input) {
     auto n_rows = input.size(0);
     auto n_cols = input.size(1);
     int packed_elements = n_rows * n_cols / 2;
     int mdata_bytes = n_rows * n_cols / 8;
 
     // We assume 2 bytes per element
-    at::Tensor sparse_packed = at::empty(
+    torch::stable::Tensor sparse_packed = torch::stable::new_empty(
+        input,
         {int64_t(packed_elements + mdata_bytes / sizeof(ElementOut))},
-        input.options().dtype(CutlassToAt<ElementOut>::value));
-    using namespace torch::indexing;
-    return std::make_tuple(
-        sparse_packed,
-        sparse_packed.index({Slice(packed_elements, None)})
-            .view(at::ScalarType::Byte));
+        /*dtype=*/CutlassToAt<ElementOut>::value);
+    torch::stable::Tensor metadata =
+        xf_slice(sparse_packed, 0, packed_elements, std::nullopt);
+    metadata = xf_view_dtype(metadata, torch::headeronly::ScalarType::Byte);
+    return std::make_tuple(sparse_packed, metadata);
   }
 };
 

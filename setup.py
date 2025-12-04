@@ -422,6 +422,18 @@ def should_use_pt_flash(xformers_pt_flash_attn: Optional[str]) -> bool:
 
 
 def get_extensions():
+    # We need https://github.com/pytorch/pytorch/pull/168370.
+    # TODO: Once PyTorch 2.10.0 (stable) comes out, remove this check and just
+    # add torch==2.10.0 to the build requirements in pyproject.toml. (We want
+    # strict equality in order to pick the oldest viable version and get the
+    # broadest compatibility).
+    if torch.__version__ < "2.10.0.dev20251124":
+        raise RuntimeError(
+            "This version of xFormers requires PyTorch 2.10+ (or a nightly from November 24, 2025 or later). "
+            f"You have PyTorch {torch.__version__}. "
+            "For previous versions of PyTorch, check out v0.0.33 of xFormers or earlier."
+        )
+
     extensions_dir = os.path.join("xformers", "csrc")
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
@@ -529,6 +541,7 @@ def get_extensions():
             "--extended-lambda",
             "-D_ENABLE_EXTENDED_ALIGNED_STORAGE",
             "-std=c++17",
+            "-DPy_LIMITED_API=0x03090000",
         ] + get_extra_nvcc_flags_for_build_type(cuda_version)
         if os.getenv("XFORMERS_ENABLE_DEBUG_ASSERTIONS", "0") != "1":
             nvcc_flags.append("-DNDEBUG")
@@ -584,6 +597,10 @@ def get_extensions():
                 "--ptxas-options=-O2",
                 "--ptxas-options=-allow-expensive-optimizations=true",
             ]
+        # For now we enforce the PyTorch stable ABI only for CUDA builds (not HIP)
+        # and we exclude FlashAttention due to a (temporary?) regression in PyTorch.
+        extra_compile_args["cxx"].append("-DTORCH_STABLE_ONLY")
+        extra_compile_args["nvcc"].append("-DTORCH_STABLE_ONLY")
     elif (
         torch.version.hip
         and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1"
