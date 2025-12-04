@@ -1,6 +1,5 @@
 #include <ATen/ScalarOps.h>
 #include <ATen/Tensor.h>
-#include <ATen/autocast_mode.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/library.h>
 #include <torch/types.h>
@@ -140,24 +139,6 @@ std::
     return runTyped(cutlass::bfloat16_t());
   }
 }
-
-std::
-    tuple<
-        at::Tensor, // packed
-        at::Tensor, // packed_meta_reordered
-        at::Tensor, // packed_trans
-        at::Tensor, // packed_trans_meta_reordered
-        at::Tensor // threads_masks
-        >
-    sparse24_sparsify_both_ways_autocast(
-        const at::Tensor input,
-        std::string algorithm,
-        std::string backend) {
-  c10::impl::ExcludeDispatchKeyGuard no_autocast(c10::DispatchKey::Autocast);
-  auto exec_type = at::autocast::get_autocast_dtype(at::kCUDA);
-  return sparse24_sparsify_both_ways(
-      at::autocast::cached_cast(exec_type, input), algorithm, backend);
-}
 } // namespace
 
 TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
@@ -170,10 +151,4 @@ TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("xformers::sparse24_sparsify_both_ways"),
       TORCH_FN(sparse24_sparsify_both_ways<true>));
-}
-
-TORCH_LIBRARY_IMPL(xformers, Autocast, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparse24_sparsify_both_ways"),
-      TORCH_FN(sparse24_sparsify_both_ways_autocast));
 }
