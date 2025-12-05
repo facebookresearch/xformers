@@ -33,7 +33,11 @@ at::Tensor rand_uniform_int(
   int M = out_pattern.size(2);
   int N = out_pattern.size(3);
 
+#ifdef HIPIFY_V2
+  hipStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
+#else
   hipStream_t stream = c10::hip::getCurrentHIPStream().stream();
+#endif
 
   at::CUDAGeneratorImpl* gen =
       at::get_generator_or_default<at::CUDAGeneratorImpl>(
