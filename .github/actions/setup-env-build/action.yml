@@ -141,6 +141,11 @@ runs:
       shell: bash -l {0}
       run: |
         PYTORCH_NVCC="$CONDA_PREFIX/bin/nvcc-ccache" CXX="g++-ccache" TORCH_CUDA_ARCH_LIST=${{ inputs.arch }} python -m pip install -v --no-build-isolation -e .
+    - name: Check for PyTorch stable symbols
+      shell: bash -l {0}
+      run: |
+        bad_symbols=$(nm --dynamic --undefined-only --demangle xformers/_C.so | grep --extended-regexp "(torch|at|c10|c10d)::" || true)
+        if [[ $bad_symbols != "" ]]; then echo "These non-stable PyTorch symbols made it into the xFormers shared library:"; echo $bad_symbols; exit 1; fi
     - name: Build info
       run: |
         printenv

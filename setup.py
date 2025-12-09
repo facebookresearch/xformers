@@ -599,8 +599,12 @@ def get_extensions():
             ]
         # For now we enforce the PyTorch stable ABI only for CUDA builds (not HIP)
         # and we exclude FlashAttention due to a (temporary?) regression in PyTorch.
-        extra_compile_args["cxx"].append("-DTORCH_STABLE_ONLY")
-        extra_compile_args["nvcc"].append("-DTORCH_STABLE_ONLY")
+        extra_compile_args["cxx"].extend(
+            ["-DTORCH_STABLE_ONLY", "-DTORCH_TARGET_VERSION=0x020a000000000000"]
+        )
+        extra_compile_args["nvcc"].extend(
+            ["-DTORCH_STABLE_ONLY", "-DTORCH_TARGET_VERSION=0x020a000000000000"]
+        )
     elif (
         torch.version.hip
         and os.getenv("XFORMERS_CK_FLASH_ATTN", "1") == "1"
