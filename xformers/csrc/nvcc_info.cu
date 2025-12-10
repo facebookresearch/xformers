@@ -11,5 +11,5 @@ std::tuple<int64_t, int64_t, int64_t> nvcc_build_version() {
 
 STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
   m.def("_nvcc_build_version() -> (int, int, int)");
-  m.impl("_nvcc_build_version", XF_BOXED_FN(nvcc_build_version));
+  m.impl("_nvcc_build_version", TORCH_BOX(nvcc_build_version));
 }

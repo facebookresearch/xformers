@@ -1,160 +1,24 @@
 #pragma once
 
 #include <array>
+#include <cassert>
+#include <cmath>
+#include <limits>
 #include <optional>
 #include <tuple>
 #include <type_traits>
 #include <vector>
 
+#include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/stableivalue_conversions.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/TensorAccessor.h>
 #include <torch/headeronly/util/Metaprogramming.h>
-
-namespace {
-
-template <class... T, std::size_t... I>
-std::tuple<T...> unbox_to_tuple_impl(
-    StableIValue* stack,
-    std::index_sequence<I...>) {
-  return std::make_tuple(
-      torch::stable::detail::to<std::remove_cv_t<std::remove_reference_t<T>>>(
-          stack[I])...);
-}
-
-template <class... T>
-std::tuple<T...> unbox_to_tuple(StableIValue* stack) {
-  return unbox_to_tuple_impl<T...>(
-      stack, std::make_index_sequence<sizeof...(T)>());
-}
-
-template <class... T, std::size_t... I>
-void box_from_tuple_impl(
-    StableIValue* stack,
-    std::tuple<T...> vals,
-    std::index_sequence<I...>) {
-  ((stack[I] = torch::stable::detail::from<
-        std::remove_cv_t<std::remove_reference_t<T>>>(std::get<I>(vals))),
-   ...);
-}
-
-template <class... T>
-void box_from_tuple(StableIValue* stack, std::tuple<T...> vals) {
-  box_from_tuple_impl<T...>(
-      stack, vals, std::make_index_sequence<sizeof...(T)>());
-}
-
-template <
-    typename ReturnType,
-    typename ParameterTypeList,
-    typename FuncT,
-    FuncT* func>
-struct boxer_impl {};
-
-template <
-    typename... ReturnTypes,
-    typename... ParameterTypes,
-    typename FuncT,
-    FuncT* func>
-struct boxer_impl<
-    std::tuple<ReturnTypes...>,
-    c10::guts::typelist::typelist<ParameterTypes...>,
-    FuncT,
-    func> {
-  void operator()(
-      StableIValue* stack,
-      uint64_t num_args,
-      uint64_t num_outputs) {
-    assert(num_args == sizeof...(ParameterTypes));
-    assert(num_outputs == sizeof...(ReturnTypes));
-    std::tuple<ParameterTypes...> args =
-        unbox_to_tuple<ParameterTypes...>(stack);
-    auto res = std::apply(func, args);
-    box_from_tuple<ReturnTypes...>(stack, res);
-  }
-};
-
-template <
-    typename ReturnType,
-    typename... ParameterTypes,
-    typename FuncT,
-    FuncT* func>
-struct boxer_impl<
-    ReturnType,
-    c10::guts::typelist::typelist<ParameterTypes...>,
-    FuncT,
-    func> {
-  void operator()(
-      StableIValue* stack,
-      uint64_t num_args,
-      uint64_t num_outputs) {
-    assert(num_args == sizeof...(ParameterTypes));
-    assert(num_outputs == 1);
-    std::tuple<ParameterTypes...> args =
-        unbox_to_tuple<ParameterTypes...>(stack);
-    auto res = std::apply(func, args);
-    stack[0] = torch::stable::detail::from<ReturnType>(res);
-    // box_from_tuple<std::tuple<ReturnType>>(stack, std::make_tuple(res));
-  }
-};
-
-template <typename... ParameterTypes, typename FuncT, FuncT* func>
-struct boxer_impl<
-    void,
-    c10::guts::typelist::typelist<ParameterTypes...>,
-    FuncT,
-    func> {
-  void operator()(
-      StableIValue* stack,
-      uint64_t num_args,
-      uint64_t num_outputs) {
-    assert(num_args == sizeof...(ParameterTypes));
-    assert(num_outputs == 0);
-    std::tuple<ParameterTypes...> args =
-        unbox_to_tuple<ParameterTypes...>(stack);
-    std::apply(func, args);
-  }
-};
-
-template <typename FuncT, FuncT* func>
-struct boxer {
-  using FunctionTrait = c10::guts::infer_function_traits_t<FuncT>;
-
-  static void boxed_fn(
-      StableIValue* stack,
-      uint64_t num_args,
-      uint64_t num_outputs) {
-    boxer_impl<
-        typename FunctionTrait::return_type,
-        c10::guts::typelist::map_t<
-            std::remove_reference_t,
-            typename FunctionTrait::parameter_types>,
-        FuncT,
-        func>()(stack, num_args, num_outputs);
-  }
-};
-
-} // namespace
-
-#define XF_BOXED_FN(func)                                             \
-  (boxer<                                                             \
-      std::remove_pointer_t<std::remove_reference_t<decltype(func)>>, \
-      (func)>::boxed_fn)
-
-#define XF_CUDA_CHECK(EXPR)                                                    \
-  do {                                                                         \
-    const cudaError_t __err = EXPR;                                            \
-    /* TODO Call stable version of c10::cuda::c10_cuda_check_implementation */ \
-    if (__err != cudaSuccess) {                                                \
-      throw std::runtime_error(cudaGetErrorString(__err));                     \
-    }                                                                          \
-  } while (0)
-
-#define XF_CUDA_KERNEL_LAUNCH_CHECK() XF_CUDA_CHECK(cudaGetLastError())
 
 #define XF_CUDA_DRIVER_CHECK(EXPR)                   \
   do {                                               \
@@ -170,13 +34,14 @@ namespace {
 
 cudaStream_t xf_getCurrentCUDAStream(
     torch::stable::accelerator::DeviceIndex index = -1) {
-  // cudaStream_t ret;
-  // TORCH_ERROR_CODE_CHECK(aoti_torch_get_current_cuda_stream(index, &ret));
-  // return ret;
-  return reinterpret_cast<cudaStream_t>(
-      torch::stable::accelerator::getCurrentStream(
-          torch::stable::accelerator::getCurrentDeviceIndex())
-          .id());
+  // This would be the correct code to use, but it's currently broken.
+  // return reinterpret_cast<cudaStream_t>(
+  //     torch::stable::accelerator::getCurrentStream(
+  //         torch::stable::accelerator::getCurrentDeviceIndex())
+  //         .id());
+  void* ret;
+  TORCH_ERROR_CODE_CHECK(aoti_torch_get_current_cuda_stream(index, &ret));
+  return static_cast<cudaStream_t>(ret);
 }
 
 template <typename dtype, size_t ndim>
@@ -292,26 +157,17 @@ inline torch::stable::Tensor xf_zeros(
   return torch::stable::detail::to<torch::stable::Tensor>(stack[0]);
 }
 
-template <typename T>
-inline torch::stable::Tensor xf_full(
+inline torch::stable::Tensor xf_new_full(
+    const torch::stable::Tensor& self,
     std::vector<int64_t> size,
-    T fill_value,
-    std::optional<torch::headeronly::ScalarType> dtype = std::nullopt,
-    std::optional<torch::stable::Device> device = std::nullopt,
-    std::optional<bool> pin_memory = std::nullopt) {
-  const auto num_args = 6;
-  std::array<StableIValue, num_args> stack{
-      torch::stable::detail::from(size),
-      torch::stable::detail::from(fill_value),
-      torch::stable::detail::from(dtype),
-      torch::stable::detail::from(std::nullopt),
-      torch::stable::detail::from(device),
-      torch::stable::detail::from(pin_memory)};
-  // full(SymInt[] size, Scalar fill_value, *, ScalarType? dtype=None, Layout?
-  // layout=None, Device? device=None, bool? pin_memory=None) -> Tensor
-  TORCH_ERROR_CODE_CHECK(
-      torch_call_dispatcher("aten::full", "", stack.data(), TORCH_ABI_VERSION));
-  return torch::stable::detail::to<torch::stable::Tensor>(stack[0]);
+    int64_t fill_value,
+    std::optional<torch::headeronly::ScalarType> dtype = std::nullopt) {
+  // Don't directly dispatch to aten::new_full, because StableIValue doesn't
+  // yet support schemas with Scalar arguments.
+  torch::stable::Tensor ret = torch::stable::new_empty(self, size, dtype);
+  assert(abs(fill_value) < (1ll << (std::numeric_limits<double>::digits + 1)));
+  ret = torch::stable::fill_(ret, fill_value);
+  return ret;
 }
 
 inline torch::stable::Tensor xf_cumsum(

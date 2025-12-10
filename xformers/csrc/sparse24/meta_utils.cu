@@ -198,9 +198,9 @@ torch::stable::Tensor _sparse24_pack_tensor_according_to_mask(
 } // namespace
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CPU, m) {
-  m.impl("_sparse24_pack_mask", XF_BOXED_FN(_sparse24_pack_mask));
-  m.impl("_sparse24_reorder_meta", XF_BOXED_FN(_sparse24_reorder_meta));
+  m.impl("_sparse24_pack_mask", TORCH_BOX(_sparse24_pack_mask));
+  m.impl("_sparse24_reorder_meta", TORCH_BOX(_sparse24_reorder_meta));
   m.impl(
       "_sparse24_pack_tensor_according_to_mask",
-      XF_BOXED_FN(_sparse24_pack_tensor_according_to_mask));
+      TORCH_BOX(_sparse24_pack_tensor_according_to_mask));
 }

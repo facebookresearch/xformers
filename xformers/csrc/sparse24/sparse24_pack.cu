@@ -1,6 +1,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 
@@ -93,7 +94,7 @@ std::
   };
   named_algorithms(launchKernel);
   STD_TORCH_CHECK(kernel_launched, "Unknown algorithm \"", algorithm, "\"");
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
   return std::make_tuple(
       compressed,
       packed_meta_reordered,
@@ -147,11 +148,11 @@ std::
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       "sparse24_sparsify_both_ways",
-      XF_BOXED_FN(sparse24_sparsify_both_ways<false>));
+      TORCH_BOX(sparse24_sparsify_both_ways<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
       "sparse24_sparsify_both_ways",
-      XF_BOXED_FN(sparse24_sparsify_both_ways<true>));
+      TORCH_BOX(sparse24_sparsify_both_ways<true>));
 }

@@ -1,6 +1,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
@@ -190,7 +191,7 @@ torch::stable::Tensor sparse24_apply_dense_output_typed(
         ", and `output` is ",
         outputRowMajor ? "RowMajor" : "ColMajor");
   }
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
   return output;
 }
 
@@ -217,11 +218,11 @@ torch::stable::Tensor sparse24_apply_dense_output(
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       "sparse24_apply_dense_output",
-      XF_BOXED_FN(sparse24_apply_dense_output<false>));
+      TORCH_BOX(sparse24_apply_dense_output<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
       "sparse24_apply_dense_output",
-      XF_BOXED_FN(sparse24_apply_dense_output<true>));
+      TORCH_BOX(sparse24_apply_dense_output<true>));
 }

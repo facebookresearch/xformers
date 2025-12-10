@@ -38,7 +38,7 @@ jobs:
 
         include = []
         for os in ['8-core-ubuntu', 'windows-8-core']:
-          for torch_version in ['2.10.0.dev20251124']:
+          for torch_version in ['2.10.0.dev20251208']:
             # CUDA builds
             for cuda_short_version in CU_VERSIONS:
               if cuda_short_version < "124" and "windows" in os:

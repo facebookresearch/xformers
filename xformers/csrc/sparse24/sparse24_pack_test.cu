@@ -60,6 +60,5 @@ torch::stable::Tensor _sparse24_meta_shuffle_test(
 } // namespace
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl(
-      "_sparse24_meta_shuffle_test", XF_BOXED_FN(_sparse24_meta_shuffle_test));
+  m.impl("_sparse24_meta_shuffle_test", TORCH_BOX(_sparse24_meta_shuffle_test));
 }

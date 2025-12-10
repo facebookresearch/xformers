@@ -1,6 +1,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
@@ -101,18 +102,18 @@ torch::stable::Tensor sparseNM_dense(
   // 2:4 sparsification
   testNM(std::integral_constant<int, 2>(), std::integral_constant<int, 4>());
   STD_TORCH_CHECK(foundKernel, "Kernel not found");
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
 
   return out;
 }
 } // namespace
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl("sparseNM_dense", XF_BOXED_FN(sparseNM_dense<false>));
+  m.impl("sparseNM_dense", TORCH_BOX(sparseNM_dense<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl("sparseNM_dense", XF_BOXED_FN(sparseNM_dense<true>));
+  m.impl("sparseNM_dense", TORCH_BOX(sparseNM_dense<true>));
 }
 
 STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {

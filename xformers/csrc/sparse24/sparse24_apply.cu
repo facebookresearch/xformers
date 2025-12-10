@@ -1,6 +1,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
@@ -95,7 +96,7 @@ std::
            p.getThreadsGrid(),
            smem_bytes,
            xf_getCurrentCUDAStream()>>>(p);
-    XF_CUDA_KERNEL_LAUNCH_CHECK();
+    STD_CUDA_KERNEL_LAUNCH_CHECK();
   }
   return std::make_tuple(
       compressed,
@@ -144,9 +145,9 @@ std::
 } // namespace
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl("sparse24_apply", XF_BOXED_FN(sparse24_apply<false>));
+  m.impl("sparse24_apply", TORCH_BOX(sparse24_apply<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl("sparse24_apply", XF_BOXED_FN(sparse24_apply<true>));
+  m.impl("sparse24_apply", TORCH_BOX(sparse24_apply<true>));
 }

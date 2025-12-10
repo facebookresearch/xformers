@@ -5,6 +5,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
@@ -192,7 +193,7 @@ torch::stable::Tensor two_four_sgemm_cutlass(
   status = gemm_op.run(xf_getCurrentCUDAStream());
   CUTLASS_STATUS_CHECK(status);
 
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
 
   return tensor_d;
 }
@@ -360,9 +361,9 @@ torch::stable::Tensor _sparse24_gemm(
 } // namespace
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl("_sparse24_gemm", XF_BOXED_FN(_sparse24_gemm<false>));
+  m.impl("_sparse24_gemm", TORCH_BOX(_sparse24_gemm<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl("_sparse24_gemm", XF_BOXED_FN(_sparse24_gemm<true>));
+  m.impl("_sparse24_gemm", TORCH_BOX(_sparse24_gemm<true>));
 }

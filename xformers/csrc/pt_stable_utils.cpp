@@ -12,7 +12,7 @@ std::vector<cudaDeviceProp> device_properties;
 void initCUDAContextVectors() {
   static bool init_flag [[maybe_unused]] = []() {
     int num_gpus;
-    XF_CUDA_CHECK(cudaGetDeviceCount(&num_gpus));
+    STD_CUDA_CHECK(cudaGetDeviceCount(&num_gpus));
     device_flags.resize(num_gpus);
     device_properties.resize(num_gpus);
     return true;
@@ -21,7 +21,7 @@ void initCUDAContextVectors() {
 
 void initDeviceProperty(torch::stable::accelerator::DeviceIndex device_index) {
   cudaDeviceProp device_prop{};
-  XF_CUDA_CHECK(cudaGetDeviceProperties(&device_prop, device_index));
+  STD_CUDA_CHECK(cudaGetDeviceProperties(&device_prop, device_index));
   device_properties[device_index] = device_prop;
 }
 

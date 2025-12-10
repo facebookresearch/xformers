@@ -19,6 +19,7 @@
 #include <torch/csrc/stable/accelerator.h>
 #include <torch/csrc/stable/device.h>
 #include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
 #include <torch/csrc/stable/ops.h>
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/ScalarType.h>
@@ -339,7 +340,7 @@ torch::stable::Tensor _sparse24_fp8_sm90_cutlass_gemm(
   auto status =
       gemm.run(args, (void*)workspace.data_ptr(), xf_getCurrentCUDAStream());
   CUTLASS_STATUS_CHECK(status);
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
   return out;
 }
 
@@ -416,7 +417,7 @@ _sparse24_sm90_cutlass_compress_t(torch::stable::Tensor a) {
   CUTLASS_STATUS_CHECK(
       compressor_op.initialize(arguments, workspace.data_ptr()));
   CUTLASS_STATUS_CHECK(compressor_op.run());
-  XF_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
 
   return std::make_tuple(a_compressed, e);
 }
@@ -442,19 +443,19 @@ STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
       "_sparse24_fp8_sm90_cutlass_gemm",
-      XF_BOXED_FN(_sparse24_fp8_sm90_cutlass_gemm<false>));
+      TORCH_BOX(_sparse24_fp8_sm90_cutlass_gemm<false>));
   m.impl(
       "_sparse24_sm90_cutlass_compress",
-      XF_BOXED_FN(_sparse24_sm90_cutlass_compress<false>));
+      TORCH_BOX(_sparse24_sm90_cutlass_compress<false>));
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
       "_sparse24_fp8_sm90_cutlass_gemm",
-      XF_BOXED_FN(_sparse24_fp8_sm90_cutlass_gemm<true>));
+      TORCH_BOX(_sparse24_fp8_sm90_cutlass_gemm<true>));
   m.impl(
       "_sparse24_sm90_cutlass_compress",
-      XF_BOXED_FN(_sparse24_sm90_cutlass_compress<true>));
+      TORCH_BOX(_sparse24_sm90_cutlass_compress<true>));
 }
 #endif
 #endif

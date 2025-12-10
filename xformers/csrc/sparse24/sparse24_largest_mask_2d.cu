@@ -235,8 +235,8 @@ torch::stable::Tensor sparse24_largest_with_Krandom_mask_2d(
 }
 
 STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl("sparse24_largest_mask_2d", XF_BOXED_FN(sparse24_largest_mask_2d));
+  m.impl("sparse24_largest_mask_2d", TORCH_BOX(sparse24_largest_mask_2d));
   m.impl(
       "sparse24_largest_with_Krandom_mask_2d",
-      XF_BOXED_FN(sparse24_largest_with_Krandom_mask_2d));
+      TORCH_BOX(sparse24_largest_with_Krandom_mask_2d));
 }
