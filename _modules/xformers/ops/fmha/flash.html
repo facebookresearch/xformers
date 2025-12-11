@@ -266,23 +266,17 @@
     <span class="n">torch</span><span class="o">.</span><span class="n">version</span><span class="o">.</span><span class="n">hip</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">torch</span><span class="o">.</span><span class="n">backends</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_flash_attention_available</span><span class="p">()</span>
 <span class="p">)</span>
 <span class="n">_USE_PT_FLASH_ATTN</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="n">_flash_attn_cuda</span> <span class="o">=</span> <span class="kc">None</span>
 
 
-<span class="k">if</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;..._C_flashattention&quot;</span><span class="p">,</span> <span class="n">package</span><span class="o">=</span><span class="n">__package__</span><span class="p">):</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">...</span><span class="w"> </span><span class="kn">import</span> <span class="n">_C_flashattention</span>  <span class="c1"># type: ignore[attr-defined]</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">..._cpp_lib</span><span class="w"> </span><span class="kn">import</span> <span class="n">_build_metadata</span>
-
-    <span class="k">if</span> <span class="n">_build_metadata</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">_build_metadata</span><span class="o">.</span><span class="n">flash_version</span><span class="o">.</span><span class="n">lstrip</span><span class="p">(</span><span class="s2">&quot;v&quot;</span><span class="p">)</span>
-
-<span class="k">elif</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;flash_attn&quot;</span><span class="p">):</span>
+<span class="k">if</span> <span class="n">importlib</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">find_spec</span><span class="p">(</span><span class="s2">&quot;flash_attn&quot;</span><span class="p">):</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn</span>
     <span class="kn">import</span><span class="w"> </span><span class="nn">flash_attn.flash_attn_interface</span>
 
     <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="p">,</span> <span class="s2">&quot;flash_attn_cuda&quot;</span><span class="p">):</span>
-        <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_cuda</span>
+        <span class="n">_flash_attn_cuda</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_cuda</span>
     <span class="k">else</span><span class="p">:</span>
-        <span class="n">_C_flashattention</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_gpu</span>
+        <span class="n">_flash_attn_cuda</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">flash_attn_interface</span><span class="o">.</span><span class="n">flash_attn_gpu</span>
 
     <span class="n">FLASH_VERSION</span> <span class="o">=</span> <span class="n">flash_attn</span><span class="o">.</span><span class="n">__version__</span>
     <span class="n">FLASH_VER_MIN</span> <span class="o">=</span> <span class="n">parse_version</span><span class="p">(</span><span class="s2">&quot;2.7.1&quot;</span><span class="p">)</span>
@@ -349,10 +343,11 @@
             <span class="n">attention</span><span class="p">,</span> <span class="n">logsumexp</span><span class="p">,</span> <span class="n">rng_state</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">ret</span>
             <span class="k">return</span> <span class="n">attention</span><span class="p">,</span> <span class="n">logsumexp</span><span class="p">,</span> <span class="n">rng_state</span>
         <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">_flash_attn_cuda</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="k">if</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="n">cu_seqlens_k</span> <span class="ow">is</span> <span class="kc">None</span>
                 <span class="k">assert</span> <span class="n">seqused_k</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_flash_attn_cuda</span><span class="o">.</span><span class="n">fwd</span><span class="p">(</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">value</span><span class="p">,</span>
@@ -368,7 +363,7 @@
                     <span class="kc">None</span><span class="p">,</span>  <span class="c1"># rng</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
+                <span class="n">out</span><span class="p">,</span> <span class="n">softmax_lse</span><span class="p">,</span> <span class="n">p</span><span class="p">,</span> <span class="n">rng_state</span> <span class="o">=</span> <span class="n">_flash_attn_cuda</span><span class="o">.</span><span class="n">varlen_fwd</span><span class="p">(</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
                     <span class="n">value</span><span class="p">,</span>
@@ -471,10 +466,11 @@
                 <span class="n">window_size_right</span><span class="o">=</span><span class="n">window_right</span><span class="p">,</span>
             <span class="p">)</span>
         <span class="k">else</span><span class="p">:</span>
+            <span class="k">assert</span> <span class="n">_flash_attn_cuda</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
             <span class="n">dq</span><span class="p">,</span> <span class="n">dk</span><span class="p">,</span> <span class="n">dv</span> <span class="o">=</span> <span class="n">_create_dq_dk_dv</span><span class="p">(</span><span class="n">grads_share_storage</span><span class="p">,</span> <span class="n">query</span><span class="p">,</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span><span class="p">)</span>
             <span class="k">if</span> <span class="n">cu_seqlens_k</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
                 <span class="k">assert</span> <span class="n">cu_seqlens_q</span> <span class="ow">is</span> <span class="kc">None</span>
-                <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
+                <span class="n">_flash_attn_cuda</span><span class="o">.</span><span class="n">bwd</span><span class="p">(</span>
                     <span class="n">grad</span><span class="p">,</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
@@ -496,7 +492,7 @@
                     <span class="n">rng_state</span><span class="p">,</span>
                 <span class="p">)</span>
             <span class="k">else</span><span class="p">:</span>
-                <span class="n">_C_flashattention</span><span class="o">.</span><span class="n">varlen_bwd</span><span class="p">(</span>
+                <span class="n">_flash_attn_cuda</span><span class="o">.</span><span class="n">varlen_bwd</span><span class="p">(</span>
                     <span class="n">grad</span><span class="p">,</span>
                     <span class="n">query</span><span class="p">,</span>
                     <span class="n">key</span><span class="p">,</span>
