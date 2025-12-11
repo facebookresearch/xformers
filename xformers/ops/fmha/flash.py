@@ -51,23 +51,17 @@ _TRY_PT_FLASH_ATTN = (
     torch.version.hip is None and torch.backends.cuda.is_flash_attention_available()
 )
 _USE_PT_FLASH_ATTN = False
+_flash_attn_cuda = None
 
 
-if importlib.util.find_spec("..._C_flashattention", package=__package__):
-    from ... import _C_flashattention  # type: ignore[attr-defined]
-    from ..._cpp_lib import _build_metadata
-
-    if _build_metadata is not None:
-        FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
-
-elif importlib.util.find_spec("flash_attn"):
+if importlib.util.find_spec("flash_attn"):
     import flash_attn
     import flash_attn.flash_attn_interface
 
     if hasattr(flash_attn.flash_attn_interface, "flash_attn_cuda"):
-        _C_flashattention = flash_attn.flash_attn_interface.flash_attn_cuda
+        _flash_attn_cuda = flash_attn.flash_attn_interface.flash_attn_cuda
     else:
-        _C_flashattention = flash_attn.flash_attn_interface.flash_attn_gpu
+        _flash_attn_cuda = flash_attn.flash_attn_interface.flash_attn_gpu
 
     FLASH_VERSION = flash_attn.__version__
     FLASH_VER_MIN = parse_version("2.7.1")
@@ -134,10 +128,11 @@ if FLASH_VERSION != "0.0.0":
             attention, logsumexp, rng_state, _, _ = ret
             return attention, logsumexp, rng_state
         else:
+            assert _flash_attn_cuda is not None
             if cu_seqlens_q is None:
                 assert cu_seqlens_k is None
                 assert seqused_k is None
-                out, softmax_lse, p, rng_state = _C_flashattention.fwd(
+                out, softmax_lse, p, rng_state = _flash_attn_cuda.fwd(
                     query,
                     key,
                     value,
@@ -153,7 +148,7 @@ if FLASH_VERSION != "0.0.0":
                     None,  # rng
                 )
             else:
-                out, softmax_lse, p, rng_state = _C_flashattention.varlen_fwd(
+                out, softmax_lse, p, rng_state = _flash_attn_cuda.varlen_fwd(
                     query,
                     key,
                     value,
@@ -256,10 +251,11 @@ if FLASH_VERSION != "0.0.0":
                 window_size_right=window_right,
             )
         else:
+            assert _flash_attn_cuda is not None
             dq, dk, dv = _create_dq_dk_dv(grads_share_storage, query, key, value)
             if cu_seqlens_k is None:
                 assert cu_seqlens_q is None
-                _C_flashattention.bwd(
+                _flash_attn_cuda.bwd(
                     grad,
                     query,
                     key,
@@ -281,7 +277,7 @@ if FLASH_VERSION != "0.0.0":
                     rng_state,
                 )
             else:
-                _C_flashattention.varlen_bwd(
+                _flash_attn_cuda.varlen_bwd(
                     grad,
                     query,
                     key,

@@ -42,7 +42,7 @@ jobs:
         if: success() || failure()
         run: |
           python -m mypy --version
-          python -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|xformers/_flash_attn|setup.py)" .
+          python -m mypy --ignore-missing-imports --scripts-are-modules --pretty --exclude "(build|stubs|third_party|docs|examples|setup.py)" .
       - name: flake8
         if: success() || failure()
         run: python -m flake8 --config .flake8 --show-source --statistics
