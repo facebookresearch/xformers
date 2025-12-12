@@ -266,9 +266,9 @@ def get_extensions():
     # add torch==2.10.0 to the build requirements in pyproject.toml. (We want
     # strict equality in order to pick the oldest viable version and get the
     # broadest compatibility).
-    if torch.__version__ < "2.10.0.dev20251208":
+    if torch.__version__ < "2.10":
         raise RuntimeError(
-            "This version of xFormers requires PyTorch 2.10+ (or a nightly from December 8, 2025 or later). "
+            "This version of xFormers requires PyTorch 2.10+. "
             f"You have PyTorch {torch.__version__}. "
             "For previous versions of PyTorch, check out v0.0.33 of xFormers or earlier."
         )
