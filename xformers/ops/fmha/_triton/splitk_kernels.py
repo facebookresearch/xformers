@@ -392,7 +392,7 @@ def _fwd_kernel_splitK(
             logical_page_idx = logical_block_idx // BLOCKS_IN_PAGE
             physical_page_idx = tl.load(
                 block_table + stride_blocktablesl * logical_page_idx
-            ).to(tl.int64)  # Cast to int64 to avoid overflow when offset > 2^31
+            ).to(tl.int32)
             offset = physical_page_idx * PAGE_SIZE + block_offset_in_page * BLOCK_N
 
             current_block_size = min(hi - start_n, BLOCK_N)
