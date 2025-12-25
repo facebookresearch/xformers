@@ -18,6 +18,7 @@ from torch.utils.flop_counter import (
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
+    VARLEN_BIASES,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
@@ -37,16 +38,15 @@ from .attn_bias import (
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
-    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
-    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
     ScaledTensor,
+    check_lastdim_alignment_stride1,
 )
 from .flash import (
     _check_needs_no_topleft,
@@ -647,14 +647,6 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
-        device_type = d.query.device.type
-        if device_type == "cuda" and (torch.version.hip is None):
-            device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability > cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
-                reasons.append(
-                    f"requires device with capability == {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
-                    f"but your GPU has capability {device_capability} (too new)"
-                )
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
         check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
@@ -714,9 +706,9 @@ class FwOp(AttentionFwOpBase):
                     leftpad_k = cu_seqlens_k[:-1]
                 else:
                     # case #2: len(cu_seqlens_k) = batch_size
-                    assert (
-                        len(cu_seqlens_q) - len(cu_seqlens_k) == 1
-                    ), f"{len(cu_seqlens_q)=} {len(cu_seqlens_k)=}"
+                    assert len(cu_seqlens_q) - len(cu_seqlens_k) == 1, (
+                        f"{len(cu_seqlens_q)=} {len(cu_seqlens_k)=}"
+                    )
                     leftpad_k = cu_seqlens_k
             out, softmax_lse = cls.OPERATOR(
                 q,
