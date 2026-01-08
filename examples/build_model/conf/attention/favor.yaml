@@ -1,6 +1,0 @@
-defaults:
-   # validate schema using xFormer's config dataclass
-   - /xformers/attention/favor_schema@_here_
-
-name: favor
-dropout: 0

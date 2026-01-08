@@ -1,6 +1,0 @@
-defaults:
-   # validate schema using xFormer's config dataclass
-   - /xformers/attention/local_schema@_here_
-
-name: local
-dropout: 0

@@ -1,8 +1,0 @@
-defaults:
-  # move configs from base_encoder to under encoder_local package
-  # this helps with merging the configs at a model level
-  # the package name is arbitrary but should be unique within the stacks config groups
-  # to avoid conflicts.
-  - base_encoder@encoder_random
-  # override the attention
-  - /attention@encoder_random.multi_head_config.attention: random
