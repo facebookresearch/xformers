@@ -36,6 +36,7 @@ from .sp24 import Sparse24Tensor, sparsify24, sparsify24_like
 from .swiglu_op import SwiGLU, swiglu, SwiGLUEagerOp, SwiGLUOp, SwiGLUOpDispatch
 from .tiled_matmul import tiled_matmul
 from .unbind import get_stack_strides, stack_or_none, unbind
+from .aether_attention import aether_attention, AetherAttention
 
 # BW compatibility
 AttentionMask = AttentionBias
@@ -113,6 +114,9 @@ __all__ = [
     "sparsify24",
     "sparsify24_like",
     "Sparse24Tensor",
+    # aether_attention
+    "aether_attention",
+    "AetherAttention",
     # .
     "masked_matmul",
 ]
