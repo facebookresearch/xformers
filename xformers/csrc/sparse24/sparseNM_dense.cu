@@ -1,10 +1,12 @@
-#include <ATen/ScalarOps.h>
-#include <ATen/Tensor.h>
-#include <ATen/autocast_mode.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
-#include <torch/types.h>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
 
+#include "pt_stable_utils.h"
 #include "warp_tensor.h"
 
 using namespace xformers::sp24;
@@ -42,25 +44,25 @@ void __global__ sparseNM_dense_kernel(
 }
 
 template <bool kIsMeta>
-at::Tensor sparseNM_dense(
-    at::Tensor input,
+torch::stable::Tensor sparseNM_dense(
+    torch::stable::Tensor input,
     std::string sort_preproc,
     int64_t kN,
     int64_t kM) {
-  std::optional<at::cuda::CUDAGuard> device_guard;
+  std::optional<torch::stable::accelerator::DeviceGuard> device_guard;
   if (!kIsMeta) {
-    TORCH_CHECK(input.is_cuda(), "All tensors must be on GPU");
-    device_guard.emplace(input.device());
+    STD_TORCH_CHECK(input.is_cuda(), "All tensors must be on GPU");
+    device_guard.emplace(input.device().index());
   }
 
-  TORCH_CHECK(input.dim() == 2, "Can only sparsify 2d tensors");
-  TORCH_CHECK(
+  STD_TORCH_CHECK(input.dim() == 2, "Can only sparsify 2d tensors");
+  STD_TORCH_CHECK(
       input.stride(1) == 1,
       "Can only sparsify contiguous tensors. Sparsify the transpose otherwise.");
-  TORCH_CHECK(input.size(0) % 64 == 0);
-  TORCH_CHECK(input.size(1) % 64 == 0);
+  STD_TORCH_CHECK(input.size(0) % 64 == 0);
+  STD_TORCH_CHECK(input.size(1) % 64 == 0);
 
-  at::Tensor out = at::empty_like(input);
+  torch::stable::Tensor out = torch::stable::empty_like(input);
   bool foundKernel = false;
   auto launchKernel = [&](auto dtype, auto N, auto M, auto sort_preproc) {
     if (foundKernel) {
@@ -73,14 +75,15 @@ at::Tensor sparseNM_dense(
     using Element = decltype(dtype);
     dim3 num_blocks(input.size(0) / 64, input.size(1) / 64, 1);
     sparseNM_dense_kernel<N.value, M.value>
-        <<<num_blocks, 32, 0, at::cuda::getCurrentCUDAStream()>>>(
+        <<<num_blocks, 32, 0, xf_getCurrentCUDAStream()>>>(
             (Element const*)input.data_ptr(),
             input.stride(0),
             (Element*)out.data_ptr(),
             out.stride(0),
             sort_preproc);
   };
-  TORCH_CHECK(input.scalar_type() == at::ScalarType::BFloat16);
+  STD_TORCH_CHECK(
+      input.scalar_type() == torch::headeronly::ScalarType::BFloat16);
   auto dtype = cutlass::bfloat16_t();
   auto Identity = [] __device__(auto x) { return x; };
   auto Abs = [] __device__(auto x) { return cutlass::abs(x); };
@@ -98,26 +101,22 @@ at::Tensor sparseNM_dense(
   testNM(std::integral_constant<int, 2>(), std::integral_constant<int, 8>());
   // 2:4 sparsification
   testNM(std::integral_constant<int, 2>(), std::integral_constant<int, 4>());
-  TORCH_CHECK(foundKernel, "Kernel not found");
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_TORCH_CHECK(foundKernel, "Kernel not found");
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
 
   return out;
 }
 } // namespace
 
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparseNM_dense"),
-      TORCH_FN(sparseNM_dense<false>));
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+  m.impl("sparseNM_dense", TORCH_BOX(sparseNM_dense<false>));
 }
 
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::sparseNM_dense"),
-      TORCH_FN(sparseNM_dense<true>));
+STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+  m.impl("sparseNM_dense", TORCH_BOX(sparseNM_dense<true>));
 }
 
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::sparseNM_dense(Tensor input, str sort_preproc, int N, int M) -> Tensor"));
+STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
+  m.def(
+      "sparseNM_dense(Tensor input, str sort_preproc, int N, int M) -> Tensor");
 }

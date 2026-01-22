@@ -3,7 +3,7 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 import torch
 import torch.distributed
@@ -18,15 +18,15 @@ from .seqpar import sequence_parallel_leading_matmul, sequence_parallel_trailing
 def _init_2d_weight(
     weight: torch.Tensor,
     init_method: Callable[[torch.Tensor], torch.Tensor],
-    process_group: torch.distributed.ProcessGroup,
+    process_group: Optional[torch.distributed.ProcessGroup],
     partition_dim: int,
 ) -> None:
     # Mimick FairScale's _initialize_affine_weight, for backwards compatibility.
     # The reason we initialize the full unpartitioned/gathered weight is so that
     # different ranks get different initial values and thus "break the symmetry"
     # and in order to achieve the same init for any value of model parallelism.
-    rank = process_group.rank()
-    world_size = process_group.size()
+    rank = process_group.rank() if process_group is not None else 0
+    world_size = process_group.size() if process_group is not None else 1
 
     nrows, ncols = weight.shape
     if partition_dim == 0:

@@ -22,9 +22,9 @@ jobs:
       matrix:
         os: ['ubuntu-alola']
         python: ['3.11']
-        torch_version: ['2.8.0']
+        torch_version: ['2.10.0']
         toolkit_type: ['rocm']
-        toolkit_short_version: ['6.3', '6.4']
+        toolkit_short_version: ['7.0', '7.1']
 
     uses: ./.github/workflows/wheels_build.yml
     if: github.repository == 'rocm/xformers'

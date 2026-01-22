@@ -1,4 +1,0 @@
-name: nystrom
-dropout: 0
-causal: True
-seq_len: ${seq}

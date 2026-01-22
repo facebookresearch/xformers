@@ -85,6 +85,10 @@ jobs:
           # NOTE: we check GPU version by default to determine if triton should be used
           # and this initializes CUDA context, unless we set `XFORMERS_ENABLE_TRITON`
           XFORMERS_ENABLE_TRITON=1 python -c "import xformers; import xformers.ops; import torch; assert not torch.cuda.is_initialized()"
+      - name: Check for PyTorch stable symbols
+        run: |
+          bad_symbols=$(nm --dynamic --undefined-only --demangle xformers/_C.so | grep --extended-regexp "(torch|at|c10|c10d)::" || true)
+          if [[ $bad_symbols != "" ]]; then echo "These non-stable PyTorch symbols made it into the xFormers shared library:"; echo $bad_symbols; exit 1; fi
       - name: FA3 was built
         run: |
           if [[ ${{ matrix.gpu.sm }} != 7.5 && -z "$XFORMERS_DISABLE_FLASH_ATTN" ]]

@@ -1,4 +1,6 @@
-#include <torch/types.h>
+#include <torch/csrc/stable/library.h>
+
+#include "pt_stable_utils.h"
 
 namespace {
 std::tuple<int64_t, int64_t, int64_t> nvcc_build_version() {
@@ -7,10 +9,7 @@ std::tuple<int64_t, int64_t, int64_t> nvcc_build_version() {
 }
 } // namespace
 
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_nvcc_build_version() -> (int, int, int)"));
-  m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_nvcc_build_version"),
-      TORCH_FN(nvcc_build_version));
+STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
+  m.def("_nvcc_build_version() -> (int, int, int)");
+  m.impl("_nvcc_build_version", TORCH_BOX(nvcc_build_version));
 }

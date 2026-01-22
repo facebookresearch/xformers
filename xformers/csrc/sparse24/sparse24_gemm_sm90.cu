@@ -1,8 +1,5 @@
-#include <ATen/Dispatch.h>
-#include <ATen/core/Tensor.h>
-#include <ATen/cuda/CUDAUtils.h>
-#include <c10/cuda/CUDAGuard.h>
-#include <torch/library.h>
+#include <tuple>
+#include <type_traits>
 
 #include <cute/algorithm/functional.hpp>
 #include <cutlass/gemm/device/gemm_universal_adapter.h>
@@ -19,8 +16,15 @@
 #include "cutlass/transform/device/transform_universal_adapter.hpp"
 #include "cutlass/transform/kernel/sparse_gemm_compressor.hpp"
 
-#include <tuple>
-#include <type_traits>
+#include <torch/csrc/stable/accelerator.h>
+#include <torch/csrc/stable/device.h>
+#include <torch/csrc/stable/library.h>
+#include <torch/csrc/stable/macros.h>
+#include <torch/csrc/stable/ops.h>
+#include <torch/csrc/stable/tensor.h>
+#include <torch/headeronly/core/ScalarType.h>
+
+#include "pt_stable_utils.h"
 
 // CUTLASS does not mix well with Windows
 #ifndef _WIN32
@@ -31,13 +35,11 @@
 namespace {
 #define CUTLASS_STATUS_CHECK(status)              \
   {                                               \
-    TORCH_CHECK(                                  \
+    STD_TORCH_CHECK(                              \
         status == cutlass::Status::kSuccess,      \
         "Got CUTLASS error: ",                    \
         cutlass::cutlassGetStatusString(status)); \
   }
-
-using namespace at;
 
 template <typename T>
 struct identity {
@@ -52,8 +54,9 @@ struct SparseRowwiseKernel;
 
 template <>
 struct SparseRowwiseKernel<cutlass::float_e4m3_t> {
-  static constexpr auto kElementOutAt = at::ScalarType::BFloat16;
-  static constexpr auto kElementAAt = at::ScalarType::Float8_e4m3fn;
+  static constexpr auto kElementOutAt = torch::headeronly::ScalarType::BFloat16;
+  static constexpr auto kElementAAt =
+      torch::headeronly::ScalarType::Float8_e4m3fn;
 
   using ElementA = cutlass::float_e4m3_t;
   using ElementB = cutlass::float_e4m3_t;
@@ -133,8 +136,8 @@ struct SparseRowwiseKernel<cutlass::float_e4m3_t> {
 
 template <>
 struct SparseRowwiseKernel<cutlass::bfloat16_t> {
-  static constexpr auto kElementOutAt = at::ScalarType::BFloat16;
-  static constexpr auto kElementAAt = at::ScalarType::BFloat16;
+  static constexpr auto kElementOutAt = torch::headeronly::ScalarType::BFloat16;
+  static constexpr auto kElementAAt = torch::headeronly::ScalarType::BFloat16;
 
   using ElementA = cutlass::bfloat16_t;
   using ElementB = cutlass::bfloat16_t;
@@ -211,67 +214,70 @@ struct SparseRowwiseKernel<cutlass::bfloat16_t> {
 };
 
 template <bool kIsMeta>
-Tensor _sparse24_fp8_sm90_cutlass_gemm(
-    const Tensor& tensor_a,
-    const Tensor& tensor_e, // metadata for `A`
-    const Tensor& tensor_b,
+torch::stable::Tensor _sparse24_fp8_sm90_cutlass_gemm(
+    const torch::stable::Tensor& tensor_a,
+    const torch::stable::Tensor& tensor_e, // metadata for `A`
+    const torch::stable::Tensor& tensor_b,
     // *,
-    std::optional<at::Tensor> a_scale,
-    std::optional<at::Tensor> b_scale,
+    std::optional<torch::stable::Tensor> a_scale,
+    std::optional<torch::stable::Tensor> b_scale,
     int64_t swizzle_size,
     std::string swizzle_axis,
     int64_t sm_count) {
-  std::optional<at::cuda::CUDAGuard> device_guard;
+  std::optional<torch::stable::accelerator::DeviceGuard> device_guard;
   if (!kIsMeta) {
-    device_guard.emplace(tensor_a.device());
+    device_guard.emplace(tensor_a.device().index());
   }
 
   using K = SparseRowwiseKernel<cutlass::float_e4m3_t>;
 
   // For now, only CC 9.x devices are supported.
   if (!kIsMeta) {
-    const auto dprops = at::cuda::getCurrentDeviceProperties();
-    TORCH_CHECK(
+    const auto dprops = xf_getCurrentDeviceProperties();
+    STD_TORCH_CHECK(
         dprops && dprops->major == 9,
         "_sparse24_gemm_fp8_sm90: Supported only on GPUs with "
         "compute capability 9.x");
   }
 
   // Validate layouts of input tensors.
-  TORCH_CHECK(tensor_a.device() == tensor_b.device());
-  TORCH_CHECK(tensor_a.device() == tensor_e.device());
-  TORCH_CHECK(tensor_a.dim() == 2);
-  TORCH_CHECK(tensor_b.dim() == 2);
-  TORCH_CHECK(tensor_a.scalar_type() == tensor_b.scalar_type());
-  TORCH_CHECK(tensor_a.scalar_type() == K::kElementAAt);
-  TORCH_CHECK(tensor_b.stride(0) == 1, "B must be Row-Major");
-  TORCH_CHECK(tensor_a.is_contiguous());
-  TORCH_CHECK(tensor_b.t().is_contiguous());
+  STD_TORCH_CHECK(tensor_a.device() == tensor_b.device());
+  STD_TORCH_CHECK(tensor_a.device() == tensor_e.device());
+  STD_TORCH_CHECK(tensor_a.dim() == 2);
+  STD_TORCH_CHECK(tensor_b.dim() == 2);
+  STD_TORCH_CHECK(tensor_a.scalar_type() == tensor_b.scalar_type());
+  STD_TORCH_CHECK(tensor_a.scalar_type() == K::kElementAAt);
+  STD_TORCH_CHECK(tensor_b.stride(0) == 1, "B must be Row-Major");
+  STD_TORCH_CHECK(tensor_a.is_contiguous());
+  STD_TORCH_CHECK(torch::stable::transpose(tensor_b, 0, 1).is_contiguous());
   int64_t a_rows = tensor_a.size(0);
   if (a_scale.has_value()) {
-    TORCH_CHECK(a_scale->is_contiguous());
-    TORCH_CHECK(a_scale->scalar_type() == at::ScalarType::Float);
-    TORCH_CHECK(a_scale->device() == tensor_a.device());
-    TORCH_CHECK(a_scale->dim() == 2);
-    TORCH_CHECK(a_scale->size(0) == a_rows);
-    TORCH_CHECK(a_scale->size(1) == 1);
+    STD_TORCH_CHECK(a_scale->is_contiguous());
+    STD_TORCH_CHECK(
+        a_scale->scalar_type() == torch::headeronly::ScalarType::Float);
+    STD_TORCH_CHECK(a_scale->device() == tensor_a.device());
+    STD_TORCH_CHECK(a_scale->dim() == 2);
+    STD_TORCH_CHECK(a_scale->size(0) == a_rows);
+    STD_TORCH_CHECK(a_scale->size(1) == 1);
   }
   if (b_scale.has_value()) {
-    TORCH_CHECK(b_scale->is_contiguous());
-    TORCH_CHECK(b_scale->scalar_type() == at::ScalarType::Float);
-    TORCH_CHECK(b_scale->device() == tensor_b.device());
-    TORCH_CHECK(b_scale->dim() == 2);
-    TORCH_CHECK(b_scale->size(0) == 1);
-    TORCH_CHECK(b_scale->size(1) == tensor_b.size(1));
+    STD_TORCH_CHECK(b_scale->is_contiguous());
+    STD_TORCH_CHECK(
+        b_scale->scalar_type() == torch::headeronly::ScalarType::Float);
+    STD_TORCH_CHECK(b_scale->device() == tensor_b.device());
+    STD_TORCH_CHECK(b_scale->dim() == 2);
+    STD_TORCH_CHECK(b_scale->size(0) == 1);
+    STD_TORCH_CHECK(b_scale->size(1) == tensor_b.size(1));
   }
 
   typename K::GemmKernel::Arguments args;
   args.mode = cutlass::gemm::GemmUniversalMode::kGemm;
   args.problem_shape = cute::make_shape(
       int(a_rows), int(tensor_b.size(1)), int(tensor_b.size(0)), 1);
-  Tensor out = tensor_a.new_empty(
+  torch::stable::Tensor out = torch::stable::new_empty(
+      tensor_a,
       {cute::get<0>(args.problem_shape), cute::get<1>(args.problem_shape)},
-      at::TensorOptions().dtype(K::kElementOutAt));
+      /*dtype=*/K::kElementOutAt);
 
   args.mainloop.ptr_A =
       reinterpret_cast<K::ElementA const*>(tensor_a.data_ptr());
@@ -312,7 +318,7 @@ Tensor _sparse24_fp8_sm90_cutlass_gemm(
   if (swizzle_axis == "n") {
     args.scheduler.raster_order = Enum_t::AlongN;
   } else {
-    TORCH_CHECK(
+    STD_TORCH_CHECK(
         swizzle_axis == "m",
         "Invalid value for swizzle_axis ('",
         swizzle_axis,
@@ -322,31 +328,33 @@ Tensor _sparse24_fp8_sm90_cutlass_gemm(
 
   using Gemm = cutlass::gemm::device::GemmUniversalAdapter<K::GemmKernel>;
   int64_t device_op_workspace_size = Gemm::get_workspace_size(args);
-  Tensor workspace = tensor_a.new_empty(
+  torch::stable::Tensor workspace = torch::stable::new_empty(
+      tensor_a,
       {device_op_workspace_size},
-      at::TensorOptions().dtype(at::ScalarType::Byte));
+      torch::headeronly::ScalarType::Byte);
 
   Gemm gemm;
   // Check the problem size is supported or not
   CUTLASS_STATUS_CHECK(gemm.can_implement(args));
 
-  auto status = gemm.run(
-      args, (void*)workspace.data_ptr(), at::cuda::getCurrentCUDAStream());
+  auto status =
+      gemm.run(args, (void*)workspace.data_ptr(), xf_getCurrentCUDAStream());
   CUTLASS_STATUS_CHECK(status);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
   return out;
 }
 
 template <bool kIsMeta, typename ElementT>
-std::tuple<Tensor, Tensor> _sparse24_sm90_cutlass_compress_t(Tensor a) {
-  std::optional<at::cuda::CUDAGuard> device_guard;
+std::tuple<torch::stable::Tensor, torch::stable::Tensor>
+_sparse24_sm90_cutlass_compress_t(torch::stable::Tensor a) {
+  std::optional<torch::stable::accelerator::DeviceGuard> device_guard;
   if (!kIsMeta) {
-    device_guard.emplace(a.device());
+    device_guard.emplace(a.device().index());
   }
 
   using K = SparseRowwiseKernel<ElementT>;
-  TORCH_CHECK(a.scalar_type() == K::kElementAAt);
-  TORCH_CHECK(a.is_contiguous());
+  STD_TORCH_CHECK(a.scalar_type() == K::kElementAAt);
+  STD_TORCH_CHECK(a.is_contiguous());
 
   // Offline compressor kernel
   using LayoutA = cutlass::layout::RowMajor;
@@ -381,8 +389,9 @@ std::tuple<Tensor, Tensor> _sparse24_sm90_cutlass_compress_t(Tensor a) {
   int KE = compressor_utility.get_metadata_k_physical();
   int KC = compressor_utility.get_tensorA_k_physical();
 
-  auto a_compressed = a.new_empty({M, KC * L});
-  auto e = a.new_empty({ME * KE * L}, at::TensorOptions().dtype(at::kByte));
+  auto a_compressed = torch::stable::new_empty(a, {M, KC * L});
+  auto e = torch::stable::new_empty(
+      a, {ME * KE * L}, torch::headeronly::ScalarType::Byte);
 
   if (kIsMeta) {
     return std::make_tuple(a_compressed, e);
@@ -401,52 +410,52 @@ std::tuple<Tensor, Tensor> _sparse24_sm90_cutlass_compress_t(Tensor a) {
 
   Compressor compressor_op;
   int64_t workspace_size = Compressor::get_workspace_size(arguments);
-  Tensor workspace = a.new_empty(
-      {workspace_size}, at::TensorOptions().dtype(at::ScalarType::Byte));
+  torch::stable::Tensor workspace = torch::stable::new_empty(
+      a, {workspace_size}, torch::headeronly::ScalarType::Byte);
 
   CUTLASS_STATUS_CHECK(compressor_op.can_implement(arguments));
   CUTLASS_STATUS_CHECK(
       compressor_op.initialize(arguments, workspace.data_ptr()));
   CUTLASS_STATUS_CHECK(compressor_op.run());
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  STD_CUDA_KERNEL_LAUNCH_CHECK();
 
   return std::make_tuple(a_compressed, e);
 }
 
 template <bool kIsMeta>
-std::tuple<Tensor, Tensor> _sparse24_sm90_cutlass_compress(Tensor a) {
-  if (a.scalar_type() == at::ScalarType::Float8_e4m3fn) {
+std::tuple<torch::stable::Tensor, torch::stable::Tensor>
+_sparse24_sm90_cutlass_compress(torch::stable::Tensor a) {
+  if (a.scalar_type() == torch::headeronly::ScalarType::Float8_e4m3fn) {
     return _sparse24_sm90_cutlass_compress_t<kIsMeta, cutlass::float_e4m3_t>(a);
   }
-  if (a.scalar_type() == at::ScalarType::BFloat16) {
+  if (a.scalar_type() == torch::headeronly::ScalarType::BFloat16) {
     return _sparse24_sm90_cutlass_compress_t<kIsMeta, cutlass::bfloat16_t>(a);
   }
-  TORCH_CHECK(false, "Unsupported dtype for operand");
+  STD_TORCH_CHECK(false, "Unsupported dtype for operand");
 }
 } // namespace
 
-TORCH_LIBRARY_FRAGMENT(xformers, m) {
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_sparse24_fp8_sm90_cutlass_gemm(Tensor a, Tensor a_mdata, Tensor b, *, Tensor? a_scale = None, Tensor? b_scale = None, int swizzle_size=8, str swizzle_axis='n', int sm_count=128) -> Tensor"));
-  m.def(TORCH_SELECTIVE_SCHEMA(
-      "xformers::_sparse24_sm90_cutlass_compress(Tensor a) -> (Tensor, Tensor)"));
+STABLE_TORCH_LIBRARY_FRAGMENT(xformers, m) {
+  m.def(
+      "_sparse24_fp8_sm90_cutlass_gemm(Tensor a, Tensor a_mdata, Tensor b, *, Tensor? a_scale = None, Tensor? b_scale = None, int swizzle_size=8, str swizzle_axis='n', int sm_count=128) -> Tensor");
+  m.def("_sparse24_sm90_cutlass_compress(Tensor a) -> (Tensor, Tensor)");
 }
-TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, CUDA, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_fp8_sm90_cutlass_gemm"),
-      TORCH_FN(_sparse24_fp8_sm90_cutlass_gemm<false>));
+      "_sparse24_fp8_sm90_cutlass_gemm",
+      TORCH_BOX(_sparse24_fp8_sm90_cutlass_gemm<false>));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_sm90_cutlass_compress"),
-      TORCH_FN(_sparse24_sm90_cutlass_compress<false>));
+      "_sparse24_sm90_cutlass_compress",
+      TORCH_BOX(_sparse24_sm90_cutlass_compress<false>));
 }
 
-TORCH_LIBRARY_IMPL(xformers, Meta, m) {
+STABLE_TORCH_LIBRARY_IMPL(xformers, Meta, m) {
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_fp8_sm90_cutlass_gemm"),
-      TORCH_FN(_sparse24_fp8_sm90_cutlass_gemm<true>));
+      "_sparse24_fp8_sm90_cutlass_gemm",
+      TORCH_BOX(_sparse24_fp8_sm90_cutlass_gemm<true>));
   m.impl(
-      TORCH_SELECTIVE_NAME("xformers::_sparse24_sm90_cutlass_compress"),
-      TORCH_FN(_sparse24_sm90_cutlass_compress<true>));
+      "_sparse24_sm90_cutlass_compress",
+      TORCH_BOX(_sparse24_sm90_cutlass_compress<true>));
 }
 #endif
 #endif

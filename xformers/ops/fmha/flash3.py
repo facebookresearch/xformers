@@ -647,14 +647,6 @@ class FwOp(AttentionFwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(FwOp, cls).not_supported_reasons(d)
-        device_type = d.query.device.type
-        if device_type == "cuda" and (torch.version.hip is None):
-            device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability > cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
-                reasons.append(
-                    f"requires device with capability == {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
-                    f"but your GPU has capability {device_capability} (too new)"
-                )
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
         check_lastdim_alignment_stride1(reasons, "value", d.value, 8)
@@ -809,14 +801,6 @@ class BwOp(AttentionBwOpBase):
     @classmethod
     def not_supported_reasons(cls, d: Inputs) -> List[str]:
         reasons = super(BwOp, cls).not_supported_reasons(d)
-        device_type = d.query.device.type
-        if device_type == "cuda" and (torch.version.hip is None):
-            device_capability = torch.cuda.get_device_capability(d.device)
-            if device_capability > cls.CUDA_MINIMUM_COMPUTE_CAPABILITY:
-                reasons.append(
-                    f"requires device with capability == {cls.CUDA_MINIMUM_COMPUTE_CAPABILITY} "
-                    f"but your GPU has capability {device_capability} (too new)"
-                )
         check_lastdim_alignment_stride1(reasons, "query", d.query, 8)
         check_lastdim_alignment_stride1(reasons, "key", d.value, 8)
         check_lastdim_alignment_stride1(reasons, "value", d.value, 8)

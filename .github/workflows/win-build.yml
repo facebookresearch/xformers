@@ -73,7 +73,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          $PY -m pip install wheel setuptools ninja torch==2.9.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu130
+          $PY -m pip install wheel setuptools ninja torch==2.10.0 -r requirements.txt --extra-index-url https://download.pytorch.org/whl/test/cu130
           git config --global --add safe.directory "*"
           $PY -c "import torch; print('torch', torch.__version__)"
           $PY -c "import torch; print('torch.cuda', torch.version.cuda)"

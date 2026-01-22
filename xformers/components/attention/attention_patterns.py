@@ -10,13 +10,6 @@ from typing import List
 import numpy as np
 import torch
 
-from xformers.components.attention.sparsity_config import (
-    BigBirdSparsityConfig,
-    BSLongformerSparsityConfig,
-    FixedSparsityConfig,
-    VariableSparsityConfig,
-)
-
 
 # generic nd cases
 def _generate_nd_grid(*sizes):
@@ -265,26 +258,6 @@ def alibi_pattern(threshold: float, mask_shape: torch.Size) -> torch.Tensor:
 
     # Now threshold arbitrarily, report the mask
     return alibi < threshold
-
-
-def quick_fixed_layout(num_heads: int, block_size: int, seq_len: int):
-    config = FixedSparsityConfig(num_heads=num_heads, block_size=block_size)
-    return config.make_layout(seq_len)
-
-
-def quick_variable_layout(num_heads: int, block_size: int, seq_len: int):
-    config = VariableSparsityConfig(num_heads=num_heads, block_size=block_size)
-    return config.make_layout(seq_len)
-
-
-def quick_bigbird_layout(num_heads: int, block_size: int, seq_len: int):
-    config = BigBirdSparsityConfig(num_heads=num_heads, block_size=block_size)
-    return config.make_layout(seq_len)
-
-
-def quick_bslongformer_layout(num_heads: int, block_size: int, seq_len: int):
-    config = BSLongformerSparsityConfig(num_heads=num_heads, block_size=block_size)
-    return config.make_layout(seq_len)
 
 
 def layout_to_pattern(layout: torch.Tensor, block_size: int):
