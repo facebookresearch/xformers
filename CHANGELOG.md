@@ -4,14 +4,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.34] - 2025-??-??
+## [0.0.34] - 2026-01-23
+Pre-built binary wheels are available for PyTorch 2.10.0 (and later).
 
 ### Improved
 - Migrated xFormers to the PyTorch stable API/ABI, which means that binary builds targeting PyTorch 2.10+ will be compatible with any later version
 
 ### Removed
 - Removed optimized fast-path of SwiGLU (which was only available for A100 GPUs)
-- Removed legacy component for sparse memory-efficient attention
+- Removed most legacy components
+
 
 ## [0.0.33.post2] - 2025-12-03
 Pre-built binary wheels are available for PyTorch 2.9.1.
