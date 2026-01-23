@@ -15,8 +15,13 @@ import torch
 import xformers.ops as xops
 from xformers.attn_bias_utils import create_attn_bias
 from xformers.ops.fmha.triton_splitk import InputsFp8
-from xformers.benchmarks.utils import benchmark_main_helper2, NotSupportedInputError, is_ocp_fp8, quantize_kv_int4, quantize_fp8_asymmetric
-
+from xformers.benchmarks.utils import (
+    benchmark_main_helper2,
+    NotSupportedInputError,
+    is_ocp_fp8,
+    quantize_kv_int4,
+    quantize_fp8_asymmetric,
+)
 
 min_run_time = 0.5
 device = torch.device("cuda")
@@ -329,8 +334,12 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         assert Hq % Hkv == 0
 
         self.q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
-        self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
-        self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+        self.k = torch.randn(
+            1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device
+        )
+        self.v = torch.randn(
+            1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device
+        )
 
         k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
             self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
@@ -344,7 +353,9 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         k_fp8_shifts = k_fp8_shifts.to(torch.float16)
         v_fp8_shifts = v_fp8_shifts.to(torch.float16)
 
-        def _combine_scale_shift(scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+        def _combine_scale_shift(
+            scale: torch.Tensor, shift: torch.Tensor
+        ) -> torch.Tensor:
             return (
                 torch.concat([scale.unsqueeze(-1), shift.unsqueeze(-1)], dim=-1)
                 .flatten(-2)
@@ -361,12 +372,8 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
                 1, B * max_context_length, Hkv, G, -1
             )
 
-        self.k_fp8_scales_shifts = (
-            _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
-        )
-        self.v_fp8_scales_shifts = (
-            _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
-        )
+        self.k_fp8_scales_shifts = _to_expanded_shape(k_fp8_scales_shifts).squeeze(-1)
+        self.v_fp8_scales_shifts = _to_expanded_shape(v_fp8_scales_shifts).squeeze(-1)
         self.k_fp8 = _to_expanded_shape(k_fp8)
         self.v_fp8 = _to_expanded_shape(v_fp8)
 
@@ -386,9 +393,9 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
                 op=self.OP,
             )
 
-            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
+            seq_len = torch.full((B,), Mkv, dtype=torch.int32, device="cuda")
             self.attn_bias.k_seqinfo.seqlen = seq_len
-            self.attn_bias.k_seqinfo.max_seqlen=Mkv
+            self.attn_bias.k_seqinfo.max_seqlen = Mkv
 
     def get_inputs(self):
         inp = InputsFp8(
@@ -441,8 +448,12 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         assert Hq % Hkv == 0
 
         self.q = torch.randn(1, B * Mq, Hkv, G, K, dtype=dtype, device=device)
-        self.k = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
-        self.v = torch.randn(1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device)
+        self.k = torch.randn(
+            1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device
+        )
+        self.v = torch.randn(
+            1, B * max_context_length, Hkv, 1, K, dtype=dtype, device=device
+        )
 
         k_fp8, k_fp8_scales, k_fp8_shifts = quantize_fp8_asymmetric(
             self.k.view(-1, K), pt_fp8_dtype=pt_fp8_dtype
@@ -458,7 +469,9 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
                 1, B * max_context_length, Hkv, G, -1
             )
 
-        def _combine_scale_shift_packed(scale: torch.Tensor, shift: torch.Tensor) -> torch.Tensor:
+        def _combine_scale_shift_packed(
+            scale: torch.Tensor, shift: torch.Tensor
+        ) -> torch.Tensor:
             return (
                 torch.concat([scale.unsqueeze(-1), shift.unsqueeze(-1)], dim=-1)
                 .flatten(-2)
@@ -469,8 +482,12 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         self.k_fp8_packed = _to_expanded_shape(k_fp8_packed)
         self.v_fp8_packed = _to_expanded_shape(v_fp8_packed)
 
-        k_fp8_scales_shifts_packed = _combine_scale_shift_packed(k_fp8_scales, k_fp8_shifts)
-        v_fp8_scales_shifts_packed = _combine_scale_shift_packed(v_fp8_scales, v_fp8_shifts)
+        k_fp8_scales_shifts_packed = _combine_scale_shift_packed(
+            k_fp8_scales, k_fp8_shifts
+        )
+        v_fp8_scales_shifts_packed = _combine_scale_shift_packed(
+            v_fp8_scales, v_fp8_shifts
+        )
 
         self.k_fp8_scales_shifts_packed = (
             _to_expanded_shape(k_fp8_scales_shifts_packed).squeeze(-1).contiguous()
@@ -495,10 +512,10 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
                 op=self.OP,
             )
 
-            #hard code sequence len to be the same as the
-            seq_len = torch.full((B, ), Mkv, dtype=torch.int32, device='cuda')
+            # hard code sequence len to be the same as the
+            seq_len = torch.full((B,), Mkv, dtype=torch.int32, device="cuda")
             self.attn_bias.k_seqinfo.seqlen = seq_len
-            self.attn_bias.k_seqinfo.max_seqlen=Mkv
+            self.attn_bias.k_seqinfo.max_seqlen = Mkv
 
     def get_inputs(self):
         inp = InputsFp8(

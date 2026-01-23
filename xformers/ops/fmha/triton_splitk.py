@@ -427,14 +427,12 @@ class FwOp(AttentionFwOpBase):
                 "FP8 scales needs to be either data type fp16 or int32 (packed)"
             )
 
-
     @classmethod
     def is_ocp_fp8(cls):
         import triton
 
         target = triton.runtime.driver.active.get_current_target()
-        return not (target.backend == 'hip' and target.arch == 'gfx942')        
-
+        return not (target.backend == "hip" and target.arch == "gfx942")
 
     @classmethod
     def get_extra_args(
@@ -739,7 +737,12 @@ class FwOp(AttentionFwOpBase):
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
                 else:
-                    kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    kv_scale_offset_shape = (
+                        1 if is_paged or is_gappy else B,
+                        -1,
+                        Hq,
+                        2,
+                    )
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
 
@@ -747,14 +750,22 @@ class FwOp(AttentionFwOpBase):
             NUM_QUERIES_CAUSAL = Mq
         else:
             B, Mq, G, Hq, Kq = q.shape
-            if k_fp8_scale_shift is not None and k_fp8_scale_shift.dtype == torch.float16:
+            if (
+                k_fp8_scale_shift is not None
+                and k_fp8_scale_shift.dtype == torch.float16
+            ):
                 if IS_PACKED:
                     Kkv = v.shape[-1]
                     kv_shape = (1 if is_paged or is_gappy else B, -1, G, Hq, Kkv)
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_shape[:-1])
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_shape[:-1])
                 else:
-                    kv_scale_offset_shape = (1 if is_paged or is_gappy else B, -1, Hq, 2)
+                    kv_scale_offset_shape = (
+                        1 if is_paged or is_gappy else B,
+                        -1,
+                        Hq,
+                        2,
+                    )
                     k_fp8_scale_shift = k_fp8_scale_shift.view(kv_scale_offset_shape)
                     v_fp8_scale_shift = v_fp8_scale_shift.view(kv_scale_offset_shape)
 
@@ -880,7 +891,6 @@ class FwOp(AttentionFwOpBase):
 
             return split_k, B * G * H, triton.cdiv(M, META["BLOCK_M"])
 
-
         split_size = (Mk + split_k - 1) // split_k
         use_seq_len = seq_len is not None
 
@@ -954,7 +964,7 @@ class FwOp(AttentionFwOpBase):
             IS_LOCAL=IS_LOCAL,
             NUM_QUERIES_CAUSAL=NUM_QUERIES_CAUSAL,
             IS_SPLITK=IS_SPLITK,
-            IS_PACKED = IS_PACKED,
+            IS_PACKED=IS_PACKED,
             SPLIT_K_EARLY_EXIT=cls.SPLIT_K_EARLY_EXIT,
             USE_PAGED_ATTENTION=is_paged,
             PAGE_SIZE=page_size,
@@ -965,7 +975,7 @@ class FwOp(AttentionFwOpBase):
             NUM_PROGRAMS_DIM2_CONST=split_k,
             IS_HIP=IS_HIP,
             USE_TL_SWIZZLE=USE_TL_SWIZZLE,
-            IS_OCP_FP8 = IS_OCP_FP8,
+            IS_OCP_FP8=IS_OCP_FP8,
             **extra_args,
         )
         if not IS_SPLITK:

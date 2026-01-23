@@ -195,7 +195,13 @@ def _fwd_kernel_splitK(
     start_m = tl.program_id(2)
 
     if USE_TL_SWIZZLE:
-        splitk_idx, off_zhg = tl.swizzle2d(splitk_idx, off_zhg, tl.num_programs(1), tl.num_programs(1), tl.num_programs(0))
+        splitk_idx, off_zhg = tl.swizzle2d(
+            splitk_idx,
+            off_zhg,
+            tl.num_programs(1),
+            tl.num_programs(1),
+            tl.num_programs(0),
+        )
 
     off_z = (off_zhg // (H * G)).to(tl.int64)
     off_hg = off_zhg % (H * G)
@@ -549,7 +555,6 @@ def _fwd_kernel_splitK(
                 IS_OCP_FP8,
             )
 
-
         # -- compute qk ---
         qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
         for i in range(len(acc)):  # noqa: F821
@@ -828,7 +833,9 @@ def load_dequantize_k_v_group(
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
         else:
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+            dtype
+        )
 
         k_scale_shift = tl.load(
             K_scale_shift_block_ptr, boundary_check=(1,) if BOUNDS_CHECKS_N else ()
@@ -875,12 +882,18 @@ def load_dequantize_k_v_group(
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+                dtype
+            )
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(
+                dtype
+            )
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+                dtype
+            )
             k_t = dequantize(
                 tl.trans(k),
                 tl.trans(k_scale),
@@ -923,7 +936,9 @@ def load_dequantize_k_group(
         )
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(
+                dtype
+            )
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             k_t = dequantize(
@@ -952,7 +967,9 @@ def load_dequantize_k_group(
         )
         if IS_HIP:
             k_scale, k_shift = cast_uint32_to_float(k_scale_shift)
-            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(dtype)
+            k = dequantize_k_hip(k, k_scale, k_shift, PACKED_PER_VAL, IS_OCP_FP8).to(
+                dtype
+            )
         else:
             k_scale, k_shift = cast_uint32_to_half2(k_scale_shift)
             k_t = dequantize(
@@ -1001,7 +1018,9 @@ def load_dequantize_v_group(
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
         else:
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+        v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+            dtype
+        )
     elif FP8_QUANTIZED:
         v_scale_shift = tl.load(
             V_scale_shift_block_ptr, boundary_check=(0,) if BOUNDS_CHECKS_N else ()
@@ -1018,11 +1037,16 @@ def load_dequantize_v_group(
         )
         if IS_HIP:
             v_scale, v_shift = cast_uint32_to_float(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+                dtype
+            )
         else:
             v_scale, v_shift = cast_uint32_to_half2(v_scale_shift)
-            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(dtype)
+            v = dequantize(v, v_scale, v_shift, PACKED_PER_VAL, IS_HIP, IS_OCP_FP8).to(
+                dtype
+            )
     return v
+
 
 @triton.jit
 def cast_uint32_to_half2(scale_shift):
@@ -1071,7 +1095,7 @@ def dequantize_k_hip(
 
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = (tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8)
+        fp8_type = tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
@@ -1120,7 +1144,7 @@ def dequantize(
     )
     if PACKED_PER_VAL == 4:
         # FP8 quantization.
-        fp8_type = (tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8)
+        fp8_type = tl.float8e4nv if IS_OCP_FP8 else tl.float8e4b8
         dequant = (
             quant_offset.to(tl.uint8).to(fp8_type, bitcast=True).to(scale.dtype) * scale
             + shift
