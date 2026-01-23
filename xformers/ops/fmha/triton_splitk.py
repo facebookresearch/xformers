@@ -429,6 +429,14 @@ class FwOp(AttentionFwOpBase):
 
 
     @classmethod
+    def is_ocp_fp8(cls):
+        import triton
+
+        target = triton.runtime.driver.active.get_current_target()
+        return not (target.backend == 'hip' and target.arch == 'gfx942')        
+
+
+    @classmethod
     def get_extra_args(
         cls,
         *,
@@ -549,7 +557,7 @@ class FwOp(AttentionFwOpBase):
                             num_warps = 1
                             num_stages = 1
                 elif B <= 128 and use_fp8_path:
-                    num_stages = 2
+                    num_stages = 2 if cls.is_ocp_fp8() else 1
                     if is_paged:
                         if mkv <= 256:
                             num_warps = 4
@@ -589,11 +597,11 @@ class FwOp(AttentionFwOpBase):
                             num_warps = 2
                             BLOCK_N = 32
                         else:
-                            num_warps = 1
+                            num_warps = 2 if cls.is_ocp_fp8() else 1
                             BLOCK_N = 64
                 else:
                     num_warps = 1
-                    num_stages = 2
+                    num_stages = 1
                     BLOCK_N = 16
             else:
                 should_modify_warp_and_block = (
@@ -872,12 +880,6 @@ class FwOp(AttentionFwOpBase):
 
             return split_k, B * G * H, triton.cdiv(M, META["BLOCK_M"])
 
-        def is_ocp_fp8():
-            import triton
-
-            target = triton.runtime.driver.active.get_current_target()
-            return not (target.backend == 'hip' and target.arch == 'gfx942')        
-
 
         split_size = (Mk + split_k - 1) // split_k
         use_seq_len = seq_len is not None
@@ -897,7 +899,7 @@ class FwOp(AttentionFwOpBase):
 
         IS_HIP = torch.version.hip is not None
         USE_TL_SWIZZLE = ((B * G * H) % split_k) == 0
-        IS_OCP_FP8 = is_ocp_fp8()
+        IS_OCP_FP8 = cls.is_ocp_fp8()
 
         kernel[grid](
             Q=q,

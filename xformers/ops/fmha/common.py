@@ -239,7 +239,7 @@ class Inputs:
         quantized_dtypes = self.key.dtype == self.value.dtype == torch.int32
         fp8_dtypes = (self.key.dtype == self.value.dtype) and (self.key.dtype in 
                                                                [torch.float8_e4m3fn, torch.float8_e4m3fnuz, 
-                                                                torch.float8_e5m2fn, torch.float8_e5m2fnuz])
+                                                                torch.float8_e5m2, torch.float8_e5m2fnuz])
         non_quantized_dtypes = all(x.dtype == self.query.dtype for x in qkv)
         if not (quantized_dtypes or non_quantized_dtypes or fp8_dtypes):
             raise ValueError(

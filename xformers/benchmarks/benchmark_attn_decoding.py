@@ -559,17 +559,14 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
 
 
 class AttentionDecodingPyTorchRepeat(AttentionDecodingBase):
-    def FwOp(q, k, v, scale):
-        attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
-        return attn @ v
-
     def fw(self) -> None:
         B, Mq, Mkv, Hq, Hkv, K = self.shapes
         scale = 1 / K**0.5
         q = self.q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3)
         k = self.k.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
         v = self.v.reshape([B, Mkv, -1, K]).permute(0, 2, 1, 3)
-        return self.FwOp(q, k, v, scale)
+        attn = (q @ k.transpose(-1, -2) * scale).softmax(-1)
+        return attn @ v
 
 
 BENCHMARKS: Dict[str, Type[AttentionDecodingBase]] = {
@@ -589,9 +586,9 @@ if torch.version.hip:
 
 if (sys.version_info.major, sys.version_info.minor) >= (3, 9):
     BENCHMARKS["triton_splitK"] = AttentionDecodingSplitKV
-    # BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
-    # BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
-    # BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
+    BENCHMARKS["packed_fp8"] = AttentionDecodingSplitPackedFp8KV
+    BENCHMARKS["fp8"] = AttentionDecodingSplitFp8KV
+    BENCHMARKS["triton_int4KV"] = AttentionDecodingSplitInt4KV
 
 try:
     import flash_attn
