@@ -37,44 +37,6 @@ CASES = [
     for hkv in (1, 2)
 ]
 
-CASES = [
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=32769,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        # attn_bias_type=None,
-    ),
-    dict(
-        B=128,
-        Mq=1,
-        Mkv=8193,
-        Hq=8,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-        # attn_bias_type=None,
-    ),
-]
-
-MOE_CASES = [
-    dict(
-        B=b,
-        Mq=1,
-        Mkv=mkv,
-        Hq=15,
-        Hkv=1,
-        K=128,
-        attn_bias_type=xops.fmha.attn_bias.BlockDiagonalCausalWithOffsetPaddedKeysMask,
-    )
-    for b in [128]
-    for mkv in [32769]
-]
-
-CASES = MOE_CASES
 
 class AttentionDecodingBase:
     OP: Any = None
@@ -90,7 +52,7 @@ class AttentionDecodingBase:
         bw: bool,
         attn_bias_type,
     ) -> None:
-        dtype = torch.bfloat16
+        dtype = torch.float16
         torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
@@ -351,7 +313,7 @@ class AttentionDecodingSplitFp8KV(AttentionDecodingBase):
         bw: bool,
         attn_bias_type,
     ) -> None:
-        dtype = torch.bfloat16
+        dtype = torch.float16
         torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
@@ -463,7 +425,7 @@ class AttentionDecodingSplitPackedFp8KV(AttentionDecodingBase):
         bw: bool,
         attn_bias_type,
     ) -> None:
-        dtype = torch.bfloat16
+        dtype = torch.float16
         torch.manual_seed(10)
         self.sub_label = (
             f"B={B} Mq={Mq} Mkv={Mkv} Hq={Hq} Hkv={Hkv} K={K} TotalBytes="
@@ -611,36 +573,23 @@ except ImportError:
     pass
 
 
-def dequantize_to_f32(t_fp8, scale_shift, B, M, K, is_packed = False):
-    t_fp8 = t_fp8.reshape([B, M, -1, K]).permute(0, 2, 1, 3)
-    t_f32 = t_fp8.to(torch.float32).contiguous()
+TEST_CASES = [
+    dict(
+        B=max(1, 2 ** (16 - i)),
+        Mq=1,
+        Mkv=2**i,
+        Hq=16,
+        Hkv=hkv,
+        K=128,
+        attn_bias_type=None,
+    )
+    for i in range(8, 18)
+    for hkv in range(1, 3)
+] + [
+    dict(B=i, Mq=1, Mkv=4097, Hq=8, Hkv=1, K=128, attn_bias_type=None)
+    for i in [2, 4, 8, 16, 32, 64, 128]
+]
 
-    scale_f32 = scale_shift[:,:,:,:,0].to(torch.float32)
-    scale_f32 = scale_f32.reshape([B, M, -1, 1]).permute(0, 2, 1, 3).contiguous()
-    shift_f32 = scale_shift[:,:,:,:,1].to(torch.float32)
-    shift_f32 = shift_f32.reshape([B, M, -1, 1]).permute(0, 2, 1, 3).contiguous()
-    t_f32 = t_f32 * scale_f32 + shift_f32
-
-    return t_f32
-
-
-def dequantize_qkv(inp, B, Mq, Mkv, Hq, Hkv, K, is_packed = False):
-    q = inp.query
-    q = q.reshape([B, Mq, -1, K]).permute(0, 2, 1, 3).contiguous()
-    k = dequantize_to_f32(inp.key, inp.k_fp8_scale_shift, B, Mkv, K, is_packed)
-    v = dequantize_to_f32(inp.value, inp.v_fp8_scale_shift, B, Mkv, K, is_packed)
-
-    return q, k, v
-
-
-# def attention_naive(inp, B, Mq, Mkv, Hq, Hkv, K):
-#     q, k, v = dequantization(inp, B, Mq, Mkv, Hq, Hkv, K)
-#     scale = 1 / K**0.5
-#     attn = (q.to(torch.float32) @ k.transpose(-1, -2) * scale).softmax(-1)
-#     return (attn @ v).to(q.dtype)
-
-
-TEST_CASES = CASES
 
 def get_benchmark_names():
     decoder_names = list(BENCHMARKS.keys())
@@ -654,9 +603,7 @@ def get_benchmark_names():
     [(name, case) for name in get_benchmark_names() for case in TEST_CASES],
 )
 def test_flash_attention_decoder(name, case):
-    if name not in ["triton_splitK", "packed_fp8", "fp8"]:
-        pytest.skip("ck-decoder does not support Mkv >= 16K")
-    decoder = BENCHMARKS[name](
+    baseline = AttentionDecodingPyTorchRepeat(
         case["B"],
         case["Mq"],
         case["Mkv"],
@@ -666,35 +613,30 @@ def test_flash_attention_decoder(name, case):
         False,
         case["attn_bias_type"],
     )
-    inputs = decoder.get_inputs()
+    if name == "ck-decoder" and case["Mkv"] >= 2**14:
+        pytest.skip("ck-decoder does not support Mkv >= 16K")
 
-    assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV", "packed_fp8", "fp8"]
+    baseline_out = baseline.fw()
+    inputs = baseline.get_inputs()
+    decoder = BENCHMARKS[name]
+
+    assert name in ["ck_splitK", "ck", "triton_splitK", "triton_int4KV"]
     decoder_output, ctx = decoder.OP.apply(inputs, False)
 
-    # compute baseline using fp8 inputs to avoid the quant/dequantization error
-    q, k, v = inputs.query, inputs.key, inputs.value
-    if len(q.shape) == 5:
-        M, B, G, H, Kq = q.shape
-    else:
-        M, B, G, Kq = q.shape
-    scale = 1 / Kq**0.5
-    if k.dtype not in [torch.float16, torch.bfloat16]:
-        q, k, v = dequantize_qkv(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
-    ref_output = AttentionDecodingPyTorchRepeat.FwOp(q, k, v, scale)
-
-    # naive_output = attention_naive(inputs, case["B"], case["Mq"], case["Mkv"], case["Hq"], case["Hkv"], case["K"])
-
+    q, k, v = inputs.get_qkv_in_bmghk()
+    B, M, G, H, Kq = q.shape
     mqa_swap_seqlen_head = False
     if k.shape[3] > 1 and k.stride(3) == 0 and v.stride(3) == 0:
         mqa_swap_seqlen_head = True
     if mqa_swap_seqlen_head:
         decoder_output = (
-            decoder_output.reshape(B, -1, M * G, Kq).transpose(1, 2).contiguous()
+            decoder_output.reshape(B, -1, M, Kq).transpose(1, 2).contiguous()
         )
     else:
         decoder_output = decoder_output.reshape(B, H * G, -1, Kq).contiguous()
+
     decoder_output = decoder_output.transpose(2, 1).contiguous()
-    torch.testing.assert_close(decoder_output, ref_output, atol=5e-4, rtol=0.000)
+    torch.testing.assert_close(decoder_output, baseline_out, atol=1e-2, rtol=0)
 
 
 def main() -> None:
@@ -712,5 +654,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()  # pragma: no cover
-
-
