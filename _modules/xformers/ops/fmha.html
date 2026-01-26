@@ -409,7 +409,7 @@
         <span class="p">)</span>
 
 
-<div class="viewcode-block" id="memory_efficient_attention"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention</span><span class="p">(</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention</span><span class="p">(</span>
     <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -532,7 +532,7 @@
             <span class="n">output_dtype</span><span class="o">=</span><span class="n">output_dtype</span><span class="p">,</span>
         <span class="p">),</span>
         <span class="n">op</span><span class="o">=</span><span class="n">op</span><span class="p">,</span>
-    <span class="p">)</span></div>
+    <span class="p">)</span>
 
 
 <span class="n">torch</span><span class="o">.</span><span class="n">library</span><span class="o">.</span><span class="n">define</span><span class="p">(</span>
@@ -577,7 +577,7 @@
     <span class="p">)</span>
 
 
-<div class="viewcode-block" id="memory_efficient_attention_forward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_forward">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_forward</span><span class="p">(</span>
+<div class="viewcode-block" id="memory_efficient_attention_forward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_forward</span><span class="p">(</span>
     <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -605,7 +605,7 @@
     <span class="p">)</span></div>
 
 
-<div class="viewcode-block" id="memory_efficient_attention_forward_requires_grad"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_forward_requires_grad">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
+<div class="viewcode-block" id="memory_efficient_attention_forward_requires_grad"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.fmha.memory_efficient_attention_forward_requires_grad">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_forward_requires_grad</span><span class="p">(</span>
     <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -641,7 +641,7 @@
     <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span></div>
 
 
-<div class="viewcode-block" id="memory_efficient_attention_backward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_backward">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_backward</span><span class="p">(</span>
+<div class="viewcode-block" id="memory_efficient_attention_backward"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.fmha.memory_efficient_attention_backward">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_backward</span><span class="p">(</span>
     <span class="n">grad</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">output</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">lse</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -807,7 +807,7 @@
     <span class="k">return</span> <span class="n">grads</span>
 
 
-<div class="viewcode-block" id="memory_efficient_attention_partial"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.memory_efficient_attention_partial">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_partial</span><span class="p">(</span>
+<div class="viewcode-block" id="memory_efficient_attention_partial"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.fmha.memory_efficient_attention_partial">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">memory_efficient_attention_partial</span><span class="p">(</span>
     <span class="n">query</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">key</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">value</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -848,7 +848,7 @@
     <span class="k">return</span> <span class="n">out</span><span class="p">,</span> <span class="n">ctx</span><span class="o">.</span><span class="n">lse</span></div>
 
 
-<div class="viewcode-block" id="merge_attentions"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.merge_attentions">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">merge_attentions</span><span class="p">(</span>
+<div class="viewcode-block" id="merge_attentions"><a class="viewcode-back" href="../../../components/ops.html#xformers.ops.fmha.merge_attentions">[docs]</a><span class="k">def</span><span class="w"> </span><span class="nf">merge_attentions</span><span class="p">(</span>
     <span class="n">attn_split</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
     <span class="n">lse_split</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">Sequence</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]],</span>
     <span class="n">write_lse</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
