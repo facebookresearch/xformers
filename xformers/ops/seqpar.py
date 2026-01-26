@@ -7,7 +7,7 @@
 from typing import Callable, List, Tuple
 
 import torch
-from torch.distributed.distributed_c10d import _resolve_process_group
+from torch.distributed.distributed_c10d import _resolve_process_group, GroupName
 
 from .differentiable_collectives import (
     gather_along_first_dim,
@@ -33,7 +33,7 @@ def sequence_parallel_leading_matmul_fwd(
     scattered_input: torch.Tensor,
     weights: List[torch.Tensor],
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> List[torch.Tensor]:
     process_group = _resolve_process_group(process_group_name)
 
@@ -57,7 +57,7 @@ def sequence_parallel_leading_matmul_fwd_fake(
     scattered_input: torch.Tensor,
     weights: List[torch.Tensor],
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> List[torch.Tensor]:
     mp_size = _resolve_process_group(process_group_name).size()
     return [
@@ -76,7 +76,7 @@ def sequence_parallel_leading_matmul_bwd(
     weights: List[torch.Tensor],
     grad_gathered_outputs: List[torch.Tensor],
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     process_group = _resolve_process_group(process_group_name)
     mp_size = process_group.size()
@@ -172,7 +172,7 @@ def sequence_parallel_leading_matmul_bwd_fake(
     weights: List[torch.Tensor],
     grad_gathered_outputs: List[torch.Tensor],
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
     return (torch.empty_like(scattered_input), [torch.empty_like(w) for w in weights])
 
@@ -228,7 +228,7 @@ def sequence_parallel_trailing_matmul_fwd(
     gathered_input: torch.Tensor,
     weight: torch.Tensor,
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> torch.Tensor:
     process_group = _resolve_process_group(process_group_name)
 
@@ -249,7 +249,7 @@ def sequence_parallel_trailing_matmul_fwd_fake(
     gathered_input: torch.Tensor,
     weight: torch.Tensor,
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> torch.Tensor:
     mp_size = _resolve_process_group(process_group_name).size()
     return gathered_input.new_empty(
@@ -267,7 +267,7 @@ def sequence_parallel_trailing_matmul_bwd(
     weight: torch.Tensor,
     grad_scattered_output: torch.Tensor,
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     process_group = _resolve_process_group(process_group_name)
     mp_size = process_group.size()
@@ -318,7 +318,7 @@ def sequence_parallel_trailing_matmul_bwd_fake(
     weight: torch.Tensor,
     grad_scattered_output: torch.Tensor,
     fuse: bool,
-    process_group_name: str,
+    process_group_name: GroupName,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     return (torch.empty_like(gathered_input), torch.empty_like(weight))
 

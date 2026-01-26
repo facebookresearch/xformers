@@ -522,7 +522,7 @@ def fused_allgather_and_linear(
 def _fused_allgather_and_linear_custom_op(
     scattered_input: torch.Tensor,
     weights: List[torch.Tensor],
-    process_group_name: str,
+    process_group_name: dist.distributed_c10d.GroupName,
     gathered_outputs: List[torch.Tensor],
     timeout_s: int,
     _wait: bool,
@@ -749,7 +749,7 @@ def fused_linear_and_reducescatter(
 def _fused_linear_and_reducescatter_custom_op(
     gathered_input: torch.Tensor,
     weights: List[torch.Tensor],
-    process_group_name: str,
+    process_group_name: dist.distributed_c10d.GroupName,
     scattered_outputs: List[torch.Tensor],
     timeout_s: int,
     _wait: bool,

@@ -79,6 +79,8 @@ jobs:
           pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
           pip install -r requirements-test.txt --progress-bar off
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v --no-build-isolation -e .
+        env:
+          TORCH_DONT_CHECK_COMPILER_ABI: 1
       - run: python -m xformers.info
       - name: xFormers import should not init cuda context
         run: |
