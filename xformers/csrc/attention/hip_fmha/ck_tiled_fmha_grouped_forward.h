@@ -27,7 +27,7 @@ void run_grouped_forward_mask_bias_dropout_dispatch(
   // (*) dropout
   // (*) head dimension > 256
   if constexpr (!kHasDropout) {
-    if (param.use_split_kv && MaxK <= 256) {
+    if ((param.use_split_kv || param.use_paged_kvcache) && MaxK <= 256) {
       if constexpr (MaxK <= 256) {
         if (use_splitkv_smallq(
                 param.max_seqlen_q, std::max(param.K, param.Kv))) {
