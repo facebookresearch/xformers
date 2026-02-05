@@ -392,10 +392,9 @@ def get_extensions():
         stable_args = [
             "-DTORCH_STABLE_ONLY",
             "-DTORCH_TARGET_VERSION=0x020a000000000000",
-            "-DUSE_CUDA",
         ]
         extra_compile_args["cxx"].extend(stable_args)
-        extra_compile_args["nvcc"].extend(stable_args)
+        extra_compile_args["nvcc"].extend(stable_args + ["-DUSE_CUDA"])
 
         ext_modules += get_flash_attention3_extensions(cuda_version, extra_compile_args)
 

@@ -9,8 +9,10 @@
 #include <type_traits>
 #include <vector>
 
+#ifdef USE_CUDA
 #include <cuda.h>
 #include <cuda_runtime.h>
+#endif
 
 #include <torch/csrc/stable/library.h>
 #include <torch/csrc/stable/macros.h>
@@ -19,6 +21,8 @@
 #include <torch/csrc/stable/tensor.h>
 #include <torch/headeronly/core/TensorAccessor.h>
 #include <torch/headeronly/util/Metaprogramming.h>
+
+#ifdef USE_CUDA
 
 #define XF_CUDA_DRIVER_CHECK(EXPR)                   \
   do {                                               \
@@ -30,7 +34,11 @@
 
 cudaDeviceProp* xf_getCurrentDeviceProperties();
 
+#endif
+
 namespace {
+
+#ifdef USE_CUDA
 
 cudaStream_t xf_getCurrentCUDAStream(
     torch::stable::accelerator::DeviceIndex index = -1) {
@@ -44,15 +52,17 @@ cudaStream_t xf_getCurrentCUDAStream(
   return static_cast<cudaStream_t>(ret);
 }
 
+template <typename T>
+constexpr __host__ __device__ inline T ceil_div(T a, T b) {
+  return (a + b - 1) / b;
+}
+
+#endif
+
 template <typename dtype, size_t ndim>
 auto xf_packed_accessor(const torch::stable::Tensor& t) {
   return torch::headeronly::HeaderOnlyGenericPackedTensorAccessor<dtype, ndim>(
       t.mutable_data_ptr<dtype>(), t.sizes().data(), t.strides().data());
-}
-
-template <typename T>
-constexpr __host__ __device__ inline T ceil_div(T a, T b) {
-  return (a + b - 1) / b;
 }
 
 inline int32_t xf_get_layout(const torch::stable::Tensor& self) {
