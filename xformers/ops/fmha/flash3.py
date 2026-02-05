@@ -105,16 +105,7 @@ FLASH3_HAS_PAGED_ATTENTION = True
 FLASH3_HAS_FLOAT8 = False
 FLASH3_HAS_DETERMINISTIC_MODE = False
 _C_flashattention3 = None
-if importlib.util.find_spec("...flash_attn_3._C", package=__package__):
-    from ..._cpp_lib import _build_metadata
-    from ...flash_attn_3 import _C  # type: ignore[attr-defined]  # noqa: F401
-
-    if _build_metadata is not None:
-        FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
-    FLASH3_HAS_DETERMINISTIC_MODE = True
-    _C_flashattention3 = torch.ops.flash_attn_3
-
-elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
+if importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
     "flash_attn_3._C"
 ):
     import flash_attn_3._C  # type: ignore[attr-defined]  # noqa: F401
@@ -127,6 +118,15 @@ elif importlib.util.find_spec("flash_attn_3") and importlib.util.find_spec(
         FLASH3_HAS_FLOAT8 = True
     else:
         logger.warning(f"Flash-Attention 3 package can't be used: {incompat_reason}")
+
+elif importlib.util.find_spec("...flash_attn_3._C", package=__package__):
+    from ..._cpp_lib import _build_metadata
+    from ...flash_attn_3 import _C  # type: ignore[attr-defined]  # noqa: F401
+
+    if _build_metadata is not None:
+        FLASH_VERSION = _build_metadata.flash_version.lstrip("v")
+    FLASH3_HAS_DETERMINISTIC_MODE = True
+    _C_flashattention3 = torch.ops.flash_attn_3
 
 
 def _heuristic_kvsplit(
