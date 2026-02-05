@@ -115,12 +115,6 @@ jobs:
       - run: echo "release version (will upload to PyTorch)"
         if: ${{ !contains(steps.xformers_version.outputs.BUILD_VERSION, '.dev') }}
 
-      - name: Setup proper pytorch dependency in "requirements.txt"
-        run: |
-          sed -i '/torch/d' ./requirements.txt
-          echo "torch == ${{ inputs.torch_version }}" >> ./requirements.txt
-          cat ./requirements.txt
-
       - name: Install corresponding PyTorch
         run: |
           PYTORCH_INDEX_URL="https://download.pytorch.org/whl/${{ contains(inputs.toolkit_type, 'cuda') && 'cu' || 'rocm' }}${{ inputs.toolkit_short_version }}"
