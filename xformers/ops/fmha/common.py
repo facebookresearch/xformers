@@ -173,7 +173,7 @@ class Inputs:
                 self.key.unsqueeze(2),
                 self.value.unsqueeze(2),
             )
-        if self.value.ndim == 3:
+        if self.query.ndim == 3:
             return (
                 self.query[:, :, None, None],
                 self.key[:, :, None, None],
