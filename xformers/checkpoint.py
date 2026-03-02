@@ -226,7 +226,7 @@ class ProfileOperatorsTorchDispatchMode(TorchDispatchMode):
         op_id = curr_idx
         op_parent_id = -1
         for i, d in enumerate(self.data):
-            # find the first occurence of a tensor that
+            # find the first occurrence of a tensor that
             # shares the same storage as the current tensor
             past_output_ids = d.output_ids
             past_output_ids = (
