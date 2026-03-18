@@ -375,7 +375,7 @@ class clean(distutils.command.clean.clean):  # type: ignore
         distutils.command.clean.clean.run(self)
 
 
-class bdist_wheel_abi_none(_bdist_wheel if _bdist_wheel else object):
+class bdist_wheel_abi_none(_bdist_wheel if _bdist_wheel else object):  # type: ignore[misc]
     """
     Custom wheel builder that tags wheels as ABI-independent despite containing compiled code.
     The compiled extensions are plain shared libraries (.so/.dll) that use only PyTorch's

@@ -411,7 +411,7 @@ class BwOp(AttentionBwOpBase):
         tensor_bias = _get_tensor_bias(inp.attn_bias)
 
         force_pad_inf = torch.cuda.get_device_capability(inp.query.device) == (7, 5)
-        (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
+        grad_q, grad_k, grad_v, grad_bias = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,

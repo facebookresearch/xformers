@@ -2655,7 +2655,7 @@ def paged_attention_run_inner(
     )
 
     # Now let's create a "packed" K/V cache, where only meaniningful logical blocks are mapped to physical blocks
-    (block_tables, packed_cache_k, packed_cache_v) = pack_kv_cache(
+    block_tables, packed_cache_k, packed_cache_v = pack_kv_cache(
         cache_k,
         cache_v,
         kv_seqlens,

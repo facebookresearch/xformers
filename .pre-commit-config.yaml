@@ -21,7 +21,7 @@ repos:
   hooks:
     - id: ufmt
       additional_dependencies:
-        - black == 24.4.2
+        - black == 26.3.1
         - usort == 1.0.8.post1
 
 -   repo: https://github.com/pycqa/flake8

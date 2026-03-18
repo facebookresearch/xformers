@@ -332,9 +332,7 @@ def test_pack_meta_shuffle(transpose: bool) -> None:
     def expect_match(i, j, line):
         value = final_meta[i][j][0]
         expected = pack(line)
-        assert (
-            value == expected
-        ), f"""value: 0x{value:02x} (expected: 0x{expected:02x})
+        assert value == expected, f"""value: 0x{value:02x} (expected: 0x{expected:02x})
 {meta_str(local_meta[0, 0, :4])} (T0) |||| {meta_str(local_meta[0, 1, :4])} (T4)
 {meta_str(local_meta[1, 0, :4])} (T1) |||| {meta_str(local_meta[1, 1, :4])} (T5)
 """

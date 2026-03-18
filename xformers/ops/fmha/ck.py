@@ -449,7 +449,7 @@ class BwOp(AttentionBwOpBase):
                 raise NotImplementedError(f"Invalid rng_state: {ctx.rng_state}")
             rng_seed, rng_offset = ctx.rng_state.tolist()
 
-        (grad_q, grad_k, grad_v, grad_bias) = cls.OPERATOR(
+        grad_q, grad_k, grad_v, grad_bias = cls.OPERATOR(
             grad.to(dtype),
             inp.query,
             inp.key,

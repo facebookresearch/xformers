@@ -578,7 +578,7 @@ def _sparsify24_forward(x: torch.Tensor, *, algo: str, backend: str) -> Sparse24
             raise ValueError("Input to `sparsify24` is already sparse")
         return x
 
-    (packed, meta, packed_t, meta_t, threads_masks) = SparsifyBothWays.OPERATOR(
+    packed, meta, packed_t, meta_t, threads_masks = SparsifyBothWays.OPERATOR(
         x, algorithm=algo, backend=backend
     )
     cls = (

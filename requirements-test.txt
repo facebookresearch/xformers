@@ -3,7 +3,7 @@
 
 
 # Tools for static checking.
-black==24.4.2
+black==26.3.1
 stdlibs==2024.1.28
 ufmt==2.8.0
 usort==1.0.8.post1

@@ -12,7 +12,6 @@ import torch
 
 from xformers.ops import fmha
 
-
 """
 Friendly wrapper around merge_attentions which works with autograd.
 
