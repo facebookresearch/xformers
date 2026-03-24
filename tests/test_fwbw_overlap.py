@@ -14,8 +14,10 @@ from xformers.fwbw_overlap import (
     enter_compute,
     overlap_fw_bw,
 )
+from .utils import cuda_only
 
 
+@cuda_only
 def test_fwbw_overlap() -> None:
     class _JournalizedFunc(torch.autograd.Function):
         @staticmethod
@@ -113,6 +115,7 @@ def test_fwbw_overlap() -> None:
     assert torch.allclose(3 * ref["dw2"], w2.grad)  # type: ignore
 
 
+@cuda_only
 def test_fwbw_nothing_to_overlap() -> None:
     def f(x: torch.Tensor) -> torch.Tensor:
         x = x * x
@@ -141,6 +144,7 @@ class ExceptionInBWOp(torch.autograd.Function):
         raise ExceptionInBW()
 
 
+@cuda_only
 def test_exception_in_bw_pass() -> None:
     def f(x: torch.Tensor) -> torch.Tensor:
         x = x * x
@@ -161,6 +165,7 @@ def test_exception_in_bw_pass() -> None:
         overlap_fw_bw(lambda: f(x), lambda: y.backward(gy), initial_bw_chunks=0)
 
 
+@cuda_only
 def test_exception_in_first_bw_pass() -> None:
     def f(x: torch.Tensor) -> torch.Tensor:
         x = x * x
