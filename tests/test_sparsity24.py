@@ -17,9 +17,8 @@ import xformers.ops as xops
 import xformers.ops.sp24 as sp24
 from torch.sparse import to_sparse_semi_structured
 
-from .utils import assert_allclose
+from .utils import assert_allclose, cuda_only
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 compute_capability = (0, 0)
 if torch.cuda.is_available():
     compute_capability = torch.cuda.get_device_capability("cuda")

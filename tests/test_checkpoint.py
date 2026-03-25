@@ -19,8 +19,8 @@ from xformers.checkpoint import (
     list_operators,
     selective_checkpoint_wrapper,
 )
+from .utils import cuda_only
 
-cuda_only = pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA")
 _devices = ["cpu"]
 cuda_cap = (0, 0)
 
