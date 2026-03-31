@@ -167,7 +167,7 @@ class FwOp(AttentionFwOpBase):
         if is_pt_cutlass_compatible()
         else None
     )
-    CUDA_MAXIMUM_COMPUTE_CAPABILITY = (9, 0)
+    CUDA_MAXIMUM_COMPUTE_CAPABILITY = (12, 0)
     SUPPORTED_DEVICES: Set[str] = {"cuda"}
     SUPPORTED_DTYPES: Set[torch.dtype] = {torch.float, torch.half, torch.bfloat16}
     SUPPORTED_MAX_K = 65536
