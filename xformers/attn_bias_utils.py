@@ -361,7 +361,7 @@ def _rand_seqlens_padded_k(
     # will attend to nothing and have undefined result.
     # In addition every element of k_seqlens must be <= kv_len
     if q_len > kv_len:
-        raise ValueError("need more queries than keys")
+        raise ValueError("need more keys than queries (kv_len must be >= q_len)")
     if q_len == kv_len:
         # all key slots are needed so we cannot have padding
         q_seqlens = k_seqlens = [kv_len] * bs
