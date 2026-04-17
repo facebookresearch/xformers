@@ -19,6 +19,7 @@ from xformers.checkpoint import (
     list_operators,
     selective_checkpoint_wrapper,
 )
+
 from .utils import cuda_only
 
 _devices = ["cpu"]

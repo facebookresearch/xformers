@@ -10,6 +10,7 @@ import torch
 
 from xformers import _is_triton_available
 from xformers.ops.tiled_matmul import tiled_matmul
+
 from .utils import cuda_only
 
 compute_capability = (0, 0)

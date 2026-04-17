@@ -17,8 +17,8 @@ import xformers.profiler
 from torch.nn.attention import sdpa_kernel, SDPBackend
 from torch.utils._python_dispatch import _get_current_dispatch_mode
 from xformers.profiler import profile_analyzer
-from .utils import cuda_only
 
+from .utils import cuda_only
 
 # Not using the PyTorch profiler, as it causes segfaults
 # in the CI ~30% of the time

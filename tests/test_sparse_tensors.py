@@ -11,7 +11,7 @@ import xformers  # noqa: F401
 from xformers.ops import masked_matmul
 from xformers.sparse import BlockSparseTensor
 
-from .utils import disable_tf32, cuda_only
+from .utils import disable_tf32
 
 _devices = (
     ["cpu", "cuda:0"] if torch.cuda.is_available() and torch.version.cuda else ["cpu"]
