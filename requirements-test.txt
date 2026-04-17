@@ -14,9 +14,9 @@ pyre-check == 0.9.16
 pyre-extensions == 0.0.29
 
 # Tools for unit tests & coverage.
-pytest == 7.2.0
-pytest-cov == 2.10.0
-pytest-timeout == 1.4.2
+pytest == 9.0.3
+pytest-cov == 6.0.0
+pytest-timeout == 2.3.1
 pytest-random-order == 1.1.1
 
 # Dependency for Mixture of Experts
