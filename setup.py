@@ -8,7 +8,6 @@
 import datetime
 import distutils.command.clean
 import glob
-import importlib.util
 import json
 import os
 import platform
@@ -35,20 +34,6 @@ except ImportError:
     _bdist_wheel = None
 
 this_dir = os.path.dirname(__file__)
-pt_attn_compat_file_path = os.path.join(
-    this_dir, "xformers", "ops", "fmha", "torch_attention_compat.py"
-)
-
-# Define the module name
-module_name = "torch_attention_compat"
-
-# Load the module
-spec = importlib.util.spec_from_file_location(module_name, pt_attn_compat_file_path)
-assert spec is not None
-attn_compat_module = importlib.util.module_from_spec(spec)
-sys.modules[module_name] = attn_compat_module
-assert spec.loader is not None
-spec.loader.exec_module(attn_compat_module)
 
 
 def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
@@ -135,15 +120,6 @@ def get_extensions():
 
     sources = glob.glob(os.path.join(extensions_dir, "**", "*.cpp"), recursive=True)
     source_cuda = glob.glob(os.path.join(extensions_dir, "**", "*.cu"), recursive=True)
-    fmha_source_cuda = glob.glob(
-        os.path.join(extensions_dir, "**", "fmha", "**", "*.cu"), recursive=True
-    )
-    exclude_files = ["small_k.cu", "decoder.cu", "attention_cutlass_rand_uniform.cu"]
-    fmha_source_cuda = [
-        c
-        for c in fmha_source_cuda
-        if not any(exclude_file in c for exclude_file in exclude_files)
-    ]
 
     source_hip = glob.glob(
         os.path.join(extensions_dir, "attention", "hip_*", "**", "*.cpp"),
@@ -157,17 +133,6 @@ def get_extensions():
     # avoid the temporary .cu files generated under xformers/csrc/attention/hip_fmha
     source_cuda = list(set(source_cuda) - set(source_hip_generated))
     sources = list(set(sources) - set(source_hip))
-
-    xformers_pt_cutlass_attn = os.getenv("XFORMERS_PT_CUTLASS_ATTN")
-    # By default, we try to link to torch internal CUTLASS attention implementation
-    # and silently switch to local CUTLASS attention build if no compatibility
-    # If we force 'torch CUTLASS switch' then setup will fail when no compatibility
-    if (
-        xformers_pt_cutlass_attn is None or xformers_pt_cutlass_attn == "1"
-    ) and attn_compat_module.is_pt_cutlass_compatible(
-        force=xformers_pt_cutlass_attn == "1"
-    ):
-        source_cuda = list(set(source_cuda) - set(fmha_source_cuda))
 
     if "XFORMERS_SELECTIVE_BUILD" in os.environ:
         pattern = os.environ["XFORMERS_SELECTIVE_BUILD"]
