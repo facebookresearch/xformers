@@ -44,6 +44,16 @@ if _triton_is_available:
         _triton_is_available = False
 
 
+def is_ocp_fp8():
+    try:
+        import triton
+    except ImportError as e:
+        logging.warning(f"Triton is not available: {e}.\nbench_functions")
+
+    target = triton.runtime.driver.active.get_current_target()
+    return not (target.backend == 'hip' and target.arch == 'gfx942')        
+
+
 def get_func_name(fn):
     if isinstance(fn, functools.partial):
         return fn.func.__name__
@@ -758,6 +768,64 @@ def product_dict(**kwargs):
     vals = kwargs.values()
     for instance in itertools.product(*vals):
         yield dict(zip(keys, instance))
+
+
+def quantize_kv_int4(k: torch.Tensor, num_groups: int = 1) -> torch.Tensor:
+    """
+    Auxiliary int4 row quantization function used for benchmarking and tests.
+    Matches the behaviour of torch.ops.llama_cpp.dequantize_int4_cache -
+    quantization parameters (scale and offset) of each row along the last
+    dimension of the tensor are assumed to be packed into two float16 values
+    at the beginning of the row.
+    """
+    # Scale and shift are such that quantization linearly maps int4 values range [0..15]
+    # to input values range min(k)..max(k) individually for every row
+    k = k.reshape(*k.shape[:-1], num_groups, k.shape[-1] // num_groups)
+    max_vals = torch.max(k, dim=-1, keepdim=True).values
+    min_vals = torch.min(k, dim=-1, keepdim=True).values
+    scale_k: torch.Tensor = (max_vals - min_vals) / 15
+
+    shift_k = torch.min(k, dim=-1, keepdim=True).values
+    scale_k = scale_k.to(torch.float16)
+    shift_k = shift_k.to(torch.float16)
+    in_bytes = ((k - shift_k.expand(k.shape)) / scale_k.expand(k.shape)) + 0.5
+    in_bytes = in_bytes.to(torch.uint8)
+    in_int4 = in_bytes & 0xF
+    in_int4_packed = in_int4[..., ::2] + (in_int4[..., 1::2] << 4)
+    scale_shift = torch.concat(
+        [scale_k.view(torch.uint8), shift_k.view(torch.uint8)], dim=-1
+    )
+    k_quant = torch.concat(
+        [
+            scale_shift.flatten(start_dim=-2),
+            in_int4_packed.flatten(start_dim=-2),
+        ],
+        dim=-1,
+    ).view(torch.int16)
+    return k_quant
+
+
+def quantize_fp8_asymmetric(
+    x: torch.Tensor,
+    pt_fp8_dtype: torch.dtype = torch.float8_e4m3fn if is_ocp_fp8() else torch.float8_e4m3fnuz
+):
+    max_fp8 = torch.finfo(pt_fp8_dtype).max
+
+    shift = x.mean(dim=1)
+    x_centered = x - shift[..., None]
+
+    row_max: torch.Tensor = x_centered.abs().max(dim=-1)[0]
+    scale = max_fp8 * row_max.to(torch.float32).pow(-1)
+    scale = torch.nan_to_num(scale, posinf=1)
+
+    x_quant = (x_centered / scale[..., None]).to(pt_fp8_dtype)
+    return x_quant, scale, shift
+
+
+def dequantize_fp8_asymmetric(
+    x: torch.Tensor, scale: torch.Tensor, shift: torch.Tensor
+) -> torch.Tensor:
+    return x.to(scale.dtype) * scale[..., None] + shift[..., None]
 
 
 DTYPE2STR = {
