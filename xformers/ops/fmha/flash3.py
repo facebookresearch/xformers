@@ -18,6 +18,7 @@ from torch.utils.flop_counter import (
 
 from ..common import get_operator, register_operator
 from .attn_bias import (
+    VARLEN_BIASES,
     BlockDiagonalCausalFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionFromBottomRightMask,
     BlockDiagonalCausalLocalAttentionMask,
@@ -37,16 +38,15 @@ from .attn_bias import (
     PagedBlockDiagonalCausalWithOffsetPaddedKeysMask,
     PagedBlockDiagonalGappyKeysMask,
     PagedBlockDiagonalPaddedKeysMask,
-    VARLEN_BIASES,
 )
 from .common import (
     AttentionBwOpBase,
     AttentionFwOpBase,
-    check_lastdim_alignment_stride1,
     Context,
     Gradients,
     Inputs,
     ScaledTensor,
+    check_lastdim_alignment_stride1,
 )
 from .flash import (
     _check_needs_no_topleft,
@@ -706,9 +706,9 @@ class FwOp(AttentionFwOpBase):
                     leftpad_k = cu_seqlens_k[:-1]
                 else:
                     # case #2: len(cu_seqlens_k) = batch_size
-                    assert (
-                        len(cu_seqlens_q) - len(cu_seqlens_k) == 1
-                    ), f"{len(cu_seqlens_q)=} {len(cu_seqlens_k)=}"
+                    assert len(cu_seqlens_q) - len(cu_seqlens_k) == 1, (
+                        f"{len(cu_seqlens_q)=} {len(cu_seqlens_k)=}"
+                    )
                     leftpad_k = cu_seqlens_k
             out, softmax_lse = cls.OPERATOR(
                 q,
