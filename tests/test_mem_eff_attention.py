@@ -389,8 +389,10 @@ def create_tensors(
             fmha.attn_bias.LowerTriangularFromBottomRightLocalAttentionMask,
             fmha.attn_bias.BlockDiagonalCausalFromBottomRightMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionFromBottomRightMask,
+            fmha.attn_bias.BlockDiagonalLocalAttentionFromBottomRightGappyKeysMask,
             fmha.attn_bias.BlockDiagonalCausalLocalAttentionMask,
             fmha.attn_bias.LocalAttentionFromBottomRightMask,
+            fmha.attn_bias.PagedBlockDiagonalCausalLocalPaddedKeysMask,
         ),
     )
     if mask_is_bottom_right and q_len > kv_len:

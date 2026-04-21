@@ -86,6 +86,7 @@ runs:
         $PY -m pip install cmake
         $PY -m pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
         $PY -m pip install -r requirements-benchmark.txt --progress-bar off
+        $PY -m pip install mslk[flash3] --extra-index-url https://download.pytorch.org/whl/cu128
     - name: Activate environment
       shell: bash -l {0}
       run: |

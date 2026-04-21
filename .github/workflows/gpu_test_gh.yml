@@ -77,7 +77,7 @@ jobs:
           which python
           which nvcc
           pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
-          pip install --pre flash_attn_3 --index-url https://download.pytorch.org/whl/cu126
+          pip install mslk[flash3] --extra-index-url https://download.pytorch.org/whl/cu126
           pip install -r requirements-test.txt --progress-bar off
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v --no-build-isolation -e .
         env:

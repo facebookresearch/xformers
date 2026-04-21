@@ -6,25 +6,33 @@
 
 import torch
 
-from .fmha import (
-    AttentionBias,
-    AttentionOp,
-    AttentionOpBase,
-    LowerTriangularMask,
-    memory_efficient_attention,
-    memory_efficient_attention_backward,
-    memory_efficient_attention_forward,
-    memory_efficient_attention_forward_requires_grad,
-    MemoryEfficientAttentionCkOp,
-    MemoryEfficientAttentionCutlassFwdFlashBwOp,
-    MemoryEfficientAttentionCutlassOp,
-    MemoryEfficientAttentionFlashAttentionOp,
-    MemoryEfficientAttentionSplitKCkOp,
-)
+try:
+    from .fmha import (
+        AttentionBias,
+        AttentionBias as AttentionMask,
+        AttentionOp,
+        AttentionOpBase,
+        LowerTriangularMask,
+        memory_efficient_attention,
+        memory_efficient_attention_backward,
+        memory_efficient_attention_forward,
+        memory_efficient_attention_forward_requires_grad,
+        MemoryEfficientAttentionCkOp,
+        MemoryEfficientAttentionCutlassFwdFlashBwOp,
+        MemoryEfficientAttentionCutlassOp,
+        MemoryEfficientAttentionFlashAttentionOp,
+        MemoryEfficientAttentionSplitKCkOp,
+    )
+except ImportError:
+    pass
 from .indexing import index_select_cat, scaled_index_add
 from .modpar_layers import ColumnParallelLinear, RowParallelLinear
 from .rmsnorm import RMSNorm
-from .rope_padded import rope_padded
+
+try:
+    from .rope_padded import rope_padded
+except ImportError:
+    pass
 from .seqpar import sequence_parallel_leading_matmul, sequence_parallel_trailing_matmul
 from .sequence_parallel_fused_ops import (
     fused_allgather_and_anything,
@@ -36,9 +44,6 @@ from .sp24 import Sparse24Tensor, sparsify24, sparsify24_like
 from .swiglu_op import SwiGLU, swiglu, SwiGLUEagerOp, SwiGLUOp, SwiGLUOpDispatch
 from .tiled_matmul import tiled_matmul
 from .unbind import get_stack_strides, stack_or_none, unbind
-
-# BW compatibility
-AttentionMask = AttentionBias
 
 
 def masked_matmul(a, b, mask=None):

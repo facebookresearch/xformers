@@ -14,9 +14,7 @@ import torch
 
 logger = logging.getLogger("xformers")
 
-UNAVAILABLE_FEATURES_MSG = (
-    "  Memory-efficient attention, SwiGLU, sparse and more won't be available."
-)
+UNAVAILABLE_FEATURES_MSG = "  SwiGLU, sparse and more won't be available."
 
 
 @dataclasses.dataclass
