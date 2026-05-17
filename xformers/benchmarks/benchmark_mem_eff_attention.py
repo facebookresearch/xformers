@@ -18,8 +18,13 @@ from xformers.benchmarks.mem_eff_attention_presets import (
     LONG_CONTEXT_BOUNDARY_PRESET,
     PRESET_CASES,
     get_benchmark_cases,
+    resolve_preset_cases,
 )
-from xformers.benchmarks.utils import benchmark_main_helper, create_argparser
+from xformers.benchmarks.utils import (
+    benchmark_run_and_compare,
+    create_argparser,
+    get_func_name,
+)
 
 torch.backends.cuda.matmul.allow_tf32 = False
 
@@ -154,16 +159,21 @@ PRESET_ATTN_BIAS_BY_NAME = {
 }
 
 
-def resolve_preset_cases(preset_cases):
-    resolved_cases = []
-    for case in preset_cases:
-        resolved_case = case.copy()
-        resolved_case["dtype"] = PRESET_DTYPE_BY_NAME[resolved_case.pop("dtype_name")]
-        resolved_case["attn_bias_cfg"] = PRESET_ATTN_BIAS_BY_NAME[
-            resolved_case.pop("attn_bias_name")
-        ]
-        resolved_cases.append(resolved_case)
-    return resolved_cases
+def run_benchmark_from_args(benchmark_fn, cases, args, **kwargs):
+    if args.fn is not None and args.fn != get_func_name(benchmark_fn):
+        print(f'Skipping benchmark "{get_func_name(benchmark_fn)}"')
+        return
+
+    benchmark_run_and_compare(
+        benchmark_fn=benchmark_fn,
+        cases=cases,
+        optimized_label="optimized" if args.label is None else args.label,
+        fail_if_regression=args.fail_if_regression,
+        compare=args.compare.split(",") if args.compare is not None else [],
+        quiet=args.quiet,
+        omit_baselines=args.omit_baselines,
+        **kwargs,
+    )
 
 
 def create_tensors(shape_q, Hkv, dtype, requires_grad=False, packed=True):
@@ -391,19 +401,23 @@ def main():
     args = arg_parser.parse_args()
     cases = get_benchmark_cases(CASES, args.preset)
     if args.preset is not None:
-        cases = resolve_preset_cases(cases)
+        cases = resolve_preset_cases(
+            cases,
+            dtype_by_name=PRESET_DTYPE_BY_NAME,
+            attn_bias_by_name=PRESET_ATTN_BIAS_BY_NAME,
+        )
     if not args.omit_forward:
-        benchmark_main_helper(
+        run_benchmark_from_args(
             mem_eff_attention_fw,
             cases,
-            arg_parser=arg_parser,
+            args,
             min_run_time=min_run_time,
         )
     if not args.omit_backward:
-        benchmark_main_helper(
+        run_benchmark_from_args(
             mem_eff_attention_bw,
             cases,
-            arg_parser=arg_parser,
+            args,
             min_run_time=min_run_time,
         )
 

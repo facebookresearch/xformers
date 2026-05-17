@@ -26,8 +26,10 @@ This command fixes the benchmark configuration to:
 - attention bias: `LowerTriangularMask`
 - dropout: `0.0`
 
-Report the `runtime_us` value from the `optimized` row in the emitted CSV as the
-primary comparison metric. By default the benchmark writes results to:
+Report the `runtime_us` value from the emitted CSV row as the primary
+comparison metric. For this preset there should be a single emitted row, and
+the `algorithm` column identifies which kernel handled the run. By default the
+benchmark writes results to:
 
 ```text
 ~/.cache/xformers/benchmarks/mem_eff_attention_fw/long_context_boundary.<gpu>.csv
