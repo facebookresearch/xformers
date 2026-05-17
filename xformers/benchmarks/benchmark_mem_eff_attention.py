@@ -14,6 +14,11 @@ import xformers.ops
 import xformers.ops.fmha as fmha
 from torch.utils import benchmark
 from xformers.attn_bias_utils import create_attn_bias, ref_attention
+from xformers.benchmarks.mem_eff_attention_presets import (
+    LONG_CONTEXT_BOUNDARY_PRESET,
+    PRESET_CASES,
+    get_benchmark_cases,
+)
 from xformers.benchmarks.utils import benchmark_main_helper, create_argparser
 
 torch.backends.cuda.matmul.allow_tf32 = False
@@ -137,6 +142,28 @@ for c in LLM_CASES.copy():
         LLM_CASES.append(c)
 
 CASES = VISION_CASES + LLM_CASES
+
+
+PRESET_DTYPE_BY_NAME = {
+    "float16": torch.half,
+    "bfloat16": torch.bfloat16,
+    "float32": torch.float,
+}
+PRESET_ATTN_BIAS_BY_NAME = {
+    "lower_triangular": (xformers.ops.LowerTriangularMask, False),
+}
+
+
+def resolve_preset_cases(preset_cases):
+    resolved_cases = []
+    for case in preset_cases:
+        resolved_case = case.copy()
+        resolved_case["dtype"] = PRESET_DTYPE_BY_NAME[resolved_case.pop("dtype_name")]
+        resolved_case["attn_bias_cfg"] = PRESET_ATTN_BIAS_BY_NAME[
+            resolved_case.pop("attn_bias_name")
+        ]
+        resolved_cases.append(resolved_case)
+    return resolved_cases
 
 
 def create_tensors(shape_q, Hkv, dtype, requires_grad=False, packed=True):
@@ -343,6 +370,15 @@ def mem_eff_attention_bw(
 def main():
     arg_parser = create_argparser()
     arg_parser.add_argument(
+        "--preset",
+        choices=sorted(PRESET_CASES.keys()),
+        help=(
+            "Run one named benchmark preset. "
+            f"`{LONG_CONTEXT_BOUNDARY_PRESET}` selects a single CUDA long-context "
+            "causal attention boundary case."
+        ),
+    )
+    arg_parser.add_argument(
         "--omit-forward",
         action="store_true",
         help="Do not run forward benchmarks",
@@ -353,17 +389,20 @@ def main():
         help="Do not run backward benchmarks",
     )
     args = arg_parser.parse_args()
+    cases = get_benchmark_cases(CASES, args.preset)
+    if args.preset is not None:
+        cases = resolve_preset_cases(cases)
     if not args.omit_forward:
         benchmark_main_helper(
             mem_eff_attention_fw,
-            CASES,
+            cases,
             arg_parser=arg_parser,
             min_run_time=min_run_time,
         )
     if not args.omit_backward:
         benchmark_main_helper(
             mem_eff_attention_bw,
-            CASES,
+            cases,
             arg_parser=arg_parser,
             min_run_time=min_run_time,
         )
