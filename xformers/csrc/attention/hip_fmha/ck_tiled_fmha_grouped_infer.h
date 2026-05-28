@@ -10,6 +10,7 @@
 #include "ck_tiled_fmha_fwd_setting.h"
 #include "ck_tiled_fmha_fwd_splitkv_smallq_selector.h"
 #include "ck_tiled_fmha_grouped_infer_dispatch.h"
+#include "ck_tiled_fmha_grouped_infer_pagedkv_dispatch.h"
 #include "ck_tiled_fmha_grouped_infer_splitkv_dispatch.h"
 #include "ck_tiled_fmha_grouped_infer_splitkv_smallq_dispatch.h"
 #include "ck_tiled_fmha_seqlen_q_switch.h"
@@ -27,7 +28,7 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
   // (*) dropout
   // (*) head dimension > 256
   if constexpr (!kHasDropout) {
-    if (param.use_split_kv && MaxK <= 256) {
+    if ((param.use_split_kv || param.use_paged_kvcache) && MaxK <= 256) {
       if constexpr (MaxK <= 256) {
         if (use_splitkv_smallq(
                 param.max_seqlen_q, std::max(param.K, param.Kv))) {
@@ -37,14 +38,24 @@ void run_grouped_infer_mask_bias_dropout_dispatch(
               kHasBias,
               MaxK>::Run(param, stream);
         } else {
-          FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
-            grouped_infer_splitkv_mask_bias_dropout_dispatch<
+          if (!param.use_split_kv && param.use_paged_kvcache &&
+              param.page_block_size >= 128) {
+            grouped_infer_pagedkv_mask_bias_dropout_dispatch<
                 ScalarType,
                 kHasMask,
                 kHasBias,
                 MaxK,
-                MaxSeqlenQ>::Run(param, stream);
-          });
+                128>::Run(param, stream);
+          } else {
+            FMHA_FWD_SEQLEN_Q_SWITCH(param.max_seqlen_q, MaxSeqlenQ, [&] {
+              grouped_infer_splitkv_mask_bias_dropout_dispatch<
+                  ScalarType,
+                  kHasMask,
+                  kHasBias,
+                  MaxK,
+                  MaxSeqlenQ>::Run(param, stream);
+            });
+          }
         }
       } else {
         // Unreachable. Do not instantiate split-kv pipelines with head

@@ -396,8 +396,7 @@ efficient_attention_forward_ck(
 
     // 1) fmha fwd split-kv kernel does not support dropout
     // 2) Paged-KVcache is only available from the split-kv kernel at present
-    p.use_split_kv =
-        (p.use_paged_kvcache || (!use_dropout && use_split_kv)) ? true : false;
+    p.use_split_kv = (!use_dropout && use_split_kv) ? true : false;
 
     p.num_kv_splits = num_kv_splits;
 
