@@ -51,6 +51,13 @@ def apply_rotary_emb(
     k_rot = key[..., :rot_dim]
     k_pass = key[..., rot_dim:]
 
+    # Broadcast cos/sin to match query/key shape.
+    # cos/sin are (seq_len, rot_dim); query is (..., seq_len, dim).
+    # Add singleton dimensions at the front so cos/sin broadcast over leading dims.
+    while cos.dim() < q_rot.dim():
+        cos = cos.unsqueeze(0)
+        sin = sin.unsqueeze(0)
+
     q_out = q_rot * cos + _rotate_half(q_rot) * sin
     k_out = k_rot * cos + _rotate_half(k_rot) * sin
 
