@@ -29,7 +29,7 @@ def _attention_flops(queries, values, causal: bool, fmt: str = "BHMK") -> int:
     *B, Nv, Kv = values
     if causal:  # NOTE: Causal from bottom right
         # non-causal part
-        flops = 2 * N * max(Nv - N, 0) * K + 2 * max(Nv - N, 0) * max(Nv - N, 0) * Kv
+        flops = 2 * N * max(Nv - N, 0) * K + 2 * N * max(Nv - N, 0) * Kv
         # causal part
         flops += (
             2 * min(N, Nv) * min(N, Nv) * K + 2 * min(N, Nv) * min(N, Nv) * Kv

@@ -163,6 +163,25 @@ def test_analyze_prof(dtype) -> None:
         x.backward(x)
 
 
+def test_attention_flops_causal_nonsquare() -> None:
+    # Bottom-right causal with more keys than queries (e.g. KV-cache decode): the leftmost
+    # Nv-N keys are visible to every query, so both the QK^T and softmax@V matmuls run over
+    # the same N x (Nv-N) rectangle -- the softmax@V term must use N*(Nv-N), not (Nv-N)**2.
+    N, K, Nv, Kv = 4, 8, 10, 16
+    non_causal = 2 * N * (Nv - N) * K + 2 * N * (Nv - N) * Kv
+    causal = (2 * N * N * K + 2 * N * N * Kv) // 2
+    assert (
+        profile_analyzer._attention_flops([1, 1, N, K], [1, 1, Nv, Kv], causal=True)
+        == non_causal + causal
+    )
+    # A square shape is unaffected (the rectangle vanishes).
+    M = 8
+    assert (
+        profile_analyzer._attention_flops([1, 1, M, K], [1, 1, M, Kv], causal=True)
+        == (2 * M * M * K + 2 * M * M * Kv) // 2
+    )
+
+
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(
     "backend",
