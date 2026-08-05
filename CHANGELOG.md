@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improved
 - Selective activation checkpointing (`xformers.checkpoint`) now delegates to PyTorch's public `torch.utils.checkpoint.create_selective_checkpoint_contexts` instead of reaching into PyTorch private internals. This fixes an `IndexError` with recent PyTorch versions. The public API (`checkpoint`, `get_optimal_checkpoint_policy`, `list_operators`, `selective_checkpoint_wrapper`) is unchanged.
 
+### Fixed
+- `import xformers.ops` no longer crashes on PyTorch builds without distributed support, such as the NVIDIA PyTorch containers for Jetson iGPU devices, where `torch.distributed.is_available()` is `False`. The model-parallel and sequence-parallel ops, which cannot work at all there, are simply not imported, and everything else stays usable.
+
 ### Deprecated
 - The `xformers.checkpoint` API (`checkpoint`, `selective_checkpoint_context_fn`, `get_optimal_checkpoint_policy`, `selective_checkpoint_wrapper`, `list_operators`) is deprecated and will be removed in a future release; calling it now raises a `FutureWarning`. PyTorch provides equivalents: `torch.utils.checkpoint.create_selective_checkpoint_contexts` for policy-based selective checkpointing, and the `torch.compile` activation memory budget (`torch._functorch.config.activation_memory_budget`) for memory-budget-driven recomputation.
 
