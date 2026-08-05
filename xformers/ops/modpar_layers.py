@@ -3,6 +3,11 @@
 # This source code is licensed under the BSD license found in the
 # LICENSE file in the root directory of this source tree.
 
+# Annotations below mention torch.distributed.ProcessGroup, which only exists
+# when PyTorch was built with distributed support. Keeping annotations lazy
+# (PEP 563) means importing this module never evaluates them.
+from __future__ import annotations
+
 from typing import Callable, List, Optional
 
 import torch

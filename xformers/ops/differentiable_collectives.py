@@ -4,6 +4,11 @@
 # LICENSE file in the root directory of this source tree.
 
 
+# Annotations below mention types such as torch.distributed.Work which only
+# exist when PyTorch was built with distributed support. Keeping annotations
+# lazy (PEP 563) means importing this module never evaluates them.
+from __future__ import annotations
+
 from typing import Optional, Tuple
 
 import torch

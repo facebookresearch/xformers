@@ -7,6 +7,7 @@
 import importlib.util
 
 import torch
+import torch.distributed
 
 if _HAS_MSLK := importlib.util.find_spec("mslk") is not None:
     from .fmha import (
@@ -26,18 +27,32 @@ if _HAS_MSLK := importlib.util.find_spec("mslk") is not None:
         MemoryEfficientAttentionSplitKCkOp,
     )
 from .indexing import index_select_cat, scaled_index_add
-from .modpar_layers import ColumnParallelLinear, RowParallelLinear
+
+# PyTorch can be built without distributed support, in which case
+# torch.distributed.is_available() returns False and most of the
+# torch.distributed namespace does not exist. That happens for instance in the
+# NVIDIA PyTorch containers for Jetson iGPU devices. The model-parallel and
+# sequence-parallel ops cannot work at all in that situation, so we skip them
+# and keep the rest of xFormers usable, the same way we skip the ops that need
+# mslk.
+if _HAS_TORCH_DISTRIBUTED := torch.distributed.is_available():
+    from .modpar_layers import ColumnParallelLinear, RowParallelLinear
 from .rmsnorm import RMSNorm
 
 if _HAS_MSLK:
     from .rope_padded import rope_padded
-from .seqpar import sequence_parallel_leading_matmul, sequence_parallel_trailing_matmul
-from .sequence_parallel_fused_ops import (
-    fused_allgather_and_anything,
-    fused_allgather_and_linear,
-    fused_anything_and_reducescatter,
-    fused_linear_and_reducescatter,
-)
+
+if _HAS_TORCH_DISTRIBUTED:
+    from .seqpar import (
+        sequence_parallel_leading_matmul,
+        sequence_parallel_trailing_matmul,
+    )
+    from .sequence_parallel_fused_ops import (
+        fused_allgather_and_anything,
+        fused_allgather_and_linear,
+        fused_anything_and_reducescatter,
+        fused_linear_and_reducescatter,
+    )
 from .sp24 import Sparse24Tensor, sparsify24, sparsify24_like
 from .swiglu_op import SwiGLU, swiglu, SwiGLUEagerOp, SwiGLUOp, SwiGLUOpDispatch
 from .tiled_matmul import tiled_matmul
