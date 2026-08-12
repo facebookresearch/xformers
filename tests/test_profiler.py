@@ -182,6 +182,35 @@ def test_attention_flops_causal_nonsquare() -> None:
     )
 
 
+@pytest.mark.parametrize("fmt", ["BHMK", "BMHK"])
+@pytest.mark.parametrize("causal", [False, True])
+@pytest.mark.parametrize("kv_heads", [1, 2], ids=["mqa", "gqa"])
+def test_attention_flops_gqa(fmt: str, causal: bool, kv_heads: int) -> None:
+    batch, query_heads = 2, 8
+    query_tokens, kv_tokens = 4, 10
+    query_dim, value_dim = 8, 16
+    query_shape = [batch, query_heads, query_tokens, query_dim]
+    value_shape = [batch, kv_heads, kv_tokens, value_dim]
+    if fmt == "BMHK":
+        query_shape[1], query_shape[2] = query_shape[2], query_shape[1]
+        value_shape[1], value_shape[2] = value_shape[2], value_shape[1]
+
+    expected_per_head = profile_analyzer._attention_flops(
+        [1, 1, query_tokens, query_dim],
+        [1, 1, kv_tokens, value_dim],
+        causal=causal,
+    )
+    assert (
+        profile_analyzer._attention_flops(
+            query_shape,
+            value_shape,
+            causal=causal,
+            fmt=fmt,
+        )
+        == batch * query_heads * expected_per_head
+    )
+
+
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(
     "backend",
