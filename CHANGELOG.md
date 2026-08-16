@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 - Selective activation checkpointing (`xformers.checkpoint`) now delegates to PyTorch's public `torch.utils.checkpoint.create_selective_checkpoint_contexts` instead of reaching into PyTorch private internals. This fixes an `IndexError` with recent PyTorch versions. The public API (`checkpoint`, `get_optimal_checkpoint_policy`, `list_operators`, `selective_checkpoint_wrapper`) is unchanged.
+- The Triton kernels backing `xformers.ops.index_select_cat` and `xformers.ops.scaled_index_add` are now auto-tuned over their block sizes instead of using a hard-coded `BLOCK_SIZE_COL=512`. This speeds up the common small-column case (e.g. head dimensions 64-512) by up to ~25% over PyTorch's native indexing, and fixes a latent shape-compatibility bug in the `scaled_index_add` backward kernel that only surfaced when processing more than one index per program.
 
 ### Fixed
 - `import xformers.ops` no longer crashes on PyTorch builds without distributed support, such as the NVIDIA PyTorch containers for Jetson iGPU devices, where `torch.distributed.is_available()` is `False`. The model-parallel and sequence-parallel ops, which cannot work at all there, are simply not imported, and everything else stays usable.

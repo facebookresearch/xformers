@@ -8,6 +8,19 @@ import triton
 import triton.language as tl
 
 
+def _index_select_cat_configs():
+    return [
+        triton.Config({"BLOCK_SIZE_INDEX": bi, "BLOCK_SIZE_COL": bc}, num_warps=w)
+        for bi in (1, 2, 4, 8)
+        for bc in (64, 128, 256, 512)
+        for w in (1, 2, 4)
+    ]
+
+
+@triton.autotune(
+    configs=_index_select_cat_configs(),
+    key=["num_indices", "num_cols"],
+)
 @triton.jit
 def index_select_cat_fwd_kernel(
     output_ptr,  # *Pointer* to output tensor.
@@ -72,13 +85,15 @@ def index_select_cat_fwd(
         num_cols,
         stride0,
         stride1,
-        BLOCK_SIZE_INDEX=1,
-        BLOCK_SIZE_COL=512,
     )
 
     return output
 
 
+@triton.autotune(
+    configs=_index_select_cat_configs(),
+    key=["num_indices", "num_cols"],
+)
 @triton.jit
 def index_select_cat_bwd_kernel(
     grad_source_ptr,  # *Pointer* to grad_source tensor.
@@ -177,8 +192,6 @@ def index_select_cat_bwd(
         num_cols,
         grad_source.stride(0),
         grad_source.stride(1),
-        BLOCK_SIZE_INDEX=1,
-        BLOCK_SIZE_COL=512,
     )
 
     return
