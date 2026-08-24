@@ -5,6 +5,7 @@
 
 
 import importlib.util
+import logging
 
 import torch
 import torch.distributed
@@ -25,6 +26,13 @@ if _HAS_MSLK := importlib.util.find_spec("mslk") is not None:
         MemoryEfficientAttentionCutlassOp,
         MemoryEfficientAttentionFlashAttentionOp,
         MemoryEfficientAttentionSplitKCkOp,
+    )
+else:
+    logging.getLogger("xformers").warning(
+        "WARNING[XFORMERS]: the 'mslk' package is not installed, so the attention ops are "
+        "unavailable.\n  xformers.ops.memory_efficient_attention and the related symbols "
+        "will not exist.\n  mslk is a dependency of xFormers: reinstall xFormers, or "
+        "`pip install mslk`, to restore them."
     )
 from .indexing import index_select_cat, scaled_index_add
 
