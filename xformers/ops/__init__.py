@@ -31,8 +31,7 @@ else:
     logging.getLogger("xformers").warning(
         "WARNING[XFORMERS]: the 'mslk' package is not installed, so the attention ops are "
         "unavailable.\n  xformers.ops.memory_efficient_attention and the related symbols "
-        "will not exist.\n  mslk is a dependency of xFormers: reinstall xFormers, or "
-        "`pip install mslk`, to restore them."
+        "will not exist.\n  mslk is a dependency of this part of xFormers."
     )
 from .indexing import index_select_cat, scaled_index_add
 
