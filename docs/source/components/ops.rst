@@ -60,3 +60,16 @@ Non-autograd implementations
     :show-inheritance:
     :imported-members:
     :member-order: bysource
+
+
+AETHER Geometric Sparse Attention
+----------------------------------
+
+AETHER (Adaptive Event-driven Threshold Hybrid Entangled Rendering) is a geometric
+sparse attention operator that achieves O(N_relevant) scaling by pruning blocks
+that fall outside the active query manifold using Cauchy-Schwarz upper bounds.
+
+.. automodule:: xformers.ops.aether_attention
+    :members: aether_attention, AetherAttention, compute_block_geometry
+    :show-inheritance:
+    :member-order: bysource
