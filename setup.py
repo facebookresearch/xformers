@@ -334,6 +334,9 @@ if __name__ == "__main__":
         description="XFormers: A collection of composable Transformer building blocks.",
         version=version,
         install_requires=fetch_requirements(),
+        extras_require={
+            "torchembed": ["torchembed>=0.2.0"],
+        },
         packages=setuptools.find_packages(exclude=("tests*", "benchmarks*")),
         ext_modules=extensions,
         cmdclass={

@@ -45,6 +45,7 @@ from .indexing import index_select_cat, scaled_index_add
 if _HAS_TORCH_DISTRIBUTED := torch.distributed.is_available():
     from .modpar_layers import ColumnParallelLinear, RowParallelLinear
 from .rmsnorm import RMSNorm
+from .rotary import apply_rotary_emb
 
 if _HAS_MSLK:
     from .rope_padded import rope_padded
@@ -138,6 +139,8 @@ __all__ = [
     "sparsify24",
     "sparsify24_like",
     "Sparse24Tensor",
+    # rotary
+    "apply_rotary_emb",
     # .
     "masked_matmul",
 ]
