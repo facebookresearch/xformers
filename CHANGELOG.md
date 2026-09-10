@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 - The `xformers.checkpoint` API (`checkpoint`, `selective_checkpoint_context_fn`, `get_optimal_checkpoint_policy`, `selective_checkpoint_wrapper`, `list_operators`) is deprecated and will be removed in a future release; calling it now raises a `FutureWarning`. PyTorch provides equivalents: `torch.utils.checkpoint.create_selective_checkpoint_contexts` for policy-based selective checkpointing, and the `torch.compile` activation memory budget (`torch._functorch.config.activation_memory_budget`) for memory-budget-driven recomputation.
 
+### Removed
+- Removed 2:4 sparsity support: `xformers.ops.sparsify24`, `xformers.ops.sparsify24_like`, `xformers.ops.Sparse24Tensor`, everything else in `xformers.ops.sp24`, and the underlying `xformers::sparse24_*` operators. PyTorch supports semi-structured (2:4) sparsity natively through `torch.sparse.to_sparse_semi_structured` and `torch.sparse.SparseSemiStructuredTensor`.
+
 ## [0.0.35] - 2026-02-20
 Pre-built binary wheels are available for PyTorch 2.10.0 (and later).
 
