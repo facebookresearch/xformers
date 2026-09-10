@@ -28,8 +28,7 @@ jobs:
         import itertools
         environ = os.environ
 
-        # All builds are python-version agnostic,
-        # and built with python 3.10
+        # Existing x64 CUDA/ROCm builds are Python-version agnostic and use Python 3.10.
         PYTHON_VERSION = "3.10"
         # NOTE: Don't forget to update `upload_pt`'s matrix
         # when changing the CUDA/ROCM versions below!
@@ -46,8 +45,11 @@ jobs:
                 continue
               include.append(dict(
                 os=os,
+                architecture="x64",
                 python=PYTHON_VERSION,
                 torch_version=torch_version,
+                torch_requirement="",
+                pytorch_index_url="",
                 toolkit_type="cuda",
                 toolkit_short_version=cuda_short_version,
               ))
@@ -58,12 +60,27 @@ jobs:
                 continue
               include.append(dict(
                 os="16-core-ubuntu",  # use for ROCm wheels only to avoid CI timeouts
+                architecture="x64",
                 python=PYTHON_VERSION,
                 torch_version=torch_version,
+                torch_requirement="",
+                pytorch_index_url="",
                 toolkit_type="rocm",
                 toolkit_short_version=rocm_short_version,
               ))
               print(include[-1])
+        # NVIDIA publishes its Windows ARM64 CUDA build as a PyTorch nightly.
+        include.append(dict(
+          os="windows-11-vs2026-arm",
+          architecture="arm64",
+          python="3.12",
+          torch_version="2.15.0.dev",
+          torch_requirement="torch>=2.15.0.dev0,<2.16",
+          pytorch_index_url="https://pypi.nvidia.com/nvtorch_oot_nightly/",
+          toolkit_type="cuda",
+          toolkit_short_version="134",
+        ))
+        print(include[-1])
         matrix = {'include': include}
         print(json.dumps(matrix))
         with open(environ["GITHUB_OUTPUT"], "a") as fd:
@@ -78,8 +95,11 @@ jobs:
     if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'
     with:
       os: ${{ matrix.os }}
+      architecture: ${{ matrix.architecture }}
       python: ${{ matrix.python }}
       torch_version: ${{ matrix.torch_version }}
+      torch_requirement: ${{ matrix.torch_requirement }}
+      pytorch_index_url: ${{ matrix.pytorch_index_url }}
       toolkit_type: ${{ matrix.toolkit_type }}
       toolkit_short_version: ${{ matrix.toolkit_short_version }}
 
@@ -98,15 +118,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suffix:
-          - cu126
-          - cu128
-          - cu130
-          - rocm7.1
+        include:
+          - suffix: cu126
+            torch_version: "2.10.0"
+          - suffix: cu128
+            torch_version: "2.10.0"
+          - suffix: cu130
+            torch_version: "2.10.0"
+          - suffix: rocm7.1
+            torch_version: "2.10.0"
+          - suffix: cu134
+            torch_version: "2.15.0.dev"
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
       s3_path: s3://pytorch/whl/${{ matrix.suffix }}/
       aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.10.0+${{ matrix.suffix }}*"
+      filter: "*torch${{ matrix.torch_version }}+${{ matrix.suffix }}*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}

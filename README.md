@@ -38,6 +38,15 @@ pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu130
 pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm7.1
 ```
 
+* **(EXPERIMENTAL, Windows ARM64) Install the CUDA 13.4 wheel**:
+
+```bash
+pip3 install --pre -U xformers \
+    --index-url https://download.pytorch.org/whl/cu134 \
+    --extra-index-url https://pypi.nvidia.com/nvtorch_oot_nightly/ \
+    --extra-index-url https://pypi.org/simple
+```
+
 * **Development binaries**:
 
 ```bash

@@ -12,6 +12,10 @@ inputs:
     description: Python version to install
     type: string
     default: "3.10"
+  architecture:
+    description: Target architecture for Python and MSVC
+    type: string
+    default: "x64"
 
 runs:
   using: composite
@@ -27,6 +31,7 @@ runs:
         TORCH_CUDA_DEFAULT = "128"  # since pytorch 2.9.0
         # https://github.com/Jimver/cuda-toolkit/blob/master/src/links/linux-links.ts
         full_version, install_script = {
+          "134": ("13.4.0rc1", ""),
           "130": ("13.0.1", "https://developer.download.nvidia.com/compute/cuda/13.0.1/local_installers/cuda_13.0.1_580.82.07_linux.run"),
           "129": ("12.9.1", "https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda_12.9.1_575.57.08_linux.run"),
           "128": ("12.8.1", "https://developer.download.nvidia.com/compute/cuda/12.8.1/local_installers/cuda_12.8.1_570.124.06_linux.run"),
@@ -53,14 +58,14 @@ runs:
 
     # WINDOWS STEPS
     - name: Install cuda
-      if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
+      if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda' && inputs.architecture != 'arm64'
       id: cuda-toolkit
       # Using N-Storm fork until https://github.com/Jimver/cuda-toolkit/issues/395 is resolved
       uses: N-Storm/cuda-toolkit@v0.2.28
       with:
         cuda: ${{ steps.cuda_info.outputs.CUDA_VERSION }}
         method: network
-    - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda'
+    - if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda' && inputs.architecture != 'arm64'
       shell: bash
       run: |
         echo "Installed cuda version is: ${{ steps.cuda-toolkit.outputs.cuda }}"
@@ -70,13 +75,26 @@ runs:
 
     - name: Install python
       if: runner.os == 'Windows'
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python }}
+        architecture: ${{ inputs.architecture }}
+
+    - name: Install CUDA for Windows ARM64
+      if: runner.os == 'Windows' && inputs.toolkit_type == 'cuda' && inputs.architecture == 'arm64'
+      shell: bash
+      run: |
+        python3 -m pip install --pre "cuda-toolkit[cccl,nvcc]==${{ steps.cuda_info.outputs.CUDA_VERSION }}" --index-url https://pypi.nvidia.com
+        CUDA_HOME="$(python3 -c "from pathlib import Path; import site; print((Path(site.getsitepackages()[-1]) / 'nvidia' / 'cu13').as_posix())")"
+        python3 -c "from pathlib import Path; p = Path(r'$CUDA_HOME'); assert (p / 'bin' / 'nvcc.exe').is_file(); assert (p / 'lib' / 'arm64' / 'cudart.lib').is_file()"
+        echo "CUDA_HOME=$CUDA_HOME" >> ${GITHUB_ENV}
+        echo "$CUDA_HOME/bin" >> ${GITHUB_PATH}
 
     - name: Setup MSVC
       if: runner.os == 'Windows'
       uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ inputs.architecture }}
 
     # really unfortunate: https://github.com/ilammy/msvc-dev-cmd#name-conflicts-with-shell-bash
     - name: Remove link.exe
