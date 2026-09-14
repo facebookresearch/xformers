@@ -20,7 +20,14 @@ from .utils import assert_allclose, cuda_only
 @cuda_only
 @pytest.mark.parametrize("with_scaling", [False, True])
 @pytest.mark.parametrize(
-    "out_shape", [(48, 1, 257 * 1536), (48, 257, 1536), (192, 50, 1536)]
+    "out_shape",
+    [
+        (48, 1, 257 * 1536),
+        (48, 257, 1536),
+        (192, 50, 1536),
+        (48, 257, 128),
+        (48, 32, 64),
+    ],
 )
 def test_scaled_index_add(out_shape, with_scaling: bool) -> None:
     torch.manual_seed(0)
@@ -110,6 +117,36 @@ def test_index_select_cat(D, batches) -> None:
 
     # xFormers implem
     out = xops.index_select_cat(sources, indices)
+    assert_allclose(out, ref_out, "fw")
+    out.backward(gradient_out)
+    assert src.grad is not None
+    assert_allclose(src.grad, ref_grad, "src.grad")
+
+
+@pytest.mark.skipif(not indexing.IndexSelect.is_available(), reason="not available")
+@cuda_only
+@pytest.mark.parametrize("num_cols", [64, 128, 256, 512])
+def test_index_select_cat_small_num_cols(num_cols: int) -> None:
+    # Regression test for small ``num_cols``: the kernel used to hard-code
+    # BLOCK_SIZE_COL=512, which under-utilized the GPU whenever the column
+    # dimension was smaller (or not a multiple of 512). The kernel is now
+    # autotuned, so make sure these shapes stay correct.
+    torch.manual_seed(0)
+    dtype = torch.float16
+    num_rows, num_indices = 4096, 1024
+    src = torch.randn(
+        [num_rows, num_cols], device="cuda", dtype=dtype, requires_grad=True
+    )
+    index = torch.randperm(num_rows, device="cuda")[:num_indices]
+
+    ref_out = src[index].flatten()
+    gradient_out = torch.randn_like(ref_out)
+    ref_out.backward(gradient_out)
+    assert src.grad is not None
+    ref_grad = src.grad.clone()
+    src.grad = None
+
+    out = xops.index_select_cat([src], [index])
     assert_allclose(out, ref_out, "fw")
     out.backward(gradient_out)
     assert src.grad is not None
