@@ -125,6 +125,8 @@ def inner_sequence_parallel_fused(
     my_rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()
+    # new_group can return NON_GROUP_MEMBER, but not for a group of all ranks
+    assert isinstance(subgroup, torch.distributed.ProcessGroup)
 
     if kind == "fallback":
         os.environ["DISABLE_FUSED_SEQUENCE_PARALLEL"] = "1"
@@ -200,6 +202,8 @@ def inner_sequence_parallel_fused_handle_all_dtypes(
     my_rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()
+    # new_group can return NON_GROUP_MEMBER, but not for a group of all ranks
+    assert isinstance(subgroup, torch.distributed.ProcessGroup)
 
     torch.random.manual_seed(seed)
 
