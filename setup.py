@@ -15,10 +15,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
 import setuptools
+import setuptools.command.build_py
 import torch
 from torch.utils.cpp_extension import (
     BuildExtension,
@@ -33,6 +35,7 @@ except ImportError:
     _bdist_wheel = object
 
 this_dir = os.path.dirname(__file__)
+PKG_NAME = "xformers"
 
 
 def get_extra_nvcc_flags_for_build_type(cuda_version: int) -> List[str]:
@@ -92,6 +95,11 @@ def get_cuda_version(cuda_dir) -> int:
     return bare_metal_major * 100 + bare_metal_minor
 
 
+def is_fairinternal_only(path: str) -> bool:
+    """Whether the sync to the open-source repo strips this file."""
+    return any("fairinternal" in part for part in Path(path).parts)
+
+
 def get_extensions():
     extensions_dir = os.path.join("xformers", "csrc")
 
@@ -101,6 +109,13 @@ def get_extensions():
     if "XFORMERS_SELECTIVE_BUILD" in os.environ:
         pattern = os.environ["XFORMERS_SELECTIVE_BUILD"]
         source_cuda = [f for f in source_cuda if pattern in str(f)]
+
+    # Only the fairinternal kernels still need compiling. What is left of
+    # xformers/csrc in the open-source repo is there to support them and is
+    # unused without them, so the open-source build has no extension at all
+    # and produces a pure-Python wheel.
+    if not any(is_fairinternal_only(f) for f in sources + source_cuda):
+        return [], None
 
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_util_dir = os.path.join(
@@ -254,6 +269,17 @@ class bdist_wheel_abi_none(_bdist_wheel):
     to work across different Python versions and variants (including free-threaded builds).
     """
 
+    def finalize_options(self) -> None:
+        super().finalize_options()
+        if not self.plat_name_supplied and not self.distribution.ext_modules:
+            # Without an extension the wheel is pure and would be tagged
+            # `any`. Keep naming it after the platform it was built on, so
+            # that wheel filenames don't change while CI still builds and
+            # publishes one wheel per platform and toolkit. Only the tag is
+            # affected: root_is_pure stays true, so the layout is unchanged.
+            self.plat_name = sysconfig.get_platform()
+            self.plat_name_supplied = True
+
     def get_tag(self):
         if _bdist_wheel is object:
             raise RuntimeError("wheel package is required to build wheels")
@@ -267,40 +293,51 @@ class bdist_wheel_abi_none(_bdist_wheel):
         return "py39", "none", plat_tag
 
 
-class BuildExtensionWithExtraFiles(BuildExtension):
+class BuildPyWithExtraFiles(setuptools.command.build_py.build_py):
+    """A `build_py` that also writes our generated files (`version.py`, and
+    `cpp_lib.json` when we build an extension).
+
+    These used to be written by `build_ext`, but `build_ext.run()` returns
+    immediately when there are no extensions, which is the case for the
+    open-source build.
+    """
+
+    @classmethod
+    def with_options(cls, **options):
+        # Same trick as torch's BuildExtension, which setuptools' commands
+        # don't provide: setuptools instantiates the cmdclass itself, so bind
+        # our arguments here.
+        def init_with_options(*args, **kwargs):
+            return cls(*args, **{**kwargs, **options})
+
+        return init_with_options
+
     def __init__(self, *args, **kwargs) -> None:
-        self.xformers_build_metadata = kwargs.pop("extra_files")
-        self.pkg_name = "xformers"
+        self.extra_files: Dict[str, str] = kwargs.pop("extra_files")
         super().__init__(*args, **kwargs)
 
+    def run(self) -> None:
+        super().run()
+        self._write_extra_files(os.path.join(self.build_lib, PKG_NAME))
+        if getattr(self, "editable_mode", False):
+            # An editable install imports from the source tree, so the
+            # generated files have to land there too. Both destinations
+            # are gitignored.
+            self._write_extra_files(self.get_package_dir(PKG_NAME))
+
+    def _write_extra_files(self, directory: str) -> None:
+        os.makedirs(directory, exist_ok=True)
+        for filename, content in self.extra_files.items():
+            with open(os.path.join(directory, filename), "w") as fp:
+                fp.write(content)
+
+
+class BuildExtensionNoPythonAbi(BuildExtension):
     def get_export_symbols(self, ext):
         # Don't export PyInit_* symbols since our extension doesn't use the
         # Python C API. It registers operators with PyTorch via
         # STABLE_TORCH_LIBRARY_FRAGMENT and is loaded via torch.ops.load_library().
         return []
-
-    def build_extensions(self) -> None:
-        super().build_extensions()
-
-        for filename, content in self.xformers_build_metadata.items():
-            with open(
-                os.path.join(self.build_lib, self.pkg_name, filename), "w+"
-            ) as fp:
-                fp.write(content)
-
-    def copy_extensions_to_source(self) -> None:
-        """
-        Used for `pip install -e .`
-        Copies everything we built back into the source repo
-        """
-        build_py = self.get_finalized_command("build_py")
-        package_dir = build_py.get_package_dir(self.pkg_name)
-
-        for filename in self.xformers_build_metadata.keys():
-            inplace_file = os.path.join(package_dir, filename)
-            regular_file = os.path.join(self.build_lib, self.pkg_name, filename)
-            self.copy_file(regular_file, inplace_file, level=self.verbose)
-        super().copy_extensions_to_source()
 
     def get_ext_filename(self, ext_name):
         # Return plain .so/.pyd names without Python version tags
@@ -329,6 +366,20 @@ if __name__ == "__main__":
         version += get_local_version_suffix()
 
     extensions, extensions_metadata = get_extensions()
+    extra_files = {"version.py": generate_version_py(version)}
+    if extensions:
+        extra_files["cpp_lib.json"] = json.dumps(extensions_metadata)
+
+    cmdclass: Dict[str, type] = {
+        "clean": clean,
+        "bdist_wheel": bdist_wheel_abi_none,
+        "build_py": BuildPyWithExtraFiles.with_options(extra_files=extra_files),
+    }
+    if extensions:
+        cmdclass["build_ext"] = BuildExtensionNoPythonAbi.with_options(
+            no_python_abi_suffix=True
+        )
+
     setuptools.setup(
         name="xformers",
         description="XFormers: A collection of composable Transformer building blocks.",
@@ -336,17 +387,7 @@ if __name__ == "__main__":
         install_requires=fetch_requirements(),
         packages=setuptools.find_packages(exclude=("tests*", "benchmarks*")),
         ext_modules=extensions,
-        cmdclass={
-            "build_ext": BuildExtensionWithExtraFiles.with_options(
-                no_python_abi_suffix=True,
-                extra_files={
-                    "cpp_lib.json": json.dumps(extensions_metadata),
-                    "version.py": generate_version_py(version),
-                },
-            ),
-            "bdist_wheel": bdist_wheel_abi_none,
-            "clean": clean,
-        },
+        cmdclass=cmdclass,
         url="https://facebookresearch.github.io/xformers/",
         python_requires=">=3.9",
         author="Facebook AI Research",

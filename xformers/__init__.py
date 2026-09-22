@@ -24,7 +24,7 @@ except ImportError:
 
 logger = logging.getLogger("xformers")
 
-_has_cpp_library: bool = _cpp_lib._cpp_library_load_exception is None
+_has_cpp_library: bool = _cpp_lib._has_cpp_library
 
 _is_opensource: bool = True
 

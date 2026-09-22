@@ -88,28 +88,6 @@ def _register_extensions():
 
     # load the custom_op_library and register the custom ops
     lib_dir = os.path.dirname(__file__)
-    if os.name == "nt":
-        # Register the main torchvision library location on the default DLL path
-        import ctypes
-        import sys
-
-        kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
-        with_load_library_flags = hasattr(kernel32, "AddDllDirectory")
-        prev_error_mode = kernel32.SetErrorMode(0x0001)
-
-        if with_load_library_flags:
-            kernel32.AddDllDirectory.restype = ctypes.c_void_p
-
-        if sys.version_info >= (3, 8):
-            os.add_dll_directory(lib_dir)
-        elif with_load_library_flags:
-            res = kernel32.AddDllDirectory(lib_dir)
-            if res is None:
-                err = ctypes.WinError(ctypes.get_last_error())
-                err.strerror += f' Error adding "{lib_dir}" to the DLL directories.'
-                raise err
-
-        kernel32.SetErrorMode(prev_error_mode)
 
     loader_details = (
         importlib.machinery.ExtensionFileLoader,
@@ -121,9 +99,14 @@ def _register_extensions():
         ext_specs = extfinder.find_spec("_C_hip")
     else:
         ext_specs = extfinder.find_spec("_C")
+    cpp_lib_json = os.path.join(lib_dir, "cpp_lib.json")
+    if ext_specs is None and not os.path.exists(cpp_lib_json):
+        # Nothing was compiled, and nothing was meant to be: this is the
+        # pure-Python build. Everything that needs a kernel now lives in
+        # separate packages, such as mslk.
+        return None
     if ext_specs is None:
         raise xFormersWasNotBuiltException()
-    cpp_lib_json = os.path.join(lib_dir, "cpp_lib.json")
     with open(cpp_lib_json, "r") as fp:
         build_metadata = _BuildInfo(json.load(fp))
     try:
@@ -135,9 +118,11 @@ def _register_extensions():
 
 _cpp_library_load_exception = None
 _build_metadata: Optional[_BuildInfo] = None
+_has_cpp_library: bool = False
 
 try:
     _build_metadata = _register_extensions()
+    _has_cpp_library = _build_metadata is not None
 except (xFormersInvalidLibException, xFormersWasNotBuiltException) as e:
     ENV_VAR_FOR_DETAILS = "XFORMERS_MORE_DETAILS"
     if os.environ.get(ENV_VAR_FOR_DETAILS, False):
