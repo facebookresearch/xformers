@@ -194,6 +194,33 @@ def test_sequence_parallel_fused(
     )
 
 
+def inner_sequence_parallel_fused_out(seed: int) -> None:
+    subgroup = torch.distributed.new_group()
+    # new_group can return NON_GROUP_MEMBER, but not for a group of all ranks
+    assert isinstance(subgroup, torch.distributed.ProcessGroup)
+
+    torch.random.manual_seed(seed)
+    gathered_input = torch.randn((4, 8), dtype=torch.float32, device="cuda")
+    weight = torch.randn((6, 8), dtype=torch.float32, device="cuda")
+    out = torch.empty((4, 6), dtype=torch.float32, device="cuda")
+
+    returned = fused_linear_and_reducescatter(
+        gathered_input, weight, group=subgroup, out=out
+    )
+
+    assert returned is out
+    torch.testing.assert_close(out, torch.nn.functional.linear(gathered_input, weight))
+
+
+@cuda_sm80_only
+def test_sequence_parallel_fused_reducescatter_out() -> None:
+    launch_subprocesses(
+        1,
+        inner_sequence_parallel_fused_out,
+        seed=random.getrandbits(32),
+    )
+
+
 def inner_sequence_parallel_fused_handle_all_dtypes(
     seed: int,
     step: str,
