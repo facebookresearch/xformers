@@ -15,80 +15,51 @@ on:
       - "v[0-9]+*"
 
 jobs:
-  target_determinator:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-    - id: set-matrix
-      shell: python
-      run: |
-        import os
-        import json
-        import itertools
-        environ = os.environ
-
-        # All builds are python-version agnostic,
-        # and built with python 3.10
-        PYTHON_VERSION = "3.10"
-        # NOTE: Don't forget to update `upload_pt`'s matrix
-        # when changing the CUDA/ROCM versions below!
-        CU_VERSIONS = ['126', '128', '130']
-        ROCM_VERSIONS = ['7.1']
-
-        include = []
-        for os in ['8-core-ubuntu', 'windows-8-core']:
-          for torch_version in ['2.10.0']:
-            # CUDA builds
-            for cuda_short_version in CU_VERSIONS:
-              if cuda_short_version < "124" and "windows" in os:
-                print("Windows builder no longer compatible with cu<124")
-                continue
-              include.append(dict(
-                os=os,
-                python=PYTHON_VERSION,
-                torch_version=torch_version,
-                toolkit_type="cuda",
-                toolkit_short_version=cuda_short_version,
-              ))
-              print(include[-1])
-            # ROCM builds
-            for rocm_short_version in ROCM_VERSIONS:
-              if os == 'windows-8-core':
-                continue
-              include.append(dict(
-                os="16-core-ubuntu",  # use for ROCm wheels only to avoid CI timeouts
-                python=PYTHON_VERSION,
-                torch_version=torch_version,
-                toolkit_type="rocm",
-                toolkit_short_version=rocm_short_version,
-              ))
-              print(include[-1])
-        matrix = {'include': include}
-        print(json.dumps(matrix))
-        with open(environ["GITHUB_OUTPUT"], "a") as fd:
-          fd.write("matrix="+json.dumps(matrix))
+  # xFormers is pure Python, so one wheel serves every Python version, platform
+  # and PyTorch build. It is built once here and uploaded to each of the places
+  # it has always been published, so that nobody has to change how they install.
   build:
-    needs: target_determinator
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.target_determinator.outputs.matrix) }}
-
-    uses: ./.github/workflows/wheels_build.yml
-    if: github.repository == 'facebookresearch/xformers' || github.event_name == 'pull_request'
-    with:
-      os: ${{ matrix.os }}
-      python: ${{ matrix.python }}
-      torch_version: ${{ matrix.torch_version }}
-      toolkit_type: ${{ matrix.toolkit_type }}
-      toolkit_short_version: ${{ matrix.toolkit_short_version }}
+    # Nothing is compiled, so this needs no CUDA toolkit, no PyTorch and no
+    # submodules -- unlike wheels_build.yml, which still serves the builds
+    # that do compile.
+    #
+    # Open source only: in the fairinternal repo the tree still has kernels to
+    # compile, so setup.py would want PyTorch and CUDA here. Those builds are
+    # covered by build_fairinternal below.
+    runs-on: ubuntu-latest
+    if: github.repository == 'facebookresearch/xformers'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # for tags
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m pip install setuptools wheel
+      - name: Define version
+        env:
+          VERSION_SOURCE: ${{ github.ref_type == 'tag' && 'tag' || 'dev' }}
+        run: |
+          set -Eeuo pipefail
+          version=`python .github/compute_wheel_version.py --source $VERSION_SOURCE`
+          echo $version > version.txt
+          echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
+      - run: echo "xformers-${BUILD_VERSION}"
+      - name: Build wheel
+        run: python setup.py bdist_wheel -d dist/
+      - run: ls -l dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel_facebookresearch
+          path: dist/*.whl
 
   upload_pip:
     needs: build
     uses: ./.github/workflows/wheels_upload_pip.yml
     with:
       twine_username: __token__
-      filter: "*torch2.10.0+cu128*"
+      # There is only one wheel to choose from.
+      filter: "*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.event_name != 'pull_request' }}
     secrets:
       twine_password: ${{ secrets.PYPI_TOKEN }}
@@ -98,15 +69,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # The same wheel goes to every index, so that `--index-url .../cu126`
+        # and friends keep working. Since there is only one wheel, adding an
+        # index costs an upload rather than a build, so this can cover every
+        # index PyTorch currently ships.
         suffix:
           - cu126
           - cu128
+          - cu129
           - cu130
+          - cu132
           - rocm7.1
+          - rocm7.2
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
       s3_path: s3://pytorch/whl/${{ matrix.suffix }}/
       aws_s3_cp_extra_args: --acl public-read
-      filter: "*torch2.10.0+${{ matrix.suffix }}*"
+      filter: "*"
       execute: ${{ github.repository == 'facebookresearch/xformers' && github.ref_type == 'tag' }}

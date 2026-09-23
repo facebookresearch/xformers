@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 - The open-source build no longer compiles anything: xFormers is now pure Python. Everything that needs a kernel lives in separate packages, chiefly `mslk`. Building from source no longer needs a CUDA toolchain, and no longer needs the CUTLASS submodule.
+- xFormers now ships as a single `py3-none-any` wheel, instead of one wheel per platform and CUDA/ROCm version, so there is no longer any need to match the wheel to your PyTorch build. It is published to all the same places as before — PyPI and each of the PyTorch indices — so no installation command needs to change. macOS is now covered by the same wheel, where previously there was none.
 - Selective activation checkpointing (`xformers.checkpoint`) now delegates to PyTorch's public `torch.utils.checkpoint.create_selective_checkpoint_contexts` instead of reaching into PyTorch private internals. This fixes an `IndexError` with recent PyTorch versions. The public API (`checkpoint`, `get_optimal_checkpoint_policy`, `list_operators`, `selective_checkpoint_wrapper`) is unchanged.
 
 ### Fixed

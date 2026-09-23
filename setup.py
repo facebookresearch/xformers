@@ -15,19 +15,15 @@ import shlex
 import shutil
 import subprocess
 import sys
-import sysconfig
 from pathlib import Path
 from typing import Dict, List
 
 import setuptools
 import setuptools.command.build_py
-import torch
-from torch.utils.cpp_extension import (
-    BuildExtension,
-    CppExtension,
-    CUDA_HOME,
-    CUDAExtension,
-)
+
+# NOTE: torch is deliberately not imported at module level. The open-source
+# build compiles nothing, so it can run without PyTorch installed at all. It is
+# imported on the paths that do compile.
 
 try:
     from wheel.bdist_wheel import bdist_wheel as _bdist_wheel
@@ -116,6 +112,9 @@ def get_extensions():
     # and produces a pure-Python wheel.
     if not any(is_fairinternal_only(f) for f in sources + source_cuda):
         return [], None
+
+    import torch
+    from torch.utils.cpp_extension import CppExtension, CUDA_HOME, CUDAExtension
 
     cutlass_dir = os.path.join(this_dir, "third_party", "cutlass", "include")
     cutlass_util_dir = os.path.join(
@@ -267,18 +266,18 @@ class bdist_wheel_abi_none(_bdist_wheel):
     The compiled extensions are plain shared libraries (.so/.dll) that use only PyTorch's
     TORCH_LIBRARY mechanism, with no Python C API dependencies. This allows the same wheel
     to work across different Python versions and variants (including free-threaded builds).
+
+    Without an extension there is nothing platform-specific left either, and we
+    produce a single py3-none-any wheel.
     """
 
     def finalize_options(self) -> None:
         super().finalize_options()
-        if not self.plat_name_supplied and not self.distribution.ext_modules:
-            # Without an extension the wheel is pure and would be tagged
-            # `any`. Keep naming it after the platform it was built on, so
-            # that wheel filenames don't change while CI still builds and
-            # publishes one wheel per platform and toolkit. Only the tag is
-            # affected: root_is_pure stays true, so the layout is unchanged.
-            self.plat_name = sysconfig.get_platform()
-            self.plat_name_supplied = True
+        if not self.distribution.ext_modules:
+            # Ignore the --plat-name that CI passes for the builds which do
+            # contain a .so. Only the tag is affected: root_is_pure stays true,
+            # so the layout is unchanged.
+            self.plat_name_supplied = False
 
     def get_tag(self):
         if _bdist_wheel is object:
@@ -286,6 +285,11 @@ class bdist_wheel_abi_none(_bdist_wheel):
 
         # Get the default tags from parent class
         python_tag, abi_tag, plat_tag = super().get_tag()
+
+        if not self.distribution.ext_modules:
+            # Already py3-none-any: one wheel for every Python, platform and
+            # PyTorch build.
+            return python_tag, abi_tag, plat_tag
 
         # Override ABI tag to 'none' since our .so files have no Python ABI dependency
         # Use 'py39' as python tag to indicate minimum Python version (3.9+)
@@ -332,28 +336,35 @@ class BuildPyWithExtraFiles(setuptools.command.build_py.build_py):
                 fp.write(content)
 
 
-class BuildExtensionNoPythonAbi(BuildExtension):
-    def get_export_symbols(self, ext):
-        # Don't export PyInit_* symbols since our extension doesn't use the
-        # Python C API. It registers operators with PyTorch via
-        # STABLE_TORCH_LIBRARY_FRAGMENT and is loaded via torch.ops.load_library().
-        return []
+def make_build_ext():
+    """Our `build_ext`, which subclasses torch's, so it can only be defined
+    once we know we are compiling and may import torch."""
+    from torch.utils.cpp_extension import BuildExtension
 
-    def get_ext_filename(self, ext_name):
-        # Return plain .so/.pyd names without Python version tags
-        # This creates ABI-independent binaries that work with any Python version
-        ext_path = ext_name.split(".")
-        ext_basename = ext_path[-1]
-        ext_dir = os.path.join(*ext_path[:-1]) if len(ext_path) > 1 else ""
+    class BuildExtensionNoPythonAbi(BuildExtension):
+        def get_export_symbols(self, ext):
+            # Don't export PyInit_* symbols since our extension doesn't use the
+            # Python C API. It registers operators with PyTorch via
+            # STABLE_TORCH_LIBRARY_FRAGMENT and is loaded via torch.ops.load_library().
+            return []
 
-        if sys.platform == "win32":
-            # Windows: use .pyd extension (required for importlib to find it)
-            filename = f"{ext_basename}.pyd"
-        else:
-            # Linux/Mac: use plain .so extension
-            filename = f"{ext_basename}.so"
+        def get_ext_filename(self, ext_name):
+            # Return plain .so/.pyd names without Python version tags
+            # This creates ABI-independent binaries that work with any Python version
+            ext_path = ext_name.split(".")
+            ext_basename = ext_path[-1]
+            ext_dir = os.path.join(*ext_path[:-1]) if len(ext_path) > 1 else ""
 
-        return os.path.join(ext_dir, filename) if ext_dir else filename
+            if sys.platform == "win32":
+                # Windows: use .pyd extension (required for importlib to find it)
+                filename = f"{ext_basename}.pyd"
+            else:
+                # Linux/Mac: use plain .so extension
+                filename = f"{ext_basename}.so"
+
+            return os.path.join(ext_dir, filename) if ext_dir else filename
+
+    return BuildExtensionNoPythonAbi.with_options(no_python_abi_suffix=True)
 
 
 if __name__ == "__main__":
@@ -376,9 +387,7 @@ if __name__ == "__main__":
         "build_py": BuildPyWithExtraFiles.with_options(extra_files=extra_files),
     }
     if extensions:
-        cmdclass["build_ext"] = BuildExtensionNoPythonAbi.with_options(
-            no_python_abi_suffix=True
-        )
+        cmdclass["build_ext"] = make_build_ext()
 
     setuptools.setup(
         name="xformers",

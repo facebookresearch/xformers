@@ -33,7 +33,6 @@ env:
   TORCH_CUDA_ARCH_LIST: ${{ contains(inputs.toolkit_type, 'cuda') && '7.5 8.0+PTX' || '' }}
   HIP_ARCHITECTURES: ${{ contains(inputs.toolkit_type, 'rocm') && 'gfx90a gfx942' || '' }}
   MAX_JOBS: ${{ contains(inputs.os, 'ubuntu') && '2' || '3' }} # (FA3 is memory hungry!)
-  DISTUTILS_USE_SDK: 1 # otherwise distutils will complain on windows about multiple versions of msvc
   XFORMERS_BUILD_TYPE: "Release"
   TWINE_USERNAME: __token__
   XFORMERS_PACKAGE_FROM: "wheel-${{ github.ref_name }}"
@@ -44,8 +43,7 @@ jobs:
     runs-on: ${{ inputs.os }}
     env:
       # alias for the current python version
-      # windows does not have per version binary, it is just 'python3'
-      PY: python${{ contains(inputs.os, 'ubuntu') && inputs.python || '3' }}
+      PY: python${{ inputs.python }}
 
     container: ${{ contains(inputs.os, 'ubuntu') && 'quay.io/pypa/manylinux_2_28_x86_64' || null }}
     timeout-minutes: 360
@@ -61,8 +59,6 @@ jobs:
         run: |
           echo "TORCH_CUDA_ARCH_LIST=$TORCH_CUDA_ARCH_LIST 8.0 9.0a 10.0a 10.3a 11.0a 12.0a 12.1a" >> ${GITHUB_ENV}
 
-      - if: runner.os == 'Windows'
-        run: git config --system core.longpaths true
       - name: Recursive checkout
         uses: actions/checkout@v4
         with:
@@ -70,12 +66,6 @@ jobs:
           path: "."
           fetch-depth: 0 # for tags
 
-      - name: HACKFIX for cutlass compiler bug
-        if: runner.os == 'Windows'
-        run: |
-          # See https://github.com/NVIDIA/cutlass/issues/1732
-          rm -f third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
-          touch third_party/cutlass/include/cutlass/gemm/kernel/sm90_gemm_tma_warpspecialized_pingpong.hpp
       - name: Setup Runner
         uses: ./.github/actions/setup-build-cuda
         with:
@@ -85,8 +75,7 @@ jobs:
       - if: runner.os == 'Linux'
         run: printenv
 
-      - if: runner.os != 'Windows'
-        name: (Linux) Setup venv for linux
+      - name: Setup venv
         shell: bash -l {0}
         run: |
           $PY -m venv venv
@@ -106,8 +95,8 @@ jobs:
           git config --global --add safe.directory "*"
           version=`python .github/compute_wheel_version.py --source $VERSION_SOURCE`
           echo $version > version.txt
-          echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_ENV}
-          echo "BUILD_VERSION=$version${{ steps.cuda_info.outputs.CUDA_VERSION_SUFFIX }}" >> ${GITHUB_OUTPUT}
+          echo "BUILD_VERSION=$version" >> ${GITHUB_ENV}
+          echo "BUILD_VERSION=$version" >> ${GITHUB_OUTPUT}
           which ninja
           ninja --version
           cat ${GITHUB_ENV}

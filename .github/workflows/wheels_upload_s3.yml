@@ -41,18 +41,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Recursive checkout
+      - name: Checkout
         uses: actions/checkout@v3
         with:
-          submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
-
-      # inspired by https://github.com/jlumbroso/free-disk-space/blob/main/action.yml
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/dotnet || true
 
       - uses: actions/download-artifact@v4
         with:

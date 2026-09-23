@@ -37,18 +37,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Recursive checkout
+      - name: Checkout
         uses: actions/checkout@v3
         with:
-          submodules: recursive
           path: "."
           fetch-depth: 0 # for tags
-
-      # inspired by https://github.com/jlumbroso/free-disk-space/blob/main/action.yml
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android || true
-          sudo rm -rf /usr/share/dotnet || true
 
       - name: Setup twine config
         if: inputs.pypirc
@@ -77,8 +70,7 @@ jobs:
           python3 -m venv venv
           . ./venv/bin/activate
           which pip
-          # (we need pytorch to create a source distr...)
-          pip install torch packaging twine
+          pip install packaging twine
           echo "PY=$(which python)" >> ${GITHUB_ENV}
           echo "PATH=$PATH" >> ${GITHUB_ENV}
 
