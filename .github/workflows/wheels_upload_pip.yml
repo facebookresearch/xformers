@@ -70,7 +70,7 @@ jobs:
           python3 -m venv venv
           . ./venv/bin/activate
           which pip
-          pip install packaging twine
+          pip install setuptools wheel packaging twine
           echo "PY=$(which python)" >> ${GITHUB_ENV}
           echo "PATH=$PATH" >> ${GITHUB_ENV}
 
