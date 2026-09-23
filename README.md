@@ -42,7 +42,12 @@ pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm7.1
 
 ```bash
 # Same requirements as for the stable version above
+# NOTE: unlike the stable command above this has no --index-url, so pip resolves
+# from PyPI, which can install a wheel built for a different CUDA version and
+# replace an existing cuda-specific or nightly PyTorch install
 pip install --pre -U xformers
+# to keep a specific CUDA build, pass the matching nightly index, e.g. cuda 13.0:
+pip install --pre -U xformers --index-url https://download.pytorch.org/whl/nightly/cu130
 ```
 
 * **Install from source**: If you want to use with another version of PyTorch for instance (including nightly-releases)
