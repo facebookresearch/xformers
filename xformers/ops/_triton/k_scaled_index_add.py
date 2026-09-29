@@ -10,6 +10,24 @@ import triton
 import triton.language as tl
 
 
+def _scaled_index_add_configs():
+    return [
+        triton.Config(
+            {"BLOCK_SIZE_INDEX": bi, "BLOCK_SIZE_ROW": br, "BLOCK_SIZE_COL": bc},
+            num_warps=w,
+        )
+        for bi in (1, 4)
+        for br in (1, 4)
+        for bc in (64, 128, 256, 512)
+        for w in (2, 4)
+    ]
+
+
+@triton.autotune(
+    configs=_scaled_index_add_configs(),
+    key=["num_src_indices", "num_rows", "num_cols"],
+    restore_value=["input_ptr"],
+)
 @triton.jit
 def scaled_index_add_fwd_kernel(
     input_ptr,  # *Pointer* to input tensor.
@@ -163,15 +181,16 @@ def scaled_index_add_fwd(
         x.stride(0),
         x.stride(1),
         x.stride(2),
-        BLOCK_SIZE_INDEX=1,
-        BLOCK_SIZE_ROW=1,
-        BLOCK_SIZE_COL=512,
         HAS_SCALING=HAS_SCALING,
     )
 
     return
 
 
+@triton.autotune(
+    configs=_scaled_index_add_configs(),
+    key=["num_src_indices", "num_rows", "num_cols"],
+)
 @triton.jit
 def scaled_index_add_bwd_kernel(
     grad_output_ptr,  # *Pointer* to input tensor.
@@ -221,7 +240,7 @@ def scaled_index_add_bwd_kernel(
     )
     grad_output_offsets = (
         grad_output_ptr
-        + grad_output_indices * stride0
+        + grad_output_indices[:, None, None] * stride0
         + rows[None, :, None] * stride1
         + cols[None, None, :] * stride2
     )
@@ -356,9 +375,6 @@ def scaled_index_add_bwd(
         stride0,
         stride1,
         stride2,
-        BLOCK_SIZE_INDEX=1,
-        BLOCK_SIZE_ROW=1,
-        BLOCK_SIZE_COL=512,
         HAS_SCALING=HAS_SCALING,
     )
 
