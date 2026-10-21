@@ -68,6 +68,9 @@ def _replace_if_needed(
         for lib, op, is_bwd, kwargs in [
             (torch.ops.aten, "scaled_dot_product_attention", False, {}),
             (torch.ops.xformers_flash, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.xformers_flash3, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.mslk_flash, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.mslk_flash3, "flash_fwd", False, FMT_BMHK),
             (
                 torch.ops.xformers,
                 "efficient_attention_forward_cutlass",
@@ -83,6 +86,9 @@ def _replace_if_needed(
                 {},
             ),
             (torch.ops.xformers_flash, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.xformers_flash3, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.mslk_flash, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.mslk_flash3, "flash_bwd", True, FMT_BMHK),
             (
                 torch.ops.xformers,
                 "efficient_attention_backward_cutlass",

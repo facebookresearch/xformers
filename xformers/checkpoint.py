@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
+import copy
 import functools
 import time
 import warnings
@@ -113,6 +114,33 @@ def list_operators(function, *args, **kwargs):
     return verbose_mode.operators
 
 
+class _OptimalPolicy:
+    def __init__(self, optim_output):
+        self.counter = 0
+        if isinstance(optim_output, torch.Tensor):
+            self.optim_output = optim_output.tolist()
+        else:
+            self.optim_output = list(optim_output)
+
+    def __call__(self, ctx, func, *args, **kwargs) -> bool:
+        if func in OPS_TO_ALWAYS_SKIP:
+            return False
+        count = self.counter
+        self.counter += 1
+        if count >= len(self.optim_output):
+            # PyTorch before version 2.13 also queries the policy during
+            # recompute, by which point the counter is exhausted.
+            # Recomputing is always safe.
+            return False
+        return self.optim_output[count] == 1
+
+    def __copy__(self):
+        return _OptimalPolicy(self.optim_output)
+
+    def __deepcopy__(self, memo):
+        return _OptimalPolicy(self.optim_output)
+
+
 def _selective_checkpoint_context_fn(policy_fn=None):
     if policy_fn is None:
         policy_fn = _get_default_policy()
@@ -120,6 +148,10 @@ def _selective_checkpoint_context_fn(policy_fn=None):
         policy_fn = _get_default_policy(policy_fn)
     else:
         assert callable(policy_fn), "policy_fn should be None, list or a callable"
+        # _OptimalPolicy is stateful (counter), clone per region so it can be
+        # reused across multiple checkpoint regions / forward passes
+        if isinstance(policy_fn, _OptimalPolicy):
+            policy_fn = copy.copy(policy_fn)
 
     # Delegate to PyTorch's public selective-checkpointing implementation, which
     # owns the dispatch-mode/storage plumbing. Our policies return a bool (store
@@ -372,6 +404,19 @@ def _get_optimal_checkpoint_policy(function, *args, memory_budget: float) -> Cal
         random_ops=rand_ops,
         force_store_random=force_store_random,
     )
+
+    # An inplace op is always stored together with its parent, which means the
+    # cached parent gets mutated. PyTorch's selective checkpointing
+    # version-checks cached tensors and rejects this during backward.
+    if any(optim_output[op] == 1 for op, _ in inplace_ops):
+        warnings.warn(
+            "This region contains in-place ops that the optimal policy stores. "
+            "PyTorch will raise 'Tensor cached during selective activation "
+            "checkpoint has been mutated' during backward. Use non-in-place ops "
+            "in the region instead, e.g. nn.ReLU(inplace=False).",
+            stacklevel=2,
+        )
+
     return _OptimalPolicy(optim_output=optim_output)
 
 
@@ -462,20 +507,6 @@ def _optimize_runtime_with_given_memory(
         )
     x = torch.from_numpy(res.x)
     return x
-
-
-class _OptimalPolicy:
-    def __init__(self, optim_output: torch.Tensor):
-        self.counter = 0
-        self.optim_output = optim_output.tolist()
-
-    def __call__(self, ctx, func, *args, **kwargs) -> bool:
-        # returning False means recompute, True means store in memory
-        if func in OPS_TO_ALWAYS_SKIP:
-            return False
-        count = self.counter
-        self.counter += 1
-        return self.optim_output[count] == 1
 
 
 class SelectiveCheckpointWrapper(ActivationWrapper):

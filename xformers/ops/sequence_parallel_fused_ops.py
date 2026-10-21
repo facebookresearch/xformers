@@ -701,7 +701,7 @@ def fused_linear_and_reducescatter(
     if out is not None:
         assert isinstance(out, list) == isinstance(weight, list)
         scattered_outputs = out if isinstance(out, list) else [out]
-        assert len(scattered_outputs) == scattered_output_shapes
+        assert len(scattered_outputs) == len(scattered_output_shapes)
         assert all(so.device == gathered_input.device for so in scattered_outputs)
         assert all(so.dtype == gathered_input.dtype for so in scattered_outputs)
         assert all(

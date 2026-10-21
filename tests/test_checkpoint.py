@@ -291,7 +291,7 @@ class _Model(torch.nn.Module):
 @cuda_only
 @pytest.mark.parametrize("device", ["cuda"])
 @pytest.mark.parametrize("memory_budget", [0, 0.03, 0.05, 0.1, 0.3, 0.5, 0.8, 1.0])
-@pytest.mark.parametrize("inplace", [True, False])
+@pytest.mark.parametrize("inplace", [False])
 @pytest.mark.parametrize("random", [True, False])
 @pytest.mark.parametrize("first_inplace", [False])
 def test_optimal_checkpoint_policy(
@@ -326,6 +326,32 @@ def test_optimal_checkpoint_policy(
 
     for p, p_ref in zip(model.parameters(), model_ref.parameters()):
         torch.testing.assert_close(p.grad, p_ref.grad)
+
+
+@cuda_only
+@pytest.mark.parametrize("device", ["cuda"])
+@pytest.mark.parametrize("memory_budget", [0, 0.3, 1.0])
+def test_optimal_checkpoint_policy_inplace_unsupported(device, memory_budget):
+    # The optimal policy stores an in-place op together with its parent, so the
+    # cached parent is mutated. PyTorch's selective checkpointing version-checks
+    # cached tensors and rejects this at backward, whatever the memory budget.
+    torch.manual_seed(42)
+    dtype = torch.float16
+    modules = _get_model_blocks(
+        3, dtype, device, inplace=True, random=False, first_inplace=False
+    )
+    inputs = torch.rand(32, 128, 10, dtype=dtype, device=device)
+
+    with pytest.warns(UserWarning, match="in-place"):
+        policy_fn = get_optimal_checkpoint_policy(
+            modules[0], inputs, memory_budget=memory_budget
+        )
+    model = _Model(modules, policy_fn)
+
+    grad = torch.rand_like(inputs)
+    out = model(inputs.clone())
+    with pytest.raises(RuntimeError, match="has been mutated"):
+        out.backward(grad)
 
 
 @pytest.mark.skipif(True, reason="TODO[fmassa]: Broken on nightly")

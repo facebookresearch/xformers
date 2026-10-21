@@ -55,16 +55,6 @@ COMPONENTS = [
         },
     ),
     ComponentInfo(
-        name="sp24",
-        files=[
-            "tests/test_sparsity24.py",
-            "xformers/csrc/sparse24/*",
-        ],
-        dependencies=[
-            "xformers/ops/sp24.py",
-        ],
-    ),
-    ComponentInfo(
         name="sequence_parallel_fused",
         files=[
             "tests/test_seqpar.py",

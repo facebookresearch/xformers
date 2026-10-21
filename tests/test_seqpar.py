@@ -64,6 +64,8 @@ def inner_seqpar(
     my_rank = torch.distributed.get_rank()
     world_size = torch.distributed.get_world_size()
     subgroup = torch.distributed.new_group()
+    # new_group can return NON_GROUP_MEMBER, but not for a group of all ranks
+    assert isinstance(subgroup, torch.distributed.ProcessGroup)
 
     fused = True
     if kind == "unfused":

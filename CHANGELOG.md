@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.36] - 2026-??-??
 
 ### Improved
+- The open-source build no longer compiles anything: xFormers is now pure Python. Everything that needs a kernel lives in separate packages, chiefly `mslk`. Building from source no longer needs a CUDA toolchain, and no longer needs the CUTLASS submodule.
+- xFormers now ships as a single `py3-none-any` wheel, instead of one wheel per platform and CUDA/ROCm version, so there is no longer any need to match the wheel to your PyTorch build. It is published to all the same places as before — PyPI and each of the PyTorch indices — so no installation command needs to change. macOS is now covered by the same wheel, where previously there was none.
 - Selective activation checkpointing (`xformers.checkpoint`) now delegates to PyTorch's public `torch.utils.checkpoint.create_selective_checkpoint_contexts` instead of reaching into PyTorch private internals. This fixes an `IndexError` with recent PyTorch versions. The public API (`checkpoint`, `get_optimal_checkpoint_policy`, `list_operators`, `selective_checkpoint_wrapper`) is unchanged.
 
 ### Fixed
@@ -14,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 - The `xformers.checkpoint` API (`checkpoint`, `selective_checkpoint_context_fn`, `get_optimal_checkpoint_policy`, `selective_checkpoint_wrapper`, `list_operators`) is deprecated and will be removed in a future release; calling it now raises a `FutureWarning`. PyTorch provides equivalents: `torch.utils.checkpoint.create_selective_checkpoint_contexts` for policy-based selective checkpointing, and the `torch.compile` activation memory budget (`torch._functorch.config.activation_memory_budget`) for memory-budget-driven recomputation.
+
+### Removed
+- Removed 2:4 sparsity support: `xformers.ops.sparsify24`, `xformers.ops.sparsify24_like`, `xformers.ops.Sparse24Tensor`, everything else in `xformers.ops.sp24`, and the underlying `xformers::sparse24_*` operators. PyTorch supports semi-structured (2:4) sparsity natively through `torch.sparse.to_sparse_semi_structured` and `torch.sparse.SparseSemiStructuredTensor`.
 
 ## [0.0.35] - 2026-02-20
 Pre-built binary wheels are available for PyTorch 2.10.0 (and later).
