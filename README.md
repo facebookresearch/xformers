@@ -67,7 +67,7 @@ Note that this is exact attention, not an approximation, just by calling [`xform
 
 **More benchmarks**
 
-xFormers provides many components, and more benchmarks are available in [BENCHMARKS.md](BENCHMARKS.md).
+xFormers provides many components, and benchmark entrypoints are documented in [xformers/benchmarks/README.md](xformers/benchmarks/README.md), including a canonical long-context attention boundary command.
 
 ### (Optional) Testing the installation
 
