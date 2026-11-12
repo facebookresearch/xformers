@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Selective activation checkpointing (`xformers.checkpoint`) now delegates to PyTorch's public `torch.utils.checkpoint.create_selective_checkpoint_contexts` instead of reaching into PyTorch private internals. This fixes an `IndexError` with recent PyTorch versions. The public API (`checkpoint`, `get_optimal_checkpoint_policy`, `list_operators`, `selective_checkpoint_wrapper`) is unchanged.
 
 ### Fixed
+- A negative `dim` now works in `xformers.ops.unbind` and `stack_or_none`. Before, `unbind(x, -1)` on a 1-D tensor crashed in backward with an `IndexError`, and `stack_or_none(tensors, -1)` returned a tensor of the wrong shape for overlapping views such as those from `Tensor.unfold`.
 - `import xformers.ops` no longer crashes on PyTorch builds without distributed support, such as the NVIDIA PyTorch containers for Jetson iGPU devices, where `torch.distributed.is_available()` is `False`. The model-parallel and sequence-parallel ops, which cannot work at all there, are simply not imported, and everything else stays usable.
 
 ### Deprecated

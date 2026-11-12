@@ -100,3 +100,46 @@ def test_unbind_get_stack_strides(dim: int, contiguous: bool):
 
         # tensors[::2]
         test_slice(slice(None, None, 2))
+
+
+@pytest.mark.parametrize("dim", [-1, 0])
+def test_unbind_vector_backward(dim: int):
+    x = torch.arange(3.0, requires_grad=True)
+    grad = torch.tensor([2.0, 3.0, 5.0])
+    tensors = xformers.ops.unbind(x, dim)
+    torch.autograd.backward(tensors, grad.unbind(dim))
+    torch.testing.assert_close(x.grad, grad)
+
+
+@pytest.mark.parametrize("shape", [(3,), (2, 3), (2, 3, 4)])
+def test_stack_or_none_negative_dim(shape):
+    x = torch.randn(shape, requires_grad=True)
+    for dim in range(-x.ndim, 0):
+        tensors = x.unbind(dim)
+        assert xformers.ops.get_stack_strides(tensors, dim) == x.stride()
+        stacked = xformers.ops.stack_or_none(tensors, dim)
+        assert stacked is not None
+        torch.testing.assert_close(stacked, torch.stack(tensors, dim))
+        assert _get_storage_base(stacked) == _get_storage_base(x)
+        grad = torch.arange(x.numel(), dtype=x.dtype).reshape(x.shape)
+        stacked.backward(grad)
+        torch.testing.assert_close(x.grad, grad)
+        x.grad = None
+
+
+@pytest.mark.parametrize("dim", [-2, -1, 0, 1])
+def test_stack_or_none_overlapping_views(dim: int):
+    x = torch.arange(4.0).unfold(0, 3, 1).requires_grad_()
+    tensors = x.unbind(dim)
+    stacked = xformers.ops.stack_or_none(tensors, dim)
+    assert stacked is not None
+    torch.testing.assert_close(stacked, torch.stack(tensors, dim))
+    assert _get_storage_base(stacked) == _get_storage_base(x)
+    grad = torch.arange(x.numel(), dtype=x.dtype).reshape(x.shape)
+    stacked.backward(grad)
+    torch.testing.assert_close(x.grad, grad)
+
+
+def test_get_stack_strides_negative_dim_out_of_range():
+    tensors = torch.arange(4.0).unfold(0, 3, 1).unbind(-1)
+    assert xformers.ops.get_stack_strides(tensors, -3) is None
