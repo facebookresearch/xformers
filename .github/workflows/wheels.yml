@@ -71,16 +71,19 @@ jobs:
       matrix:
         # The same wheel goes to every index, so that `--index-url .../cu126`
         # and friends keep working. Since there is only one wheel, adding an
-        # index costs an upload rather than a build, so this can cover every
-        # index PyTorch currently ships.
+        # index costs an upload rather than a build, so this covers every
+        # CUDA and ROCm index that hosts a PyTorch version we support (2.10+).
         suffix:
           - cu126
           - cu128
           - cu129
           - cu130
           - cu132
+          - cu134
+          - rocm7.0
           - rocm7.1
           - rocm7.2
+          - rocm7.14
     uses: ./.github/workflows/wheels_upload_s3.yml
     with:
       aws_role: "arn:aws:iam::749337293305:role/pytorch_bot_uploader_role"
