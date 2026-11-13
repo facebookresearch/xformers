@@ -18,7 +18,11 @@ def get_stack_strides(
         returns the strides of the stacked tensors. \
         Otherwise returns :code:`None`.
     """
-    if len(tensors) <= 1 or dim > tensors[0].ndim:
+    if len(tensors) <= 1:
+        return None
+    if dim < 0:
+        dim += tensors[0].ndim + 1
+    if dim < 0 or dim > tensors[0].ndim:
         return None
 
     final_stride = []
@@ -63,6 +67,8 @@ def _stack_or_none_fw(
     strides = get_stack_strides(tensors, dim)
     if strides is not None:
         input_shape = list(tensors[0].shape)
+        if dim < 0:
+            dim += len(input_shape) + 1
         input_shape.insert(dim, len(tensors))
         return tensors[0].as_strided(input_shape, strides)
     return None

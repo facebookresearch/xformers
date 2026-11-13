@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Windows, FlashAttention-3 is no longer available out of the box: `flash-attn-3` only has Windows builds for CUDA 12.x, and `mslk` only for CUDA 13.x. With CUDA 12.x, installing a python-only `mslk` from source works around this (see the README's troubleshooting section).
 
 ### Fixed
+- A negative `dim` now works in `xformers.ops.unbind` and `stack_or_none`. Before, `unbind(x, -1)` on a 1-D tensor crashed in backward with an `IndexError`, and `stack_or_none(tensors, -1)` returned a tensor of the wrong shape for overlapping views such as those from `Tensor.unfold`.
 - `import xformers.ops` no longer crashes on PyTorch builds without distributed support, such as the NVIDIA PyTorch containers for Jetson iGPU devices, where `torch.distributed.is_available()` is `False`. The model-parallel and sequence-parallel ops, which cannot work at all there, are simply not imported, and everything else stays usable.
 - Reusing the policy returned by `get_optimal_checkpoint_policy` across several checkpointed regions no longer raises an `IndexError`.
 - The profiler no longer over-counts the FLOPs of the softmax@V product for non-square causal attention.
