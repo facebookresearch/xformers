@@ -227,8 +227,8 @@ def tiled_matmul_fwd_fake(
     ns: List[int],
     ks: List[int],
 ) -> List[torch.Tensor]:
-    c = [[flat_a[0][0].new_empty((m, n)) for n in ns] for m in ms]
-    return _flatten(c, len(ms), len(ks))
+    c = [[flat_a[0].new_empty((m, n)) for n in ns] for m in ms]
+    return _flatten(c, len(ms), len(ns))
 
 
 def tiled_matmul_setup_context(ctx, inputs, output):
