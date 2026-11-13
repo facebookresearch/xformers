@@ -21,39 +21,29 @@
 xFormers is:
 - **Customizable building blocks**: Independent/customizable building blocks that can be used without boilerplate code. The components are domain-agnostic and xFormers is used by researchers in vision, NLP and more.
 - **Research first**: xFormers contains bleeding-edge components, that are not yet available in mainstream libraries like PyTorch.
-- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers contains its own CUDA kernels, but dispatches to other libraries when relevant.
+- **Built with efficiency in mind**: Because speed of iteration matters, components are as fast and memory-efficient as possible. xFormers relies on optimized kernels from [MSLK](https://github.com/meta-pytorch/MSLK), FlashAttention, PyTorch and Triton.
 
 ## Installing xFormers
 
-* **(RECOMMENDED, linux & win) Install latest stable with pip**: Requires [PyTorch 2.10.0](https://pytorch.org/get-started/locally/)
+xFormers is pure Python, and runs on any PyTorch 2.10+. Its attention kernels come from the [`mslk`](https://github.com/meta-pytorch/MSLK) package.
+
+* **(RECOMMENDED) Install latest stable from the PyTorch index matching your PyTorch build**:
 
 ```bash
-# [linux & win] cuda 12.6 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu126
-# [linux & win] cuda 12.8 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu128
-# [linux & win] cuda 13.0 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/cu130
-# [linux only] (EXPERIMENTAL) rocm 7.1 version
-pip3 install -U xformers --index-url https://download.pytorch.org/whl/rocm7.1
+# Replace cu132 with the CUDA (e.g. cu130) or ROCm (e.g. rocm7.14) version of your PyTorch.
+# flash-attn-3 is optional: it speeds up attention on Ampere and Hopper GPUs. It is only
+# available with CUDA (on Windows: only with CUDA 12.x!), so leave it out otherwise.
+pip install -U xformers mslk flash-attn-3 --index-url https://download.pytorch.org/whl/cu132
 ```
 
-* **Development binaries**:
+Each `mslk` release targets a specific PyTorch version: for mslk's native kernels to work (some ROCm backends need them), install versions of torch and mslk from the same row of its [compatibility table](https://github.com/meta-pytorch/MSLK#release-compatibility-table).
+
+* **Install from source**:
 
 ```bash
-# Same requirements as for the stable version above
-pip install --pre -U xformers
-```
-
-* **Install from source**: If you want to use with another version of PyTorch for instance (including nightly-releases)
-
-```bash
-# (Optional) Makes the build much faster
-pip install ninja
-# Set TORCH_CUDA_ARCH_LIST if running and building on different GPU types
-# NOTE: pytorch must already be installed!
-pip install -v --no-build-isolation -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
-# (this can take dozens of minutes)
+# Install mslk from the PyTorch index matching your PyTorch build, as above
+pip install mslk --index-url https://download.pytorch.org/whl/cu132
+pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=xformers
 ```
 
 
@@ -94,11 +84,15 @@ python -m xformers.info
 ### Install troubleshooting
 
 
-* NVCC and the current CUDA runtime match. Depending on your setup, you may be able to change the CUDA runtime with `module unload cuda; module load cuda/xx.x`, possibly also `nvcc`
-* the version of GCC that you're using matches the current NVCC capabilities
-* the `TORCH_CUDA_ARCH_LIST` env variable is set to the architectures that you want to support. A suggested setup (slow to build but comprehensive) is `export TORCH_CUDA_ARCH_LIST="6.0;6.1;6.2;7.0;7.2;7.5;8.0;8.6"`
-* If the build from source OOMs, it's possible to reduce the parallelism of ninja with `MAX_JOBS` (eg `MAX_JOBS=2`)
-* If getting error message `Filename longer than 260 characters` on Windows, make sure long paths are enabled at OS level, and also execute the command `git config --global core.longpaths true`
+* If importing `xformers.ops` warns that `mslk` could not be imported, or that its native library could not be loaded, install `mslk` from the PyTorch index matching your PyTorch build (see above). If mslk's native library can't be loaded, xFormers falls back to mslk's python-only mode, in which the default attention backends still work on CUDA.
+* On Windows with CUDA 12.x, there are no `mslk` builds, but you can install mslk's python-only build from source instead (nothing is compiled). The default attention backends work with it:
+  ```bat
+  :: Replace cu126 with the CUDA version of your PyTorch. In PowerShell, use: $env:MSLK_PYTHON_ONLY = "1"
+  pip install torch flash-attn-3 --index-url https://download.pytorch.org/whl/cu126
+  set MSLK_PYTHON_ONLY=1
+  pip install https://github.com/meta-pytorch/MSLK/archive/refs/heads/main.zip
+  pip install -U xformers --index-url https://download.pytorch.org/whl/cu126
+  ```
 
 
 ### License
