@@ -59,9 +59,10 @@ jobs:
         run: |
           set -ex
           micromamba config set channel_priority strict
+          # The CUDA version must match the PyTorch index used below (cu132)
           micromamba create -n env python=${{ matrix.python }} \
-            zlib pip ninja ccache=4.8 cuda-toolkit \
-            -c "nvidia/label/cuda-12.6.1" -c conda-forge -q -y
+            zlib pip ninja ccache=4.8 "cuda-toolkit=13.2" "cuda-version=13.2" \
+            -c conda-forge -q -y
       - name: Activate environment
         shell: bash -l {0}
         run: |
@@ -75,11 +76,13 @@ jobs:
           python .github/selective_ci/selective_ci.py --base_commit ${{ github.event.pull_request.base.sha }}
       - name: Setup test requirements
         run: |
+          set -ex
           which python
           which nvcc
-          pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu126
-          pip install mslk[flash3] --extra-index-url https://download.pytorch.org/whl/cu126
+          pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu132
+          pip install mslk[flash3] --extra-index-url https://download.pytorch.org/whl/cu132
           pip install -r requirements-test.txt --progress-bar off
+          python -c "import torch; print(torch.__version__, torch.version.cuda)"
       - run: TORCH_CUDA_ARCH_LIST=${{ matrix.gpu.sm }} python -m pip install -v --no-build-isolation -e .
         env:
           TORCH_DONT_CHECK_COMPILER_ABI: 1
