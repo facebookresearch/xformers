@@ -7,6 +7,7 @@ import random
 
 import pytest
 import torch
+from torch._subclasses.fake_tensor import FakeTensorMode
 
 from xformers import _is_triton_available
 from xformers.ops.tiled_matmul import tiled_matmul
@@ -161,3 +162,34 @@ def test_forward_backward(
 
     torch.testing.assert_close(a.grad, grad_a_reference)
     torch.testing.assert_close(b.grad, grad_b_reference)
+
+
+_fake_test_shapes = [
+    ([4], [2, 3, 5], [8]),  # e.g., a fused QKV projection
+    ([4, 3], [6], [8]),
+    ([4], [6], [2, 3]),
+    ([0, 3], [6], [8]),
+]
+
+
+@pytest.mark.parametrize(
+    "shape", _fake_test_shapes, ids=[str(x) for x in _fake_test_shapes]
+)
+def test_fake_tensors(shape) -> None:
+    # torch.compile traces the forward and backward with fake tensors, using
+    # the op's fake implementation, which thus must handle any number of tiles
+    m_tiles, n_tiles, k_tiles = shape
+    with FakeTensorMode():
+        a = [[torch.empty(m, k, requires_grad=True) for k in k_tiles] for m in m_tiles]
+        b = [[torch.empty(k, n, requires_grad=True) for n in n_tiles] for k in k_tiles]
+        c = tiled_matmul(a, b)
+        assert [[y.shape for y in x] for x in c] == [
+            [(m, n) for n in n_tiles] for m in m_tiles
+        ]
+
+        flat_ab = [y for x in a + b for y in x]
+        flat_c = [y for x in c for y in x]
+        grads = torch.autograd.grad(
+            flat_c, flat_ab, grad_outputs=[torch.ones_like(y) for y in flat_c]
+        )
+        assert [g.shape for g in grads] == [y.shape for y in flat_ab]
