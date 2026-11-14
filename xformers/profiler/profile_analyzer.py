@@ -26,7 +26,8 @@ def _attention_flops(queries, values, causal: bool, fmt: str = "BHMK") -> int:
     if fmt == "BMHK":
         queries, values = [[x[0], x[2], x[1], x[3]] for x in [queries, values]]
     *B, N, K = queries
-    *B, Nv, Kv = values
+    # K/V heads may be shared by multiple query heads in GQA/MQA.
+    Nv, Kv = values[-2:]
     if causal:  # NOTE: Causal from bottom right
         # non-causal part
         flops = 2 * N * max(Nv - N, 0) * K + 2 * N * max(Nv - N, 0) * Kv
@@ -67,6 +68,9 @@ def _replace_if_needed(
         for lib, op, is_bwd, kwargs in [
             (torch.ops.aten, "scaled_dot_product_attention", False, {}),
             (torch.ops.xformers_flash, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.xformers_flash3, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.mslk_flash, "flash_fwd", False, FMT_BMHK),
+            (torch.ops.mslk_flash3, "flash_fwd", False, FMT_BMHK),
             (
                 torch.ops.xformers,
                 "efficient_attention_forward_cutlass",
@@ -82,6 +86,9 @@ def _replace_if_needed(
                 {},
             ),
             (torch.ops.xformers_flash, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.xformers_flash3, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.mslk_flash, "flash_bwd", True, FMT_BMHK),
+            (torch.ops.mslk_flash3, "flash_bwd", True, FMT_BMHK),
             (
                 torch.ops.xformers,
                 "efficient_attention_backward_cutlass",

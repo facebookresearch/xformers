@@ -182,6 +182,54 @@ def test_attention_flops_causal_nonsquare() -> None:
     )
 
 
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("causal", [False, True])
+@pytest.mark.parametrize("kv_heads", [1, 2], ids=["mqa", "gqa"])
+@cuda_only
+def test_analyze_prof_sdpa_gqa(dtype, causal: bool, kv_heads: int) -> None:
+    if torch.cuda.get_device_capability() < (8, 0):
+        pytest.skip("Flash attention requires sm80")
+    B, M, H, K = 2, 128, 8, 64
+    q = torch.randn([B, H, M, K], device="cuda", dtype=dtype, requires_grad=True)
+    k = torch.randn([B, kv_heads, M, K], device="cuda", dtype=dtype, requires_grad=True)
+    v = torch.randn_like(k, requires_grad=True)
+    fw_flops = 4 * B * H * M * M * K
+    if causal:
+        fw_flops //= 2
+    with sdpa_kernel(SDPBackend.FLASH_ATTENTION):
+        with assert_flops("SDPA GQA", match=fw_flops):
+            y = nn.functional.scaled_dot_product_attention(
+                q, k, v, is_causal=causal, enable_gqa=True
+            )
+        with assert_flops("SDPA GQA BW", match=fw_flops * 5 // 2, fw=False):
+            y.backward(torch.ones_like(y))
+
+
+@pytest.mark.parametrize("op", [fmha.flash.FwOp, fmha.flash3.FwOp], ids=["fa2", "fa3"])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("causal", [False, True])
+@pytest.mark.parametrize("kv_heads", [1, 2], ids=["mqa", "gqa"])
+@cuda_only
+def test_analyze_prof_memeff_gqa(op, dtype, causal: bool, kv_heads: int) -> None:
+    if torch.cuda.get_device_capability() < op.CUDA_MINIMUM_COMPUTE_CAPABILITY:
+        pytest.skip(f"Requires sm{op.CUDA_MINIMUM_COMPUTE_CAPABILITY}")
+    if not op.is_available():
+        pytest.skip(f"{op.NAME} is not built")
+    B, M, H, K = 2, 128, 8, 64
+    q = torch.randn([B, M, kv_heads, H // kv_heads, K], device="cuda", dtype=dtype)
+    # Public xFormers GQA uses 5-D tensors with explicitly expanded K/V heads.
+    # The Flash operator observed by the profiler has 4-D tensors and fewer KV heads.
+    k = torch.randn([B, M, kv_heads, 1, K], device="cuda", dtype=dtype).expand_as(q)
+    v = torch.randn([B, M, kv_heads, 1, K], device="cuda", dtype=dtype).expand_as(q)
+    fw_flops = 4 * B * H * M * M * K
+    bias = None
+    if causal:
+        fw_flops //= 2
+        bias = fmha.attn_bias.LowerTriangularMask()
+    with assert_flops("memory_efficient_attention GQA", match=fw_flops):
+        xops.memory_efficient_attention(q, k, v, attn_bias=bias, op=(op, None))
+
+
 @pytest.mark.parametrize("dtype", [torch.float16])
 @pytest.mark.parametrize(
     "backend",
@@ -219,12 +267,15 @@ def test_analyze_prof_sdpa(dtype, backend, causal: bool) -> None:
     [
         (fmha.cutlass.FwOp, fmha.cutlass.BwOp),
         (fmha.flash.FwOp, fmha.flash.BwOp),
+        (fmha.flash3.FwOp, fmha.flash3.BwOp),
     ],
-    ids=["cutlass", "flash"],
+    ids=["cutlass", "flash", "flash3"],
 )
 @pytest.mark.parametrize("causal", [True, False], ids=["causal", ""])
 @cuda_only
 def test_analyze_prof_memeff(op, causal: bool) -> None:
+    if op[0] is fmha.flash3.FwOp and not op[0].is_available():
+        pytest.skip("Flash attention 3 is not built")
     dtype = torch.float16
     B, M, H, K = 64, 256, 3, 128
     x = torch.ones([B, M, H, K], dtype=dtype, device="cuda", requires_grad=True)
