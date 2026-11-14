@@ -560,6 +560,10 @@ class SelectiveCheckpointWrapper(ActivationWrapper):
 
     def get_policy_fn(self, *args, **kwargs):
         if self.policy_fn is None:
+            # A no-grad forward cannot profile a training policy. Keep it lazy
+            # so a later training forward still honors the memory budget.
+            if not torch.is_grad_enabled():
+                return []
             self.policy_fn = self._get_policy_fn(*args, **kwargs)
         return self.policy_fn
 
