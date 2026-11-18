@@ -17,6 +17,8 @@ def index_select_cat_fwd_kernel(
     num_cols,
     stride0,  # Stride information of source tensor.
     stride1,
+    out_stride0,  # Stride information of output tensor.
+    out_stride1,
     BLOCK_SIZE_INDEX: tl.constexpr,  # Number of indices each program should process.
     BLOCK_SIZE_COL: tl.constexpr,  # Number of cols each program should process.
 ):
@@ -31,7 +33,9 @@ def index_select_cat_fwd_kernel(
     mask = (indices[:, None] < num_indices) & (cols[None, :] < num_cols)
     output = tl.load(source_offsets, mask=mask)
 
-    output_offsets = output_ptr + indices[:, None] * stride0 + cols[None, :] * stride1
+    output_offsets = (
+        output_ptr + indices[:, None] * out_stride0 + cols[None, :] * out_stride1
+    )
     tl.store(output_offsets, output, mask=mask)
 
 
@@ -72,6 +76,8 @@ def index_select_cat_fwd(
         num_cols,
         stride0,
         stride1,
+        output.stride(0),
+        output.stride(1),
         BLOCK_SIZE_INDEX=1,
         BLOCK_SIZE_COL=512,
     )

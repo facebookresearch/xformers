@@ -114,3 +114,20 @@ def test_index_select_cat(D, batches) -> None:
     out.backward(gradient_out)
     assert src.grad is not None
     assert_allclose(src.grad, ref_grad, "src.grad")
+
+
+@pytest.mark.skipif(not indexing.IndexSelect.is_available(), reason="not available")
+@cuda_only
+def test_index_select_cat_strided_source() -> None:
+    torch.manual_seed(0)
+    dtype = torch.float16
+    # A column slice is not contiguous: strides are (8, 1) for a (6, 4) source.
+    source = torch.randn([6, 8], device="cuda", dtype=dtype)[:, :4]
+    index = torch.tensor([4, 1, 3], dtype=torch.int64, device="cuda")
+    # A second segment keeps any misplaced writes inside the output allocation.
+    tail = torch.randn([2, 8], device="cuda", dtype=dtype)
+    tail_index = torch.tensor([0], dtype=torch.int64, device="cuda")
+
+    ref_out = torch.cat([source[index].flatten(), tail[tail_index].flatten()])
+    out = xops.index_select_cat([source, tail], [index, tail_index])
+    assert_allclose(out, ref_out, "fw")

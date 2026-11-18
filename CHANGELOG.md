@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.37] - 2026-??-??
 
+### Fixed
+- `xformers.ops.index_select_cat` no longer returns wrong rows (and no longer writes outside its output segment) when a source tensor is not contiguous, e.g. a column slice such as `x[:, :4]`. The Triton kernel used the source strides to write the output; it now uses the output strides.
 
 ## [0.0.36] - 2026-11-13
 
