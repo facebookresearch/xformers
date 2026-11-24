@@ -114,3 +114,43 @@ def test_index_select_cat(D, batches) -> None:
     out.backward(gradient_out)
     assert src.grad is not None
     assert_allclose(src.grad, ref_grad, "src.grad")
+
+
+@pytest.mark.skipif(not indexing.IndexSelect.is_available(), reason="not available")
+@cuda_only
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_index_select_cat_strided(dtype) -> None:
+    torch.manual_seed(0)
+
+    # Segment 1: strided via column slice (stride0 = 64 != num_cols = 32)
+    src1_full = torch.randn([16, 64], device="cuda", dtype=dtype, requires_grad=True)
+    src1 = src1_full[:, :32]
+    idx1 = torch.tensor([10, 2, 7, 14, 0], dtype=torch.int64, device="cuda")
+
+    # Segment 2: contiguous
+    src2 = torch.randn([8, 16], device="cuda", dtype=dtype, requires_grad=True)
+    idx2 = torch.tensor([3, 1], dtype=torch.int64, device="cuda")
+
+    # Segment 3: strided via row and column slice
+    src3_full = torch.randn([24, 48], device="cuda", dtype=dtype, requires_grad=True)
+    src3 = src3_full[:12, :20]
+    idx3 = torch.tensor([5, 0, 11, 2], dtype=torch.int64, device="cuda")
+
+    sources = [src1, src2, src3]
+    indices = [idx1, idx2, idx3]
+
+    ref_out = torch.cat([s[i].flatten() for s, i in zip(sources, indices)], dim=0)
+    gradient_out = torch.randn_like(ref_out)
+    ref_out.backward(gradient_out)
+
+    ref_grads = [s_full.grad.clone() for s_full in [src1_full, src2, src3_full]]
+    for s_full in [src1_full, src2, src3_full]:
+        s_full.grad = None
+
+    out = xops.index_select_cat(sources, indices)
+    assert_allclose(out, ref_out, "fw")
+    out.backward(gradient_out)
+
+    assert_allclose(src1_full.grad, ref_grads[0], "src1_full.grad")
+    assert_allclose(src2.grad, ref_grads[1], "src2.grad")
+    assert_allclose(src3_full.grad, ref_grads[2], "src3_full.grad")
