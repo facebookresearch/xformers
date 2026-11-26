@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.37] - 2026-??-??
 
+### Fixed
+- `xformers.ops.fmha.ALL_FW_OPS` and `ALL_BW_OPS` again list only the attention backends that xFormers exposes, rather than every backend in `mslk`. This keeps backends newly added to `mslk`, such as FlyDSL, out of xFormers' tests.
 
 ## [0.0.36] - 2026-11-13
 

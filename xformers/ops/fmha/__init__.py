@@ -26,8 +26,6 @@ if importlib.util.find_spec("mslk"):
         _OPS_LOOKUP,
         _serialize_op,
         _unserialize_op,
-        ALL_BW_OPS,
-        ALL_FW_OPS,
         AttentionBias,
         AttentionBwOpBase,
         AttentionFwOpBase,
@@ -70,6 +68,21 @@ if importlib.util.find_spec("mslk"):
         flash3,
         triton_splitk,
     )
+
+    ALL_FW_OPS = [
+        cutlass.FwOp if torch.version.cuda else ck.FwOp,
+        cutlass_blackwell.FwOp,
+        flash.FwOp,
+        flash3.FwOp,
+        triton_splitk.FwOp,
+    ]
+
+    ALL_BW_OPS = [
+        cutlass.BwOp if torch.version.cuda else ck.BwOp,
+        cutlass_blackwell.BwOp,
+        flash.BwOp,
+        flash3.BwOp,
+    ]
 
     torch.library.define(
         "xformer::memory_efficient_attention_forward",
