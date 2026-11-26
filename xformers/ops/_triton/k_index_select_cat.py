@@ -17,6 +17,8 @@ def index_select_cat_fwd_kernel(
     num_cols,
     stride0,  # Stride information of source tensor.
     stride1,
+    output_stride0,  # Stride information of output tensor.
+    output_stride1,
     BLOCK_SIZE_INDEX: tl.constexpr,  # Number of indices each program should process.
     BLOCK_SIZE_COL: tl.constexpr,  # Number of cols each program should process.
 ):
@@ -31,7 +33,9 @@ def index_select_cat_fwd_kernel(
     mask = (indices[:, None] < num_indices) & (cols[None, :] < num_cols)
     output = tl.load(source_offsets, mask=mask)
 
-    output_offsets = output_ptr + indices[:, None] * stride0 + cols[None, :] * stride1
+    output_offsets = (
+        output_ptr + indices[:, None] * output_stride0 + cols[None, :] * output_stride1
+    )
     tl.store(output_offsets, output, mask=mask)
 
 
@@ -57,6 +61,7 @@ def index_select_cat_fwd(
         )
 
     stride0, stride1 = source.stride(0), source.stride(1)
+    output_stride0, output_stride1 = output.stride(0), output.stride(1)
 
     def grid(meta):
         return (
@@ -72,6 +77,8 @@ def index_select_cat_fwd(
         num_cols,
         stride0,
         stride1,
+        output_stride0,
+        output_stride1,
         BLOCK_SIZE_INDEX=1,
         BLOCK_SIZE_COL=512,
     )
@@ -87,8 +94,10 @@ def index_select_cat_bwd_kernel(
     num_rows,
     num_indices,
     num_cols,
-    stride0,  # Stride information of input and source tensor.
+    stride0,  # Stride information of grad_source tensor.
     stride1,
+    grad_output_stride0,  # Stride information of grad_output tensor.
+    grad_output_stride1,
     BLOCK_SIZE_INDEX: tl.constexpr,  # Number of indices each program should process.
     BLOCK_SIZE_COL: tl.constexpr,  # Number of cols each program should process.
 ):
@@ -101,8 +110,8 @@ def index_select_cat_bwd_kernel(
     grad_output_indices = pid0 * BLOCK_SIZE_INDEX + tl.arange(0, BLOCK_SIZE_INDEX)
     grad_output_offsets = (
         grad_output_ptr
-        + grad_output_indices[:, None] * stride0
-        + cols[None, :] * stride1
+        + grad_output_indices[:, None] * grad_output_stride0
+        + cols[None, :] * grad_output_stride1
     )
     grad_output_mask = (grad_output_indices[:, None] < num_indices) & (
         cols[None, :] < num_cols
@@ -156,11 +165,10 @@ def index_select_cat_bwd(
         )
 
     stride0, stride1 = grad_source.stride(0), grad_source.stride(1)
-    if not (grad_output.stride(0) == stride0 and grad_output.stride(1) == stride1):
-        raise ValueError(
-            f"The strides of the grad_source and grad_output tensors must match "
-            f"(got {stride0} vs. {grad_output.stride(0)}, {stride1} vs. {grad_output.stride(1)})!"
-        )
+    grad_output_stride0, grad_output_stride1 = (
+        grad_output.stride(0),
+        grad_output.stride(1),
+    )
 
     def grid(meta):
         return (
@@ -175,8 +183,10 @@ def index_select_cat_bwd(
         num_rows,
         num_indices,
         num_cols,
-        grad_source.stride(0),
-        grad_source.stride(1),
+        stride0,
+        stride1,
+        grad_output_stride0,
+        grad_output_stride1,
         BLOCK_SIZE_INDEX=1,
         BLOCK_SIZE_COL=512,
     )
