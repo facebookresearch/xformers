@@ -96,8 +96,8 @@ def _rope_padded_kernel(
     Output is to out_q (same shape as xq), an xk-shaped part
     of cache_k and an xv-shaped part of cache_v
     """
-    query_pos_in_batch_elt = tl.program_id(0)
-    batch_elt = tl.program_id(1)
+    query_pos_in_batch_elt = tl.program_id(0).to(tl.int64)
+    batch_elt = tl.program_id(1).to(tl.int64)
     group_head_idx = tl.program_id(2)
     group_idx = group_head_idx % n_groups
     head_idx = group_head_idx // n_groups
@@ -109,12 +109,14 @@ def _rope_padded_kernel(
 
     if const_batch_strides:
         query_pos = query_pos_in_batch_elt + tl.num_programs(1) * batch_elt
-        end_query_pos = tl.num_programs(1) * (batch_elt + 1)
+        end_query_pos = (tl.num_programs(1) * (batch_elt + 1)).to(tl.int64)
     else:
         query_pos = query_pos_in_batch_elt + tl.load(
             seqstartq + batch_elt * stride_seqstartq
+        ).to(tl.int64)
+        end_query_pos = tl.load(seqstartq + (batch_elt + 1) * stride_seqstartq).to(
+            tl.int64
         )
-        end_query_pos = tl.load(seqstartq + (batch_elt + 1) * stride_seqstartq)
         if query_pos >= end_query_pos:
             return
 
@@ -127,14 +129,16 @@ def _rope_padded_kernel(
     )
 
     if const_batch_strides:
-        cache_start = cache_padding_length * batch_elt
+        cache_start = (cache_padding_length * batch_elt).to(tl.int64)
     else:
-        cache_start = tl.load(seqstartk + batch_elt * stride_seqstartk)
+        cache_start = tl.load(seqstartk + batch_elt * stride_seqstartk).to(tl.int64)
     end_of_batch_elt_cache = (
-        cache_start + tl.load(seqlenk + batch_elt * stride_seqlenk) + seqlenk_shift
+        cache_start
+        + tl.load(seqlenk + batch_elt * stride_seqlenk).to(tl.int64)
+        + seqlenk_shift
     )
 
-    cache_pos = end_of_batch_elt_cache - (end_query_pos - query_pos)
+    cache_pos = (end_of_batch_elt_cache - (end_query_pos - query_pos)).to(tl.int64)
     if seqpos is not None:
         seq_pos = tl.load(seqpos + query_pos * stride_seqpos)
     else:

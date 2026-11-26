@@ -342,3 +342,44 @@ def test_rope_seqpos() -> None:
     custom_seqpos[231] = 934
     custom_seqpos[423] = 134
     inner(custom_seqpos, seqpos_input=custom_seqpos)
+
+
+@cuda_sm80_only
+def test_rope_padded_large_cache_offset() -> None:
+    if (
+        not torch.cuda.is_available()
+        or torch.cuda.get_device_properties(0).total_memory < 6 * 1024**3
+    ):
+        pytest.skip("Test requires at least 6 GiB GPU memory")
+
+    dev = "cuda"
+    dim = 64
+    padding = 33554433
+    lengths = [33554433]
+
+    with torch.device("cpu"):
+        bias = BlockDiagonalCausalWithOffsetPaddedKeysMask.from_seqlens(
+            q_seqlen=[1],
+            kv_padding=padding,
+            kv_seqlen=lengths,
+            device=torch.device(dev),
+        )
+
+    cache_length = bias.k_seqinfo.seqstart_py[-1]
+    cache_k = torch.zeros(1, cache_length, 1, dim, dtype=torch.float16, device=dev)
+    cache_v = torch.zeros(1, cache_length, 1, dim, dtype=torch.float16, device=dev)
+
+    xq = torch.ones(1, 1, 1, dim, dtype=torch.float16, device=dev)
+    xk = torch.full_like(xq, 2)
+    xv = torch.full_like(xq, 3)
+
+    with torch.no_grad():
+        rope_padded(xq, xk, xv, cache_k, cache_v, bias)
+
+    target_row = 33554432
+    assert torch.all(
+        cache_k[0, target_row, 0] != 0
+    ), "cache_k was not written at offset >= 2**31"
+    assert torch.all(
+        cache_v[0, target_row, 0] == 3
+    ), "cache_v was not written at offset >= 2**31"
